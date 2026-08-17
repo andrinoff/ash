@@ -311,6 +311,7 @@ type autoloader struct {
 	loading map[string]bool
 	listed  []string
 	listKey string
+	extra   []string
 }
 
 func newAutoloader() *autoloader {
@@ -318,13 +319,38 @@ func newAutoloader() *autoloader {
 }
 
 func (sh *Shell) functionPath() []string {
+	var dirs []string
 	if v, ok := sh.getVar("ash_function_path"); ok {
-		return v
+		dirs = v
+	} else if v, ok := sh.getVar("fish_function_path"); ok {
+		dirs = v
+	} else {
+		dirs = []string{filepath.Join(sh.ConfigDir(), "functions")}
 	}
-	if v, ok := sh.getVar("fish_function_path"); ok {
-		return v
+	a := sh.shared.autoload
+	a.mu.Lock()
+	extra := a.extra
+	a.mu.Unlock()
+	if len(extra) == 0 {
+		return dirs
 	}
-	return []string{filepath.Join(sh.ConfigDir(), "functions")}
+	return append(append([]string(nil), dirs...), extra...)
+}
+
+// AddFunctionPath adds a directory searched (after the user's own) for
+// autoloaded functions, e.g. a cache of fish's function library.
+func (sh *Shell) AddFunctionPath(dir string) {
+	a := sh.shared.autoload
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, d := range a.extra {
+		if d == dir {
+			return
+		}
+	}
+	a.extra = append(a.extra, dir)
+	a.listKey = ""
+	a.tried = map[string]bool{}
 }
 
 func (a *autoloader) find(sh *Shell, name string) string {
