@@ -661,3 +661,30 @@ func CheckSyntax(src, file string) error {
 	_, err := parse(src, file)
 	return err
 }
+
+// Fork returns a subshell that can run concurrently with sh (for example
+// to render a right prompt while the left one renders). Changes made in
+// the fork don't affect sh.
+func (sh *Shell) Fork() *Shell { return sh.clone() }
+
+// CaptureFunction runs a function and returns what it printed. It reports
+// false if no such function exists.
+func (sh *Shell) CaptureFunction(name string, args ...string) (string, bool) {
+	fn := sh.lookupFunc(name)
+	if fn == nil {
+		return "", false
+	}
+	buf := &lockedBuffer{}
+	io := sh.StdIO()
+	io.Out = &Stream{W: buf}
+	saved, savedPipe := sh.status, sh.pipestatus
+	sh.callFunc(fn, append([]string{name}, args...), io)
+	sh.status, sh.pipestatus = saved, savedPipe
+	return buf.String(), true
+}
+
+// ResetControlAll clears any pending control flow, including exit.
+func (sh *Shell) ResetControlAll() { sh.ctrl = ctrlNone }
+
+// SetStatus sets $status.
+func (sh *Shell) SetStatus(s int) { sh.status = s }
