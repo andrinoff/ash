@@ -171,6 +171,7 @@ func (sh *Shell) expandParam(pe *syntax.ParamExp, io *IO, quoted bool) ([]string
 		s, err := sh.expandString(pe.Arg, io)
 		return []string{s}, kindScalar, err
 	case syntax.OpTrimPrefix, syntax.OpTrimPrefixLong, syntax.OpTrimSuffix, syntax.OpTrimSuffixLong:
+		vals, kind = joinPathList(vals, kind)
 		pat, err := sh.expandPattern(pe.Arg, io, false)
 		if err != nil {
 			return nil, kindScalar, err
@@ -190,6 +191,7 @@ func (sh *Shell) expandParam(pe *syntax.ParamExp, io *IO, quoted bool) ([]string
 		}
 		return out, scalarIfOne(kind, out), nil
 	case syntax.OpReplace, syntax.OpReplaceAll, syntax.OpReplacePrefix, syntax.OpReplaceSuffix:
+		vals, kind = joinPathList(vals, kind)
 		pat, err := sh.expandPattern(pe.Arg, io, false)
 		if err != nil {
 			return nil, kindScalar, err
@@ -233,6 +235,7 @@ func (sh *Shell) expandParam(pe *syntax.ParamExp, io *IO, quoted bool) ([]string
 		}
 		return []string{substr(strings.Join(vals, " "), off, length, hasLen)}, kindScalar, nil
 	case syntax.OpUpperFirst, syntax.OpUpperAll, syntax.OpLowerFirst, syntax.OpLowerAll:
+		vals, kind = joinPathList(vals, kind)
 		out := make([]string, len(vals))
 		for i, v := range vals {
 			out[i] = caseConvert(v, pe.Op)
@@ -262,6 +265,15 @@ func (sh *Shell) expandParam(pe *syntax.ParamExp, io *IO, quoted bool) ([]string
 		return out, scalarIfOne(kind, out), nil
 	}
 	return vals, kind, nil
+}
+
+// joinPathList makes ${PATH%%:*} and friends see the ':'-joined string,
+// like bash, instead of operating on each element.
+func joinPathList(vals []string, kind valKind) ([]string, valKind) {
+	if kind != kindPathList {
+		return vals, kind
+	}
+	return []string{strings.Join(vals, ":")}, kindScalar
 }
 
 func scalarIfOne(kind valKind, out []string) valKind {
