@@ -15,3 +15,12 @@ func TestPathListParamOps(t *testing.T) {
 		t.Fatalf("got %q", out)
 	}
 }
+
+func TestBracketIsNotAGlob(t *testing.T) {
+	if isGlobPattern("[") || isGlobPattern("]") || isGlobPattern("a[b") {
+		t.Fatal("lone brackets must not glob")
+	}
+	if !isGlobPattern("[ab]") || !isGlobPattern("x*") || !isGlobPattern("[]a]") {
+		t.Fatal("real patterns must glob")
+	}
+}
