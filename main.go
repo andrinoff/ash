@@ -122,6 +122,9 @@ func run() int {
 
 	sh := shell.New()
 	sh.Login = login
+	if login {
+		sh.LoginSetup()
+	}
 	sh.NoConfig = noConfig
 	stdinTTY := term.IsTerminal(int(os.Stdin.Fd()))
 	if !hasCommand && len(args) == 0 && stdinTTY {
