@@ -308,11 +308,33 @@ func (sh *Shell) foregroundJob(j *job, cont bool) int {
 	sh.waitJob(j)
 	if control {
 		term.SetForeground(tty, sh.shared.shellPgid)
-		if tm := sh.shared.tmodes.Load(); tm != nil && tm.cooked != nil {
-			term.SetState(tty, tm.cooked)
-		}
+		sh.settleTerminal(j)
 	}
 	return sh.finishJob(j)
+}
+
+// settleTerminal decides the terminal modes after a foreground job. If
+// every process exited normally and left the terminal in a sane cooked
+// state, keep it (so `stty` changes stick, as in bash). Otherwise put
+// back the shell's modes.
+func (sh *Shell) settleTerminal(j *job) {
+	tty := sh.shared.ttyFd
+	tm := sh.shared.tmodes.Load()
+	clean := j.state() == procDone
+	for _, p := range j.procs {
+		if p.signal != 0 {
+			clean = false
+		}
+	}
+	if clean {
+		if cur, err := term.GetState(tty); err == nil && cur.Lflag&unix.ICANON != 0 && cur.Lflag&unix.ECHO != 0 && cur.Lflag&unix.ISIG != 0 {
+			sh.shared.tmodes.Store(&shellTmodes{cooked: cur})
+			return
+		}
+	}
+	if tm != nil && tm.cooked != nil {
+		term.SetState(tty, tm.cooked)
+	}
 }
 
 // finishJob records statuses of a job that finished or stopped.
