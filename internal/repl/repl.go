@@ -235,6 +235,8 @@ func (r *REPL) handleSignals() {
 					var buf bytes.Buffer
 					if sh.NotifyJobs(&buf) {
 						r.ed.Notify(buf.String())
+						// the job count in the prompt changed
+						r.ed.Repaint()
 					}
 				})
 			}
