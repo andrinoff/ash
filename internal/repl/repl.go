@@ -180,6 +180,7 @@ func (r *REPL) runLine(line string) {
 	sh.SetCmdDuration(dur)
 	if r.tty {
 		os.Stdout.WriteString("\x1b]133;D;" + strconv.Itoa(status) + "\x07")
+		r.notifyLong(line, status, dur)
 	}
 	r.hist.Add(line, dir, start, status, dur)
 	sh.RunPostExec(line, status, dur)
@@ -188,6 +189,36 @@ func (r *REPL) runLine(line string) {
 		// event handlers must not clobber $status
 		sh.SetStatus(status)
 	}
+}
+
+// notifyLong sends a desktop notification (OSC 9, understood by Ghostty,
+// iTerm2, kitty, WezTerm and others) when a command ran longer than
+// $ash_notify_after seconds.
+func (r *REPL) notifyLong(line string, status int, dur time.Duration) {
+	v := r.sh.Get("ash_notify_after")
+	if v == "" {
+		return
+	}
+	secs, err := strconv.ParseFloat(v, 64)
+	if err != nil || dur.Seconds() < secs {
+		return
+	}
+	cmd := strings.Fields(line)
+	if len(cmd) == 0 {
+		return
+	}
+	verb := "finished"
+	if status != 0 {
+		verb = "failed (" + strconv.Itoa(status) + ")"
+	}
+	msg := cmd[0] + " " + verb + " after " + fmtDuration(dur)
+	msg = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, msg)
+	os.Stdout.WriteString("\x1b]9;" + msg + "\x07")
 }
 
 // readLine is used by the read builtin when stdin is the terminal.
