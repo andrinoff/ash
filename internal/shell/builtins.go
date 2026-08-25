@@ -368,7 +368,7 @@ func bContains(sh *Shell, io *IO, args []string) int {
 
 func bCount(sh *Shell, io *IO, args []string) int {
 	n := len(args) - 1
-	if n == 0 && !io.In.TTY && (io.In.File != nil || io.In.R != nil) {
+	if n == 0 && io.In.ReadsInput() {
 		// count lines on stdin
 		r := bufio.NewReader(io.In)
 		for {
