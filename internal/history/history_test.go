@@ -489,6 +489,7 @@ func TestConcurrentUse(t *testing.T) {
 				}
 				s.Search("commit", false)
 				s.Suggest("git", "/x")
+				s.Fuzzy("gcm", 5)
 				s.Recent(10)
 				s.Entries()
 				if j%25 == 0 {
