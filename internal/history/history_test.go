@@ -398,6 +398,39 @@ func TestClear(t *testing.T) {
 	}
 }
 
+// TestUnwritable checks that the history still works in memory when its
+// file can't be written.
+func TestUnwritable(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permissions don't apply to root")
+	}
+	s, path := open(t)
+	add(t, s, "a", "b", "a")
+	dir := filepath.Dir(path)
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o700) })
+
+	if n := s.Delete("a"); n != 1 {
+		t.Errorf("Delete = %d, want 1", n)
+	}
+	equal(t, "Recent", s.Recent(0), []string{"b"})
+	if got := strings.Count(readFile(t, path), "\ta\n"); got != 2 {
+		t.Errorf("file has %d occurrences of a, want 2", got)
+	}
+	s.Clear()
+	if s.Len() != 0 {
+		t.Errorf("Len = %d after Clear", s.Len())
+	}
+
+	fresh := reopen(t, filepath.Join(dir, "sub", "history"))
+	if err := fresh.Add(Entry{Cmd: "c"}); err == nil {
+		t.Error("no error adding to an unwritable file")
+	}
+	equal(t, "Recent", fresh.Recent(0), []string{"c"})
+}
+
 func TestCompaction(t *testing.T) {
 	s := Open("")
 	for i := 0; i < 1000; i++ {

@@ -239,13 +239,42 @@ func TestFuzzyEmptyQuery(t *testing.T) {
 }
 
 func TestFuzzyLongCommand(t *testing.T) {
-	s := Open("")
-	long := strings.Repeat("ab", 70000) // too big to search fully
-	if err := s.Add(Entry{Cmd: long, When: time.Unix(1, 0)}); err != nil {
-		t.Fatal(err)
+	// Too big to search fully: scored greedily.
+	long := strings.Repeat("ab", 70000)
+	tests := []struct {
+		q, text string
+		score   int
+		pos     []int
+	}{
+		{"ab", long, 70, []int{0, 1}},
+		// The "a" right before the "c" beats the one at the start: a
+		// gap of 139999 would cost all its 44.
+		{"ac", long + "c", 29, []int{139998, 140000}},
 	}
-	got := s.Fuzzy("ab", 1)
-	if len(got) != 1 || got[0].Score != 70 || !reflect.DeepEqual(got[0].Positions, []int{0, 1}) {
-		t.Errorf("got %d matches, score %d, positions %v", len(got), got[0].Score, got[0].Positions)
+	for _, tt := range tests {
+		s := Open("")
+		if err := s.Add(Entry{Cmd: tt.text, When: time.Unix(1, 0)}); err != nil {
+			t.Fatal(err)
+		}
+		got := s.Fuzzy(tt.q, 1)
+		if len(got) != 1 || got[0].Score != tt.score || !reflect.DeepEqual(got[0].Positions, tt.pos) {
+			t.Errorf("Fuzzy(%q): got %d matches, score %d, positions %v; want %d %v", tt.q, len(got), got[0].Score, got[0].Positions, tt.score, tt.pos)
+		}
+	}
+}
+
+func TestClassOf(t *testing.T) {
+	tests := []struct {
+		r    rune
+		want charClass
+	}{
+		{'a', charLower}, {'Z', charUpper}, {'7', charNumber}, {' ', charWhite}, {'\t', charWhite},
+		{'/', charDelimiter}, {':', charDelimiter}, {'|', charDelimiter}, {'-', charNonWord}, {'.', charNonWord},
+		{'é', charLower}, {'Ж', charUpper}, {'٣', charNumber}, {'の', charLetter}, {'　', charWhite}, {'→', charNonWord},
+	}
+	for _, tt := range tests {
+		if got := classOf(tt.r); got != tt.want {
+			t.Errorf("classOf(%q) = %d, want %d", tt.r, got, tt.want)
+		}
 	}
 }
