@@ -50,6 +50,7 @@ func Run(sh *shell.Shell, initCmds []string) int {
 	shell.ExecHook = func() { r.saveAndClose() }
 
 	r.handleSignals()
+	r.importHistory()
 
 	sh.LoadUniversal()
 	for _, c := range initCmds {
@@ -219,6 +220,21 @@ func (r *REPL) notifyLong(line string, status int, dur time.Duration) {
 		return r
 	}, msg)
 	os.Stdout.WriteString("\x1b]9;" + msg + "\x07")
+}
+
+// importHistory brings in fish (or zsh, or bash) history the first time
+// ash runs, in the background so startup doesn't wait for it.
+func (r *REPL) importHistory() {
+	h, ok := r.hist.(*storeHistory)
+	if !ok {
+		return
+	}
+	go func() {
+		n, err := h.AutoImport()
+		if err == nil && n > 0 {
+			r.ed.Notify(r.sh.Style("pager_progress").SGR() + "ash: imported " + strconv.Itoa(n) + " commands from your previous shell's history" + "\x1b[0m")
+		}
+	}()
 }
 
 // readLine is used by the read builtin when stdin is the terminal.
