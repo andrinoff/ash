@@ -31,6 +31,8 @@ func TestCommandPosition(t *testing.T) {
 }
 
 func TestExpandAbbr(t *testing.T) {
+	// keep the history store away from the real ~/.local/share
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	sh := shell.New()
 	sh.Init()
 	sh.RunString(`abbr -a gco git checkout; abbr -a --set-cursor gcm 'git commit -m "%"'; abbr -a --position anywhere -- -h --help`, "", sh.StdIO())
