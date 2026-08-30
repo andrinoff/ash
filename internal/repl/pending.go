@@ -1,16 +1,16 @@
 package repl
 
 import (
-	"strings"
-	"sync"
+	"path/filepath"
 	"time"
 
 	"github.com/andrinoff/ash/internal/editor"
+	"github.com/andrinoff/ash/internal/history"
 	"github.com/andrinoff/ash/internal/shell"
 )
 
 // Temporary stand-ins for components that are being built separately
-// (history store, highlighter, completion engine).
+// (highlighter, completion engine).
 
 type historyBackend interface {
 	shell.History
@@ -21,77 +21,37 @@ type historyBackend interface {
 	Close()
 }
 
-type memHistory struct {
-	mu      sync.Mutex
-	entries []string // oldest first
+// storeHistory adapts the history package to what the REPL and the
+// editor need.
+type storeHistory struct {
+	*history.Store
 }
 
-func openHistory(sh *shell.Shell) historyBackend { return &memHistory{} }
-
-func (h *memHistory) Add(cmd, dir string, when time.Time, status int, dur time.Duration) {
-	if strings.HasPrefix(cmd, " ") {
-		return
-	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	for i, e := range h.entries {
-		if e == cmd {
-			h.entries = append(h.entries[:i], h.entries[i+1:]...)
-			break
-		}
-	}
-	h.entries = append(h.entries, cmd)
+func openHistory(sh *shell.Shell) historyBackend {
+	return &storeHistory{history.Open(filepath.Join(sh.DataDir(), "history"))}
 }
 
-func (h *memHistory) Recent(n int) []string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	var out []string
-	for i := len(h.entries) - 1; i >= 0; i-- {
-		out = append(out, h.entries[i])
-		if n > 0 && len(out) >= n {
-			break
+func (h *storeHistory) Add(cmd, dir string, when time.Time, status int, dur time.Duration) {
+	h.Store.Add(history.Entry{Cmd: cmd, When: when, Dir: dir, Status: status, Duration: dur})
+}
+
+func (h *storeHistory) Fuzzy(q string, limit int, home string) []editor.SearchResult {
+	ms := h.Store.Fuzzy(q, limit)
+	out := make([]editor.SearchResult, len(ms))
+	for i, m := range ms {
+		info := relTime(m.When)
+		if m.Dir != "" {
+			info += "  " + shortDir(m.Dir, home)
 		}
+		if m.Status != 0 {
+			info = "✗ " + info
+		}
+		out[i] = editor.SearchResult{Text: m.Cmd, Positions: m.Positions, Info: info}
 	}
 	return out
 }
 
-func (h *memHistory) Search(q string, prefix bool) []string {
-	var out []string
-	for _, e := range h.Recent(0) {
-		if prefix && strings.HasPrefix(e, q) || !prefix && strings.Contains(e, q) {
-			out = append(out, e)
-		}
-	}
-	return out
-}
-
-func (h *memHistory) Suggest(prefix, dir string) string {
-	for _, e := range h.Recent(0) {
-		if strings.HasPrefix(e, prefix) && len(e) > len(prefix) {
-			return e
-		}
-	}
-	return ""
-}
-
-func (h *memHistory) Fuzzy(q string, limit int, home string) []editor.SearchResult {
-	var out []editor.SearchResult
-	for _, e := range h.Search(q, false) {
-		out = append(out, editor.SearchResult{Text: e})
-		if len(out) >= limit {
-			break
-		}
-	}
-	return out
-}
-
-func (h *memHistory) Delete(cmd string) int { return 0 }
-func (h *memHistory) Clear()                {}
-func (h *memHistory) Import(kind string) (int, error) {
-	return 0, nil
-}
-func (h *memHistory) Close() {}
+func (h *storeHistory) Close() {}
 
 func (r *REPL) highlight(buf string) []string { return nil }
 
