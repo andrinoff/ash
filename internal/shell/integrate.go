@@ -33,7 +33,8 @@ type integrations struct {
 	// WaitIntegrations waits for it.
 	bg sync.WaitGroup
 
-	z zStore
+	z      zStore
+	zoxide zoxideState
 }
 
 // integration describes one tool the integrate builtin knows.
