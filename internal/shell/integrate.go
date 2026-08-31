@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -23,10 +24,16 @@ type integrations struct {
 	enabled map[string]string // tool -> its executable ("" for built-in tools)
 	hooked  map[string]bool   // hooks already registered
 	binds   []integBinding    // key bindings waiting for the line editor
+	regexps map[string]*regexp.Regexp
+
+	// jump answers `z`: the integration enabled last (z or zoxide).
+	jump func(sh *Shell, io *IO, args []string) int
 
 	// bg counts background work (data file writes, zoxide add, atuin);
 	// WaitIntegrations waits for it.
 	bg sync.WaitGroup
+
+	z zStore
 }
 
 // integration describes one tool the integrate builtin knows.
