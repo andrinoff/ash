@@ -35,6 +35,7 @@ type integrations struct {
 
 	z      zStore
 	zoxide zoxideState
+	mise   miseState
 }
 
 // integration describes one tool the integrate builtin knows.
