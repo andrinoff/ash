@@ -36,6 +36,7 @@ type integrations struct {
 	z      zStore
 	zoxide zoxideState
 	mise   miseState
+	direnv string // direnv executable
 }
 
 // integration describes one tool the integrate builtin knows.
