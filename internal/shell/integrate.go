@@ -36,6 +36,7 @@ type integrations struct {
 	z      zStore
 	zoxide zoxideState
 	mise   miseState
+	atuin  atuinState
 	direnv string // direnv executable
 }
 
