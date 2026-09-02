@@ -9,4 +9,7 @@ func interactiveMain(sh *shell.Shell, initCmds []string) int {
 	return repl.Run(sh, initCmds)
 }
 
-func loadConfig(sh *shell.Shell) {}
+func loadConfig(sh *shell.Shell) {
+	sh.LoadUniversal()
+	repl.LoadConfig(sh)
+}

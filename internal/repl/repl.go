@@ -298,6 +298,11 @@ func (r *REPL) handleSignals() {
 	}()
 }
 
+// LoadConfig sources the user's config (for `ash -i -c ...`).
+func LoadConfig(sh *shell.Shell) {
+	(&REPL{sh: sh}).loadConfig()
+}
+
 // loadConfig sources conf.d/*.ash then config.ash.
 func (r *REPL) loadConfig() {
 	sh := r.sh
