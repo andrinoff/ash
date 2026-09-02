@@ -31,3 +31,10 @@ func TestReadKeepsWhitespaceWithEmptyIFS(t *testing.T) {
 		t.Fatalf("got %q", out)
 	}
 }
+
+func TestFishSubstLines(t *testing.T) {
+	out, _, _ := runScript(t, `count (echo); count (printf ''); count (printf 'a\n\nb\n')`)
+	if out != "1\n0\n3\n" {
+		t.Fatalf("got %q", out)
+	}
+}

@@ -560,11 +560,11 @@ func (sh *Shell) expandPart(p syntax.WordPart, io *IO, quoted bool) ([]string, v
 // splitLines splits command output on newlines the fish way: the final
 // newline is dropped, empty output is an empty list.
 func splitLines(s string) []string {
-	s = strings.TrimSuffix(s, "\n")
 	if s == "" {
 		return nil
 	}
-	return strings.Split(s, "\n")
+	// one trailing newline ends the last line; "\n" alone is one empty line
+	return strings.Split(strings.TrimSuffix(s, "\n"), "\n")
 }
 
 // cmdSubst runs statements in a subshell and returns their output.
