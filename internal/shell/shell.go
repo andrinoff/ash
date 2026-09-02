@@ -701,3 +701,11 @@ func (sh *Shell) ResetControlAll() { sh.ctrl = ctrlNone }
 
 // SetStatus sets $status.
 func (sh *Shell) SetStatus(s int) { sh.status = s }
+
+// KeepStatus runs f and then restores $status and $pipestatus, so things
+// like key bindings don't change what the prompt reports.
+func (sh *Shell) KeepStatus(f func()) {
+	st, ps := sh.status, sh.pipestatus
+	f()
+	sh.status, sh.pipestatus = st, ps
+}

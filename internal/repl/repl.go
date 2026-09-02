@@ -77,9 +77,11 @@ func (r *REPL) editorConfig() editor.Config {
 		History:       r.hist,
 		SearchHistory: r.searchHistory,
 		RunCommand: func(cmd string) {
-			sh.ClearInterrupt()
-			sh.RunString(cmd, "", sh.StdIO())
-			sh.ResetControl()
+			sh.KeepStatus(func() {
+				sh.ClearInterrupt()
+				sh.RunString(cmd, "", sh.StdIO())
+				sh.ResetControl()
+			})
 		},
 		EditCommand: r.editCommand,
 		Style:       func(role string) string { return sh.Style(role).SGR() },
