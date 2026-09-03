@@ -424,6 +424,7 @@ func (sh *Shell) commandNotFound(args []string, io *IO, err error) int {
 	msg := fmt.Sprintf("ash: unknown command: %s", name)
 	if s := sh.suggestCommand(name); s != "" {
 		msg += fmt.Sprintf(" (did you mean %s?)", s)
+		sh.noteFix(name, s)
 	}
 	fmt.Fprintln(io.Err, msg)
 	return 127

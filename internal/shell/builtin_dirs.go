@@ -93,6 +93,7 @@ func (sh *Shell) changeDir(target string, io *IO, echoDir bool) int {
 			msg := fmt.Sprintf("cd: %s: no such directory", target)
 			if s := sh.suggestDir(target); s != "" {
 				msg += fmt.Sprintf(" (did you mean %s?)", s)
+				sh.noteFix(target, s)
 			}
 			fmt.Fprintln(io.Err, msg)
 		} else {
