@@ -152,6 +152,7 @@ type shared struct {
 	autoload  *autoloader
 	integr    *integrations
 	hooks     *hooks
+	actions   *childActions
 	ttyFd     int
 	shellPgid int
 	tmodes    atomic.Pointer[shellTmodes]
@@ -191,6 +192,7 @@ func New() *Shell {
 		autoload:  newAutoloader(),
 		integr:    &integrations{},
 		hooks:     &hooks{},
+		actions:   &childActions{},
 		ttyFd:     -1,
 	}
 	if exe, err := os.Executable(); err == nil {
