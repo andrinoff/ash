@@ -14,6 +14,10 @@ func TestChildActions(t *testing.T) {
 	cleanup := sh.SetupActionFile()
 	defer cleanup()
 	dir := t.TempDir()
+	// cd in the main shell moves the whole process; put it back before the
+	// temp dirs go away (cleanups run last-registered first)
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(orig) })
 	sub := filepath.Join(dir, "with space")
 	os.Mkdir(sub, 0o755)
 	out := &lockedBuffer{}
