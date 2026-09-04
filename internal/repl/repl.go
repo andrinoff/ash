@@ -23,6 +23,8 @@ import (
 
 // REPL is an interactive session.
 type REPL struct {
+	fixLine  string // a corrected version of the last command, offered next
+	cleanup  []func()
 	sh       *shell.Shell
 	ed       *editor.Editor
 	hist     historyBackend
@@ -51,6 +53,7 @@ func Run(sh *shell.Shell, initCmds []string) int {
 
 	r.handleSignals()
 	r.importHistory()
+	r.cleanup = append(r.cleanup, sh.SetupActionFile())
 
 	sh.LoadUniversal()
 	for _, c := range initCmds {
@@ -81,6 +84,7 @@ func (r *REPL) editorConfig() editor.Config {
 				sh.ClearInterrupt()
 				sh.RunString(cmd, "", sh.StdIO())
 				sh.ResetControl()
+				sh.ApplyChildActions(sh.StdIO())
 			})
 		},
 		EditCommand: r.editCommand,
@@ -149,7 +153,12 @@ func (r *REPL) readOpts() editor.ReadOpts {
 		Continuation: r.continuation(),
 		Transient:    r.transient,
 		MarkPrompt:   r.tty,
+		Initial:      r.sh.TakeNextBuffer(),
 	}
+	if o.Initial == "" {
+		o.EmptySuggestion = r.fixLine
+	}
+	r.fixLine = ""
 	// While a slow prompt renders, show the previous one if we're still
 	// in the same directory, otherwise the instant built-in prompt.
 	if r.last.Left != "" && r.lastDir == r.sh.Dir() {
@@ -185,7 +194,13 @@ func (r *REPL) runLine(line string) {
 		os.Stdout.WriteString("\x1b]133;D;" + strconv.Itoa(status) + "\x07")
 		r.notifyLong(line, status, dur)
 	}
-	r.hist.Add(line, dir, start, status, dur)
+	sh.ApplyChildActions(sh.StdIO())
+	if bad, good := sh.TakeFix(); bad != "" {
+		r.fixLine = fixLine(line, bad, good)
+	}
+	if !r.secret(line) {
+		r.hist.Add(line, dir, start, status, dur)
+	}
 	sh.RunPostExec(line, status, dur)
 	sh.Emit("ash_postexec", line)
 	if sh.Status() != status {
@@ -354,6 +369,10 @@ func (r *REPL) saveAndClose() {
 	if r.hist != nil {
 		r.hist.Close()
 	}
+	for _, f := range r.cleanup {
+		f()
+	}
+	r.cleanup = nil
 }
 
 // setTitle sets the terminal title: the directory at the prompt, the
