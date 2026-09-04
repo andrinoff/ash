@@ -82,6 +82,9 @@ type ReadOpts struct {
 	Initial string
 	// Simple disables history, suggestions and completion (for `read`).
 	Simple bool
+	// EmptySuggestion is offered as the autosuggestion while the line is
+	// empty (a corrected version of the last command, say).
+	EmptySuggestion string
 	// MarkPrompt emits OSC 133 semantic prompt marks.
 	MarkPrompt bool
 }
@@ -599,6 +602,10 @@ func (e *Editor) update() {
 		}
 	}
 	e.sugg = nil
+	if len(e.buf) == 0 && e.opts.EmptySuggestion != "" && !e.noSugg && !e.opts.Simple && e.search == nil {
+		e.sugg = []rune(e.opts.EmptySuggestion)
+		return
+	}
 	if e.cfg.Suggest != nil && !e.opts.Simple && !e.noSugg && e.pos == len(e.buf) && len(e.buf) > 0 && e.search == nil {
 		if sg := e.cfg.Suggest(s); len(sg) > len(s) && strings.HasPrefix(sg, s) {
 			e.sugg = []rune(sg[len(s):])
