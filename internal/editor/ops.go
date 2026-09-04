@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"encoding/base64"
 	"os"
 	"os/exec"
 	"strings"
@@ -255,7 +256,6 @@ func (k *killRing) push(s string) {
 		k.items = k.items[1:]
 	}
 	k.idx = len(k.items) - 1
-	copyToClipboard(s)
 }
 
 func (k *killRing) append(s string) {
@@ -695,7 +695,7 @@ func fnCopy(e *Editor, k Key) {
 	if len(e.buf) == 0 {
 		return
 	}
-	copyToClipboard(string(e.buf))
+	e.copyToClipboard(string(e.buf))
 	e.message = e.style("pager_progress") + "copied to clipboard" + reset
 }
 
@@ -719,8 +719,15 @@ func fnPaste(e *Editor, k Key) {
 	}
 }
 
-func copyToClipboard(s string) {
+// copyToClipboard puts s on the clipboard: with pbcopy, wl-copy or xclip
+// locally, and through the terminal (OSC 52) over SSH or when none of
+// those exist, which also reaches the local clipboard from inside tmux.
+func (e *Editor) copyToClipboard(s string) {
 	if s == "" {
+		return
+	}
+	if os.Getenv("SSH_TTY") != "" || os.Getenv("SSH_CONNECTION") != "" {
+		e.write("\x1b]52;c;" + base64.StdEncoding.EncodeToString([]byte(s)) + "\x07")
 		return
 	}
 	var cmd *exec.Cmd
@@ -732,6 +739,7 @@ func copyToClipboard(s string) {
 	case hasCmd("xclip"):
 		cmd = exec.Command("xclip", "-selection", "clipboard")
 	default:
+		e.write("\x1b]52;c;" + base64.StdEncoding.EncodeToString([]byte(s)) + "\x07")
 		return
 	}
 	cmd.Stdin = strings.NewReader(s)
