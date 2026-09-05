@@ -118,6 +118,59 @@ integrate atuin
 Records every command in atuin (with its exit status and duration) and
 binds `ctrl-r` to atuin's search.
 
+## File managers and git clients
+
+A program can't change its parent shell's directory, which is why every
+TUI file manager ships a shell function to make "quit and stay where you
+were" work. ash solves it once for all of them (see "Talking back to the
+shell" below), and `integrate` wires up the ones it knows:
+
+| | |
+|---|---|
+| `integrate yazi` | `y` runs yazi; quit with `q` and you're in yazi's directory |
+| `integrate lazygit` | switch repositories inside lazygit, and the shell follows when you quit |
+| `integrate nnn` | quitting nnn with `^G` changes to its directory |
+| `integrate lf` | `lfcd` runs lf and stays in the directory you quit in |
+| `integrate ranger` | `ranger-cd`, the same for ranger |
+| `integrate broot` | `br` runs broot; `alt-enter` on a directory changes to it |
+
+If you already have a function with one of those names, ash leaves yours
+alone.
+
+## Talking back to the shell
+
+Every command run from an interactive ash gets `$ASH_ACTION_FILE` in its
+environment: a path to a file that doesn't exist yet. A program, or a
+script, or one of your functions, can write requests into it, and when the
+command finishes ash carries them out:
+
+```
+/some/directory          a bare directory: cd there
+cd DIR                   the same, with shell quoting
+export NAME=VALUE        set and export a variable
+set NAME VALUE...        set a variable (fish style)
+unset NAME               remove a variable
+commandline TEXT         put TEXT on your next command line
+message TEXT             print TEXT before the next prompt
+```
+
+That's the whole protocol. Nothing in the file is run as code: words with
+`$`, backticks or `(...)` are ignored, and so is any other command. It
+works from key bindings too, so `bind alt-y y` opens yazi on a key and
+leaves you where you quit.
+
+A small example, a script that finds a project and drops you in it:
+
+```sh
+#!/bin/sh
+dir=$(find ~/src -maxdepth 2 -name .git -prune -exec dirname {} \; | fzf) || exit
+[ -n "$ASH_ACTION_FILE" ] && echo "$dir" > "$ASH_ACTION_FILE"
+```
+
+In other shells that has to be a shell function. With ash it can be a
+program in any language, and it still works when it's started from
+another program.
+
 ## Anything else
 
 Tools that print shell code for you to `eval` usually work, because ash
