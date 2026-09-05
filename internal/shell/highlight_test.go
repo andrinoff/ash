@@ -715,3 +715,97 @@ func TestHighlightDirCache(t *testing.T) {
 		t.Errorf("stale listing: paths %q", paths)
 	}
 }
+
+// Hostile input (a pasted blob of brackets, say) must not make
+// highlighting quadratic: each of these took seconds before look-ahead
+// scans were budgeted, and takes a few milliseconds now.
+func TestHighlightLinear(t *testing.T) {
+	sh := hlShell(t)
+	const n = 100000
+	for name, src := range map[string]string{
+		"braces":   "echo " + strings.Repeat("{a,", n/3),
+		"quoted":   "echo " + strings.Repeat("{'", n/2),
+		"globs":    "echo " + strings.Repeat("[", n),
+		"arith":    "echo " + strings.Repeat("$((", n/3),
+		"subst":    "echo " + strings.Repeat("$(", n/2),
+		"index":    "echo " + strings.Repeat("$x[(", n/4),
+		"subscr":   "echo " + strings.Repeat("${a[", n/4),
+		"assign":   strings.Repeat("a[", n/2),
+		"compound": strings.Repeat("if true; then case x in a) ", n/30),
+	} {
+		start := time.Now()
+		out := sh.Highlight(src)
+		sh.SuggestionOK(src)
+		if d := time.Since(start); d > time.Second {
+			t.Errorf("%s: %v for %d bytes", name, d, len(src))
+		}
+		if len(out) != len(src) {
+			t.Errorf("%s: %d styles for %d bytes", name, len(out), len(src))
+		}
+	}
+}
+
+func FuzzHighlight(f *testing.F) {
+	for _, s := range []string{
+		"echo \"a $b\" 'c' $(d) (e) `f` ${g:-h} $i[1] {j,k} ~/l *.m",
+		"if a; then b; elif c; then d; else e; fi; while f; do g; done",
+		"case $x in a|b) c;; (d) e;; esac; switch x; case y; end",
+		"for ((i=0;i<3;i++)); do (( j += i )); done; [[ -f x && y =~ (z|w) ]]",
+		"cat <<EOF >out 2>&1\n$x `y`\nEOF\ncat <<-'E'\n\tz\n\tE",
+		"f() { g; }; function h -d x; i; end; { j; }",
+		"sudo -u root env A=1 nice -n 1 command -v k | l &> m &! n &",
+		"echo $'\\x41' $\"q\" \\\n x \\", "${", "$((", "$(", "<(", "[[", "((", "'", "\"", "`", "\\",
+	} {
+		f.Add(s)
+	}
+	sh := hlShell(f)
+	f.Fuzz(func(t *testing.T, src string) {
+		roles, _ := hlRoles(sh, src, false)
+		if strings.Contains(roles, "?") {
+			t.Errorf("%q: unclassified text: %q", src, roles)
+		}
+		hlRoles(sh, src, true)
+		if n := len(sh.Highlight(src)); n != utf8.RuneCountInString(src) {
+			t.Errorf("%q: %d styles", src, n)
+		}
+		sh.SuggestionOK(src)
+	})
+}
+
+func BenchmarkHighlight(b *testing.B) {
+	sh := hlShell(b)
+	line := `git commit -m "fix: handle $USER input" && ls -la src/ | grep -v test > notes.txt`
+	if n := utf8.RuneCountInString(line); n < 75 || n > 85 {
+		b.Fatalf("line has %d runes", n)
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		sh.Highlight(line)
+	}
+}
+
+// Typing a path in a big directory: the listing is read once.
+func BenchmarkHighlightTypingPath(b *testing.B) {
+	sh := hlShell(b)
+	dir := filepath.Join(sh.dir, "big")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		b.Fatal(err)
+	}
+	for i := range 2000 {
+		if err := os.WriteFile(filepath.Join(dir, "file"+strings.Repeat("x", i%7)+string(rune('a'+i%26))+string(rune('a'+i/26%26))), nil, 0o644); err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		sh.Highlight("cat big/filexxxz")
+	}
+}
+
+func BenchmarkSuggestionOK(b *testing.B) {
+	sh := hlShell(b)
+	b.ReportAllocs()
+	for b.Loop() {
+		sh.SuggestionOK("cd src && git status --short | grep -v '^??'")
+	}
+}
