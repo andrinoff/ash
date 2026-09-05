@@ -61,6 +61,25 @@ start with a space are not saved.
 `!!` and `!$` expand to the previous command and its last argument when you
 press space or enter, so you see what's about to run.
 
+Commands that look like they contain a credential (an API key or token in
+a known format, a `password=...`, a URL with a password in it) are not
+saved. `set -g ash_history_ignore 'regex' ...` adds your own patterns, and
+`set -g ash_history_secrets 0` turns the built-in ones off.
+
+## Typos
+
+When a command isn't found and something close is, ash says so:
+
+```
+❯ gti status
+ash: unknown command: gti (did you mean git?)
+❯ git status        ← offered on the empty line; press → to take it
+```
+
+The corrected line shows up as the autosuggestion on the next prompt, so
+fixing it is one key. The same happens for `cd` into a directory that
+doesn't exist when a close one does.
+
 ## Moving and editing
 
 | key | |
@@ -78,7 +97,7 @@ press space or enter, so you see what's about to run.
 | `alt-u` / `alt-c` | uppercase / capitalize the word |
 | `ctrl-z`, `ctrl-_` / `alt-/` | undo / redo |
 | `alt-enter` | insert a newline |
-| `ctrl-x` / `ctrl-v` | copy the line to the clipboard / paste from it |
+| `ctrl-x` / `ctrl-v` | copy the line to the clipboard / paste from it (over SSH the copy goes through the terminal, OSC 52, so it lands on your local clipboard) |
 | `alt-s` | add or remove `sudo` at the front (on an empty line, the last command with sudo) |
 | `alt-e`, `alt-v`, `ctrl-x ctrl-e` | edit the line in `$VISUAL` / `$EDITOR` |
 | `alt-h` | open the man page for the command under the cursor |
