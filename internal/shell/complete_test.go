@@ -535,3 +535,75 @@ false
 		{"ashtestpath2 ", nil},
 	})
 }
+
+func TestCompleteFishArgLists(t *testing.T) {
+	sh, _ := newCompShell(t)
+	dir := filepath.Join(sh.ConfigDir(), "completions")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// the style of fish's ls.fish and eza's vendor completions
+	src := `
+complete -c ashtestls -l sort -x -d "Sort criteria" -a "
+        extension\t'Sort by file extension'
+        none\tDon\'t\ sort
+        size\t'Sort by size'
+    "
+complete -c ashtestls -l color -x -a "
+    always\t'Always use colour'
+    auto\t'Use colour if standard output is a terminal'
+"
+`
+	if err := os.WriteFile(filepath.Join(dir, "ashtestls.fish"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	checkCompletions(t, sh, []compCase{
+		{"ashtestls --sort ", []string{"extension", "none", "size"}},
+		{"ashtestls --color=a", []string{"--color=always", "--color=auto"}},
+	})
+	c := sh.Complete("ashtestls --sort ", 17)
+	for text, desc := range map[string]string{"extension": "Sort by file extension", "none": "Don't sort", "size": "Sort by size"} {
+		if it := find(c, text); it == nil || it.Description != desc {
+			t.Errorf("%s: %+v, want description %q", text, it, desc)
+		}
+	}
+}
+
+func TestCompleteUsers(t *testing.T) {
+	user := os.Getenv("USER")
+	if len(user) < 2 {
+		t.Skip("no $USER")
+	}
+	sh, _ := newCompShell(t)
+	c := sh.Complete("cat ~"+user[:2], 5+2)
+	it := find(c, "~"+user+"/")
+	if it == nil || !it.NoSpace || it.Description != sh.HomeDir() {
+		t.Errorf("~%s: %q", user[:2], texts(c))
+	}
+	c = sh.Complete("~"+user, 1+len(user))
+	if find(c, "~"+user+"/") == nil {
+		t.Errorf("command position ~%s: %q", user, texts(c))
+	}
+}
+
+func TestCompleteNested(t *testing.T) {
+	sh, _ := newCompShell(t)
+	if err := os.WriteFile(filepath.Join(sh.Get("PATH"), "ashtest-tool"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// like fish's __fish_complete_subcommand: complete -C inside a
+	// completion script
+	run(t, sh, `
+function __ashtest_sub
+    complete -C (commandline -ct)
+end
+complete -c ashtestwrap -f -a '(__ashtest_sub)'
+complete -c ashtest-tool -f -a 'nested-arg'
+`)
+	checkCompletions(t, sh, []compCase{
+		{"ashtestwrap ashtest-t", []string{"ashtest-tool"}},
+	})
+	if out := run(t, sh, `complete -C 'ashtest-tool n'`); out != "nested-arg\n" {
+		t.Errorf("complete -C: %q", out)
+	}
+}
