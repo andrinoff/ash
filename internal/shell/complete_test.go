@@ -538,6 +538,30 @@ false
 	})
 }
 
+func TestCompletePanic(t *testing.T) {
+	sh, _ := newCompShell(t)
+	builtins["__ashtest_panic"] = func(sh *Shell, io *IO, args []string) int { panic("boom") }
+	t.Cleanup(func() { delete(builtins, "__ashtest_panic") })
+	run(t, sh, `
+function __ashtest_cond
+    set -l inside 1
+    __ashtest_panic
+end
+complete -c ashtest -f -n __ashtest_cond -a never
+complete -c ashtest -f -a fine
+`)
+	scope, depth := sh.scope, len(sh.callStack)
+	if c := sh.Complete("ashtest ", 8); len(c.Items) != 0 {
+		t.Errorf("got %q", texts(c))
+	}
+	if sh.scope != scope || len(sh.callStack) != depth || sh.shared.complete.active.Load() != nil {
+		t.Error("the shell's state was not restored")
+	}
+	if out := run(t, sh, "set -l x ok; echo $x"); out != "ok\n" {
+		t.Errorf("after the panic: %q", out)
+	}
+}
+
 func TestCompleteFishArgLists(t *testing.T) {
 	sh, _ := newCompShell(t)
 	dir := filepath.Join(sh.ConfigDir(), "completions")

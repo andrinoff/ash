@@ -99,9 +99,9 @@ func (sh *Shell) Complete(buf string, cursor int) editor.Completion {
 }
 
 // completeLine completes buf at cursor. It also returns the scanned line.
-func (sh *Shell) completeLine(buf string, cursor int) (editor.Completion, *compLine) {
-	line := scanCompLine(buf, cursor)
-	res := editor.Completion{Start: line.tok.start, End: line.cursor}
+func (sh *Shell) completeLine(buf string, cursor int) (res editor.Completion, line *compLine) {
+	line = scanCompLine(buf, cursor)
+	res = editor.Completion{Start: line.tok.start, End: line.cursor}
 	if line.skip {
 		return res, line
 	}
@@ -110,6 +110,12 @@ func (sh *Shell) completeLine(buf string, cursor int) (editor.Completion, *compL
 		return res, line
 	}
 	defer r.finish()
+	defer func() {
+		// a bug in completion code must not take the shell down with it
+		if p := recover(); p != nil {
+			res.Items = nil
+		}
+	}()
 	closeQuote := false
 	if q := closer(line.quote); q != 0 && line.cursor < len(buf) && buf[line.cursor] == q {
 		// "my fi|" with the closing quote after the cursor: replace it too
@@ -149,7 +155,9 @@ func (sh *Shell) beginComplete(line *compLine) *compRun {
 	r.ed = &compEditor{inner: inner, buf: line.buf[:line.cursor], pos: line.cursor, tok: line.tok.start}
 	s := r.sh
 	saved := savedState{status: s.status, pipe: s.pipestatus, lastArg: s.lastArg, ctrl: s.ctrl, exit: s.exitStatus,
-		stdin: s.Stdin, stdout: s.Stdout, stderr: s.Stderr, interactive: s.Interactive, jobControl: s.JobControl}
+		stdin: s.Stdin, stdout: s.Stdout, stderr: s.Stderr, interactive: s.Interactive, jobControl: s.JobControl,
+		scope: s.scope, callStack: s.callStack, srcStack: s.srcStack, aliasStack: s.aliasStack,
+		depth: s.depth, inBlock: s.inBlock, noErrexit: s.noErrexit, curSrc: s.curSrc}
 	if f := nullFile(); f != nil {
 		// autoloaded files and anything else using the shell's own
 		// streams must stay quiet too
@@ -174,16 +182,25 @@ type savedState struct {
 	stderr      *os.File
 	interactive bool
 	jobControl  bool
+
+	// balanced by the code that runs, unless it panics
+	scope                     *scope
+	callStack                 []frame
+	srcStack, aliasStack      []string
+	depth, inBlock, noErrexit int
+	curSrc                    string
 }
 
 // finish ends a completion run and puts the shell back as it was.
 func (r *compRun) finish() {
 	s := r.sh
-	st := r.restore
+	st := &r.restore
 	s.status, s.pipestatus, s.lastArg = st.status, st.pipe, st.lastArg
 	s.ctrl, s.exitStatus = st.ctrl, st.exit
 	s.Stdin, s.Stdout, s.Stderr = st.stdin, st.stdout, st.stderr
 	s.Interactive, s.JobControl = st.interactive, st.jobControl
+	s.scope, s.callStack, s.srcStack, s.aliasStack = st.scope, st.callStack, st.srcStack, st.aliasStack
+	s.depth, s.inBlock, s.noErrexit, s.curSrc = st.depth, st.inBlock, st.noErrexit, st.curSrc
 	r.c.active.Store(r.prev)
 }
 
