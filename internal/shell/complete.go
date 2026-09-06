@@ -27,6 +27,7 @@ type completions struct {
 	active atomic.Pointer[compRun] // the completion being computed, if any
 
 	dirs   dirCache
+	fish   fishLib
 	walked sync.Map // *Function -> struct{}: bodies already scanned for autoloads
 	users  struct {
 		once sync.Once
@@ -566,6 +567,11 @@ func (r *compRun) preloadFunc(name string) {
 	}
 	r.seen[name] = true
 	fn := r.sh.lookupFunc(name)
+	if fn == nil && strings.HasPrefix(name, "__fish_") {
+		// a helper from fish's function library
+		r.c.fish.ensureFunctions(r.sh)
+		fn = r.sh.lookupFunc(name)
+	}
 	if fn == nil {
 		return
 	}

@@ -14,6 +14,8 @@ import (
 //	$ash_complete_path (default ~/.config/ash/completions)
 //	~/.config/fish/completions
 //	fish's vendor_completions.d directories
+//	fish's own completions (embedded in the fish 4 binary, extracted on
+//	    demand into ~/.cache/ash/fish-VERSION/completions)
 //	~/.cache/fish/generated_completions (made by fish_update_completions)
 //
 // and are named CMD.ash (ash syntax) or CMD.fish (fish quoting rules).
@@ -37,6 +39,10 @@ func (r *compRun) load(cmd string) {
 		}
 		return
 	}
+	if p, src := c.fish.completion(r.sh, cmd); src != nil {
+		r.source(p, src)
+		return
+	}
 	for _, d := range r.generatedDirs() {
 		if p := findCompletionIn(d, cmd); p != "" {
 			if b, err := os.ReadFile(p); err == nil {
@@ -47,7 +53,7 @@ func (r *compRun) load(cmd string) {
 	}
 }
 
-// completionDirs returns the directories searched before the generated
+// completionDirs returns the directories searched before fish's own
 // completions.
 func (r *compRun) completionDirs() []string {
 	sh := r.sh
@@ -85,8 +91,8 @@ func (r *compRun) completionDirs() []string {
 	return dirs
 }
 
-// generatedDirs returns the directories with completions generated from
-// man pages, searched last.
+// generatedDirs returns the directories searched after fish's own
+// completions.
 func (r *compRun) generatedDirs() []string {
 	cache := r.sh.Get("XDG_CACHE_HOME")
 	if cache == "" {
@@ -96,7 +102,7 @@ func (r *compRun) generatedDirs() []string {
 }
 
 // findCompletion returns the first completion file for cmd in the
-// directories searched before the generated completions.
+// directories searched before fish's own completions.
 func (r *compRun) findCompletion(cmd string) string {
 	seen := map[string]bool{}
 	for _, d := range r.completionDirs() {
@@ -128,6 +134,10 @@ func (r *compRun) source(file string, b []byte) {
 	f, err := parse(src, file)
 	if err != nil {
 		return
+	}
+	if strings.HasSuffix(file, ".fish") {
+		// fish completions use fish's helper functions
+		r.c.fish.ensureFunctions(r.sh)
 	}
 	sh := r.sh
 	for _, st := range f.Stmts {
