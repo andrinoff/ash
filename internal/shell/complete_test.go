@@ -449,6 +449,8 @@ func TestCompleteBuiltinOutput(t *testing.T) {
 		{"complete -c foo -s xy", "complete: -s xy: a short option is a single character\n"},
 		{"complete -c foo -n 'if'", "complete: -n if: "},
 		{"complete -z", "complete: -z: unknown option\n"},
+		{"complete -E -C x", "complete: -E: unknown option\n"},
+		{"complete --e", "complete: --e: unknown option\n"}, // ambiguous
 		{"complete -c", "complete: -c: option requires an argument\n"},
 	}
 	for _, tt := range errs {

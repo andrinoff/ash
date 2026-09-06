@@ -195,7 +195,8 @@ func bComplete(sh *Shell, io *IO, args []string) int {
 				io.Out.WriteString(completeUsage)
 				return 0
 			default:
-				if !flag(c) {
+				// (--escape has no short form)
+				if c == 'E' || !flag(c) {
 					fmt.Fprintf(io.Err, "complete: -%c: unknown option\n", c)
 					return 2
 				}
@@ -215,10 +216,15 @@ func bComplete(sh *Shell, io *IO, args []string) int {
 	}
 	if doComplete {
 		if !doParamS {
-			if sh.Editor == nil {
+			// the command line: the one being completed, if any
+			ed := sh.Editor
+			if r := sh.shared.complete.active.Load(); r != nil {
+				ed = r.ed
+			}
+			if ed == nil {
 				return 0
 			}
-			buf, pos := sh.Editor.Buffer()
+			buf, pos := ed.Buffer()
 			if pos > len(buf) {
 				pos = len(buf)
 			}
