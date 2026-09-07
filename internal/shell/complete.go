@@ -393,8 +393,10 @@ func (r *compRun) completeVars(col *collector) {
 			text += string(q)
 		}
 		desc := ""
-		if vals, ok := sh.getVar(name); ok {
-			desc = truncateDesc(strings.Join(vals, " "), 64)
+		if name != "history" { // (the whole history: too big to show)
+			if vals, ok := sh.getVar(name); ok {
+				desc = truncateDesc(strings.Join(vals[:min(len(vals), 16)], " "), 64)
+			}
 		}
 		col.add(tier, name, editor.Candidate{Text: text, Display: "$" + name, Description: desc, Kind: "variable"}, false)
 	}
