@@ -77,7 +77,7 @@ func commonPrefix(a, b string) string {
 	for i < len(a) && i < len(b) && a[i] == b[i] {
 		i++
 	}
-	for i > 0 && !utf8.RuneStart(a[i]) {
+	for i > 0 && i < len(a) && !utf8.RuneStart(a[i]) {
 		i--
 	}
 	return a[:i]

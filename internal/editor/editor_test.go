@@ -349,3 +349,48 @@ func TestViMotions(t *testing.T) {
 		t.Fatalf(`di": %q`, string(e.buf))
 	}
 }
+
+func TestCompleteCommonPrefix(t *testing.T) {
+	e := newTestEditor(80)
+	items := func(texts ...string) []Candidate {
+		var out []Candidate
+		for _, s := range texts {
+			out = append(out, Candidate{Text: s})
+		}
+		return out
+	}
+	var offer []Candidate
+	e.cfg.Complete = func(s string, cur int) Completion {
+		start := strings.LastIndexByte(s[:cur], ' ') + 1
+		return Completion{Start: start, End: cur, Items: offer}
+	}
+
+	// One candidate is a prefix of the next: the common part is the
+	// whole first one.
+	offer = items("cherry", "cherry-pick")
+	e.insert([]rune("git ch"))
+	e.call("complete", Key{})
+	if got := string(e.buf); got != "git cherry" {
+		t.Fatalf("prefix of another: %q", got)
+	}
+
+	// Nothing in common beyond what was typed: the menu opens.
+	offer = items("checkout", "cherry-pick")
+	e.buf, e.pos = []rune("git che"), 7
+	e.call("complete", Key{})
+	if e.pager == nil || string(e.buf) != "git che" {
+		t.Fatalf("expected the menu, buf %q", string(e.buf))
+	}
+	e.pager = nil
+
+	// A multi-byte common prefix is never cut inside a character.
+	offer = items("héllo", "hé")
+	e.buf, e.pos = []rune("echo h"), 6
+	e.call("complete", Key{})
+	if got := string(e.buf); got != "echo hé" {
+		t.Fatalf("multi-byte: %q", got)
+	}
+	if got := commonPrefix("aé", "aè"); got != "a" {
+		t.Fatalf("commonPrefix split a rune: %q", got)
+	}
+}
