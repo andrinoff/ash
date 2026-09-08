@@ -51,7 +51,7 @@ it accepts both sets of options.
 |---|---|
 | `cd [DIR\|-]` | with `CDPATH`, and a "did you mean" for typos |
 | `pushd`, `popd`, `dirs` | the directory stack |
-| `prevd`, `nextd`, `cdh` | fish's directory history |
+| `prevd`, `nextd`, `cdh` | fish's directory history; `cdh` on its own lets you pick from it |
 | `pwd [-P]` | |
 | `realpath`, `add_path` / `fish_add_path` | |
 | `z`, `zi` | jump to frecent directories (after `integrate z` or `integrate zoxide`) |
@@ -86,9 +86,9 @@ Typing a directory as a command (`..`, `~/src`, `./build/`) changes to it.
 | | |
 |---|---|
 | `status SUBCOMMAND` | `is-interactive is-login is-command-substitution current-filename current-function current-line-number stack-trace...` |
-| `history [search\|delete\|clear\|import]` | see [editing.md](editing.md) |
+| `history [search\|delete\|clear\|import\|browse]` | see [editing.md](editing.md) |
 | `bind`, `commandline` | key bindings and the command line, see [editing.md](editing.md) |
-| `integrate TOOL...` | hook up starship, zoxide, z, fzf, mise, direnv or atuin |
+| `integrate TOOL...` | hook up starship, zoxide, z, fzf, mise, direnv, atuin, or a file manager (see [integrations.md](integrations.md)) |
 | `theme [list\|choose NAME]` | highlighting colors |
 | `enable_transience`, `disable_transience` | the transient prompt |
 | `choose [--multi] ITEMS...` | an interactive picker for scripts: `git branch \| choose` |

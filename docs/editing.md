@@ -53,6 +53,17 @@ order, so `gpu` finds `git push -u origin main`), use the arrows or `ctrl-r`
 again to move, `enter` or `tab` to put the command on the line for editing,
 and `escape` to cancel.
 
+`history browse` is the same search with more room: every command comes
+with the directory it ran in and how long ago, and the ones that failed
+are marked with `✗`. Whatever you pick is waiting on your next command
+line. It's not bound to anything by default; if you like it,
+
+```sh
+bind alt-r 'history browse'
+```
+
+and from the key it starts out searching for what you'd typed.
+
 History lives in `~/.local/share/ash/history`. The first time ash starts it
 imports your fish history, or zsh's, or bash's, whichever it finds first.
 `history import fish` (or `zsh`, `bash`) does it again later. Commands that
@@ -87,7 +98,7 @@ doesn't exist when a close one does.
 | `ctrl-a`, `home` / `ctrl-e`, `end` | start / end of line |
 | `ctrl-b`, `←` / `ctrl-f`, `→` | a character back / forward |
 | `alt-b`, `ctrl-←` / `alt-f`, `ctrl-→` | a word back / forward |
-| `alt-←` / `alt-→` | on an empty line: previous / next directory |
+| `alt-←` / `alt-→` | on an empty line: previous / next directory (`cdh` shows them all) |
 | `ctrl-w` | delete back to the previous `/`, `=` or space (path component) |
 | `alt-backspace` | delete the previous word |
 | `alt-d` | delete the next word |
