@@ -9,8 +9,7 @@ import (
 	"github.com/andrinoff/ash/internal/shell"
 )
 
-// Temporary stand-ins for components that are being built separately
-// (highlighter, completion engine).
+// Adapters between the editor and the shell's components.
 
 type historyBackend interface {
 	shell.History
@@ -53,8 +52,8 @@ func (h *storeHistory) Fuzzy(q string, limit int, home string) []editor.SearchRe
 
 func (h *storeHistory) Close() {}
 
-func (r *REPL) highlight(buf string) []string { return nil }
+func (r *REPL) highlight(buf string) []string { return r.sh.Highlight(buf) }
 
-func (r *REPL) complete(buf string, cursor int) editor.Completion { return editor.Completion{} }
+func (r *REPL) complete(buf string, cursor int) editor.Completion { return r.sh.Complete(buf, cursor) }
 
-func (r *REPL) suggestionOK(s string) bool { return true }
+func (r *REPL) suggestionOK(s string) bool { return r.sh.SuggestionOK(s) }
