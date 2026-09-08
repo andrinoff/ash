@@ -213,6 +213,11 @@ func bCdh(sh *Shell, io *IO, args []string) int {
 	if len(args) > 1 {
 		return sh.changeDir(args[1], io, false)
 	}
+	if sh.Interactive && io.In.TTY && io.Out.TTY {
+		if pick, ok := builtins["__ash_pick_dir"]; ok {
+			return pick(sh, io, []string{"__ash_pick_dir"})
+		}
+	}
 	seen := map[string]bool{}
 	var dirs []string
 	for i := len(sh.dirPrev) - 1; i >= 0; i-- {
