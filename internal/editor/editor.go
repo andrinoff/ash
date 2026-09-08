@@ -109,6 +109,7 @@ type Editor struct {
 	prompt  Prompt
 	opts    ReadOpts
 	done    bool
+	reading bool // inside ReadLine (so a binding is running, not a command)
 	result  string
 	err     error
 	message string
@@ -194,6 +195,8 @@ func (e *Editor) Notify(msg string) {
 
 // ReadLine reads one line of input.
 func (e *Editor) ReadLine(o ReadOpts) (string, error) {
+	e.reading = true
+	defer func() { e.reading = false }()
 	e.opts = o
 	e.buf = []rune(o.Initial)
 	e.pos = len(e.buf)
@@ -560,6 +563,11 @@ func (e *Editor) Repaint() {
 	e.repaint = true
 	e.recalc = true
 }
+
+// Reading reports whether the editor is reading a line. Code run from a
+// key binding sees true; a command typed at the prompt sees false, since
+// the line was already accepted.
+func (e *Editor) Reading() bool { return e.reading }
 
 // PagerActive reports whether the completion pager is open.
 func (e *Editor) PagerActive() bool { return e.pager != nil }

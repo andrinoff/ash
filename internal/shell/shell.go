@@ -34,6 +34,10 @@ type Editor interface {
 	Keymap() string
 	Repaint()
 	PagerActive() bool
+	// Reading reports whether a line is being edited, which is the case
+	// in key bindings (and completions) but not in commands typed at the
+	// prompt.
+	Reading() bool
 }
 
 // History is the part of history the interpreter needs.

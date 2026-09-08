@@ -174,6 +174,7 @@ func (e *integEditor) SetKeymap(name string)        {}
 func (e *integEditor) Keymap() string               { return "default" }
 func (e *integEditor) Repaint()                     {}
 func (e *integEditor) PagerActive() bool            { return false }
+func (e *integEditor) Reading() bool                { return true }
 func (e *integEditor) Bind(mode, key, command, setsMode string) error {
 	e.binds = append(e.binds, mode+" "+key+" "+command)
 	return nil

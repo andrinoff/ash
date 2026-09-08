@@ -267,6 +267,7 @@ type fakeEditor struct {
 	buf      string
 	cursor   int
 	repaints int
+	typed    bool // a command typed at the prompt rather than a binding
 }
 
 func (e *fakeEditor) Buffer() (string, int)                     { return e.buf, e.cursor }
@@ -279,6 +280,7 @@ func (e *fakeEditor) SetKeymap(string)                          {}
 func (e *fakeEditor) Keymap() string                            { return "default" }
 func (e *fakeEditor) Repaint()                                  { e.repaints++ }
 func (e *fakeEditor) PagerActive() bool                         { return false }
+func (e *fakeEditor) Reading() bool                             { return !e.typed }
 
 func TestHistoryBrowseBuiltin(t *testing.T) {
 	when := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
@@ -299,6 +301,7 @@ func TestHistoryBrowseBuiltin(t *testing.T) {
 		out, errs  string
 		status     int
 		wantBuffer string
+		wantNext   string // the next command line, for a typed command
 	}{
 		{name: "prints without an editor", history: &fakeHistory{cmds: []string{"make", "ls"}}, src: "__ash_history_browse",
 			result: "ls", calls: 1, entries: []tui.HistoryItem{{Cmd: "make", Status: -1}, {Cmd: "ls", Status: -1}}, out: "ls\n"},
@@ -311,6 +314,11 @@ func TestHistoryBrowseBuiltin(t *testing.T) {
 			result: "make test", calls: 1, entries: detailed, out: "make test\n"},
 		{name: "dismissed", history: &fakeHistory{cmds: []string{"ls"}}, editor: &fakeEditor{buf: "keep"},
 			src: "__ash_history_browse", err: tui.ErrCanceled, calls: 1, entries: []tui.HistoryItem{{Cmd: "ls", Status: -1}}, query: "keep", status: 1, wantBuffer: "keep"},
+		{name: "typed at the prompt", history: &fakeHistory{cmds: []string{"git status", "ls"}},
+			editor: &fakeEditor{buf: "history browse", cursor: 14, typed: true},
+			src:    "__ash_history_browse", result: "git status", calls: 1,
+			entries:    []tui.HistoryItem{{Cmd: "git status", Status: -1}, {Cmd: "ls", Status: -1}},
+			wantBuffer: "history browse", wantNext: "git status"},
 		{name: "empty history", history: &fakeHistory{}, src: "__ash_history_browse", status: 1},
 		{name: "no history", src: "__ash_history_browse", errs: "__ash_history_browse: history is not available\n", status: 1},
 	}
@@ -346,9 +354,12 @@ func TestHistoryBrowseBuiltin(t *testing.T) {
 				if tt.editor.buf != tt.wantBuffer {
 					t.Errorf("command line = %q, want %q", tt.editor.buf, tt.wantBuffer)
 				}
-				if tt.result != "" && tt.err == nil && tt.editor.cursor != len(tt.wantBuffer) {
+				if tt.result != "" && tt.err == nil && !tt.editor.typed && tt.editor.cursor != len(tt.wantBuffer) {
 					t.Errorf("cursor = %d, want the end (%d)", tt.editor.cursor, len(tt.wantBuffer))
 				}
+			}
+			if next := sh.TakeNextBuffer(); next != tt.wantNext {
+				t.Errorf("next command line = %q, want %q", next, tt.wantNext)
 			}
 		})
 	}

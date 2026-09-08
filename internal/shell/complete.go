@@ -736,6 +736,7 @@ func (e *compEditor) Buffer() (string, int) { return e.buf, e.pos }
 func (e *compEditor) SetBuffer(string, int) {}
 func (e *compEditor) Repaint()              {}
 func (e *compEditor) PagerActive() bool     { return false }
+func (e *compEditor) Reading() bool         { return true }
 func (e *compEditor) QueueFunctions(n ...string) {
 	if e.inner != nil {
 		e.inner.QueueFunctions(n...)

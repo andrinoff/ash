@@ -16,6 +16,12 @@ func bHistory(sh *Shell, io *IO, args []string) int {
 	sub := "search"
 	if len(a) > 0 && !strings.HasPrefix(a[0], "-") {
 		switch a[0] {
+		case "browse":
+			if b, ok := builtins["__ash_history_browse"]; ok {
+				return b(sh, io, append([]string{"__ash_history_browse"}, a[1:]...))
+			}
+			fmt.Fprintln(io.Err, "history browse: not available")
+			return 1
 		case "search", "delete", "clear", "merge", "save", "import", "append", "clear-session":
 			sub = a[0]
 			a = a[1:]

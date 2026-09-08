@@ -232,7 +232,8 @@ type HistoryWalker interface {
 
 // bHistoryBrowse searches the history and puts the chosen command on the
 // command line, or prints it when there is no line editor. Arguments are
-// the initial query; without them, the command line is.
+// the initial query; without them, from a key binding, the command line
+// is.
 func bHistoryBrowse(sh *Shell, io *IO, args []string) int {
 	if sh.History == nil {
 		fmt.Fprintf(io.Err, "%s: history is not available\n", args[0])
@@ -254,10 +255,14 @@ func bHistoryBrowse(sh *Shell, io *IO, args []string) int {
 	if len(entries) == 0 {
 		return 1
 	}
+	// From a key binding the line being edited is the query, and the
+	// choice replaces it. Typed as a command, the choice goes on the next
+	// command line instead.
+	binding := sh.Editor != nil && sh.Editor.Reading()
 	opts := sh.pickerOptions()
 	if len(args) > 1 {
 		opts.Query = strings.Join(args[1:], " ")
-	} else if sh.Editor != nil {
+	} else if binding {
 		opts.Query, _ = sh.Editor.Buffer()
 	}
 	var cmd string
@@ -268,11 +273,14 @@ func bHistoryBrowse(sh *Shell, io *IO, args []string) int {
 	if status != 0 {
 		return status
 	}
-	if sh.Editor != nil {
+	switch {
+	case binding:
 		sh.Editor.SetBuffer(cmd, len(cmd))
-		return 0
+	case sh.Editor != nil && !sh.subshell:
+		sh.shared.actions.buffer = cmd
+	default:
+		fmt.Fprintln(io.Out, cmd)
 	}
-	fmt.Fprintln(io.Out, cmd)
 	return 0
 }
 
