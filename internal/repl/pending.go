@@ -50,6 +50,16 @@ func (h *storeHistory) Fuzzy(q string, limit int, home string) []editor.SearchRe
 	return out
 }
 
+// EachRecent gives the history browser when, where and with what status
+// each command ran.
+func (h *storeHistory) EachRecent(f func(cmd string, when time.Time, dir string, status int) bool) {
+	for _, e := range h.Store.Entries() {
+		if !f(e.Cmd, e.When, e.Dir, e.Status) {
+			return
+		}
+	}
+}
+
 func (h *storeHistory) Close() {}
 
 func (r *REPL) highlight(buf string) []string { return r.sh.Highlight(buf) }
