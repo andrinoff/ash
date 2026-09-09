@@ -19,6 +19,8 @@ import (
 //	~/.cache/fish/generated_completions (made by fish_update_completions)
 //
 // and are named CMD.ash (ash syntax) or CMD.fish (fish quoting rules).
+// Without one, a program built with cobra completes itself (see
+// complete_cobra.go).
 
 // load sources the completion file for cmd, the first time only.
 func (r *compRun) load(cmd string) {
@@ -34,7 +36,7 @@ func (r *compRun) load(cmd string) {
 	c.loaded[cmd] = true
 	c.mu.Unlock()
 	if p := r.findCompletion(cmd); p != "" {
-		if b, err := os.ReadFile(p); err == nil {
+		if b, err := os.ReadFile(p); err == nil && !(cobraScript(b) && r.loadCobra(cmd)) {
 			r.source(p, b)
 		}
 		return
@@ -51,6 +53,7 @@ func (r *compRun) load(cmd string) {
 			return
 		}
 	}
+	r.loadCobra(cmd)
 }
 
 // completionDirs returns the directories searched before fish's own
