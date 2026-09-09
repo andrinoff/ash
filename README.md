@@ -50,7 +50,8 @@ current shell; `exit` takes you back.
   fish's z plugin. See [docs/integrations.md](docs/integrations.md).
 - **fish's completions.** If fish is installed, ash reads its completion
   files, so `git <tab>`, `brew <tab>` and a thousand others work out of
-  the box.
+  the box. Go programs built with cobra (gh, kubectl, helm...) complete
+  themselves, with nothing to set up.
 - **A terminal citizen.** Proper job control (`ctrl-z`, `fg`, `bg`), window
   titles, OSC 7 so new tabs open in the same directory, OSC 133 so your
   terminal can jump between prompts, a `⏎` marker when output didn't end

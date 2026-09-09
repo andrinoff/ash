@@ -38,6 +38,13 @@ so if fish is installed you get completions for git, brew, docker, cargo
 and friends without doing anything. Your own go in
 `~/.config/ash/completions/COMMAND.ash`.
 
+Programs written in Go with [cobra](https://github.com/spf13/cobra) (gh,
+kubectl, helm, hugo, and a long tail of smaller tools) know how to
+complete their own arguments, and ash asks them directly. There's no
+`prog completion fish | source` step: when a command has no completion
+file, ash peeks at the module list Go stores in the binary, and if cobra
+is in it, Tab works. Nothing gets run just to find out.
+
 ## History
 
 | key | |
