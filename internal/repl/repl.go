@@ -88,6 +88,7 @@ func (r *REPL) editorConfig() editor.Config {
 			})
 		},
 		EditCommand: r.editCommand,
+		Explain:     func(buf string) string { return sh.FormatExplain(sh.Explain(buf), true) },
 		Style:       func(role string) string { return sh.Style(role).SGR() },
 	}
 }

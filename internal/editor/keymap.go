@@ -92,7 +92,7 @@ var emacsKeys = map[string]string{
 	"ctrl-v":          "paste-clipboard",
 	"alt-s":           "prepend-sudo",
 	"alt-h":           "man-page",
-	"alt-w":           "whatis",
+	"alt-w":           "explain-line",
 	"alt-l":           "list-directory",
 	"alt-p":           "append-pager",
 	"ctrl-space":      "insert-space",

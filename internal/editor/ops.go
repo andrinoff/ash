@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -78,6 +79,7 @@ func init() {
 		"prepend-sudo":                   fnPrependSudo,
 		"man-page":                       func(e *Editor, k Key) { e.helpCommand("man") },
 		"whatis":                         fnWhatis,
+		"explain-line":                   fnExplainLine,
 		"list-directory":                 fnListDirectory,
 		"append-pager":                   func(e *Editor, k Key) { e.insertAtEnd(" | " + pagerCmd()) },
 		"insert-space":                   func(e *Editor, k Key) { e.insert([]rune{' '}) },
@@ -818,6 +820,26 @@ func fnWhatis(e *Editor, k Key) {
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	if len(lines) > 5 {
 		lines = lines[:5]
+	}
+	e.message = strings.Join(lines, "\n")
+}
+
+// fnExplainLine shows what the command and each of its options does,
+// below the command line. Without an explanation it falls back to whatis.
+func fnExplainLine(e *Editor, k Key) {
+	if e.cfg.Explain == nil || strings.TrimSpace(string(e.buf)) == "" {
+		fnWhatis(e, k)
+		return
+	}
+	msg := strings.TrimRight(e.cfg.Explain(string(e.buf)), "\n")
+	if msg == "" {
+		fnWhatis(e, k)
+		return
+	}
+	lines := strings.Split(msg, "\n")
+	if max := e.rows / 2; max >= 3 && len(lines) > max {
+		more := len(lines) - max + 1
+		lines = append(lines[:max-1], e.style("pager_progress")+"… "+strconv.Itoa(more)+" more (the explain command shows everything)"+reset)
 	}
 	e.message = strings.Join(lines, "\n")
 }

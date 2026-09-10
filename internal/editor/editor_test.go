@@ -394,3 +394,40 @@ func TestCompleteCommonPrefix(t *testing.T) {
 		t.Fatalf("commonPrefix split a rune: %q", got)
 	}
 }
+
+func TestExplainLine(t *testing.T) {
+	e := newTestEditor(80)
+	e.rows = 12
+	var asked string
+	e.cfg.Explain = func(buf string) string {
+		asked = buf
+		return "tar  manipulate tape archives\n  -x  Extract\n"
+	}
+	e.insert([]rune("tar -x"))
+	e.call("explain-line", Key{})
+	if asked != "tar -x" || e.message != "tar  manipulate tape archives\n  -x  Extract" {
+		t.Fatalf("asked %q, message %q", asked, e.message)
+	}
+	if string(e.buf) != "tar -x" {
+		t.Errorf("the line changed: %q", string(e.buf))
+	}
+
+	// more than half the screen: cut, saying how much is left
+	e.cfg.Explain = func(string) string { return strings.Repeat("row\n", 20) }
+	e.call("explain-line", Key{})
+	lines := strings.Split(e.message, "\n")
+	if len(lines) != 6 || !strings.Contains(lines[5], "15 more") {
+		t.Errorf("long explanation: %q", lines)
+	}
+
+	// nothing typed: nothing to explain
+	e.cfg.Explain = func(string) string { t.Error("explained an empty line"); return "" }
+	e.buf, e.pos, e.message = nil, 0, ""
+	e.call("explain-line", Key{})
+	if e.message != "" {
+		t.Errorf("empty line: %q", e.message)
+	}
+	if got := emacsKeys["alt-w"]; got != "explain-line" {
+		t.Errorf("alt-w is bound to %q", got)
+	}
+}

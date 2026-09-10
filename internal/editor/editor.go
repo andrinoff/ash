@@ -63,6 +63,8 @@ type Config struct {
 	EditCommand   func(buf string) (string, bool)
 	Style         func(role string) string
 	OnKeymap      func(name string)
+	// Explain describes each word of a command line (alt-w).
+	Explain func(buf string) string
 }
 
 // ReadOpts configures one ReadLine call.
