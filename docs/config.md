@@ -89,7 +89,8 @@ enable_transience
   same place.
 - Marks prompts and command output (OSC 133), which lets terminals like
   Ghostty, kitty, WezTerm and iTerm2 jump between prompts and select a
-  command's output.
+  command's output. In kitty you can also click anywhere in the command
+  you're typing to move the cursor there.
 
 ## Highlighting colors
 

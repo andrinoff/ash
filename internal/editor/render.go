@@ -246,7 +246,9 @@ func (e *Editor) draw(f frame) {
 	}
 	b.WriteByte('\r')
 	if e.opts.MarkPrompt && !e.marked {
-		b.WriteString("\x1b]133;A\x07")
+		// click_events: the terminal may turn a click on the command
+		// line into arrow keys that move the cursor there (kitty does)
+		b.WriteString("\x1b]133;A;click_events=1\x07")
 		e.marked = true
 	}
 	full := e.prev == nil
