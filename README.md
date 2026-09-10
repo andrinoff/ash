@@ -42,7 +42,9 @@ current shell; `exit` takes you back.
   [docs/language.md](docs/language.md).
 - **fish's editor**, plus a few things fish doesn't do: vi mode with text
   objects, `!!` and `!$`, a fuzzy `ctrl-r`, `alt-.` for the last argument,
-  copy and paste with `ctrl-x` / `ctrl-v`. See [docs/editing.md](docs/editing.md).
+  copy and paste with `ctrl-x` / `ctrl-v`, and `alt-w`, which explains
+  the line you're typing flag by flag before you run it. See
+  [docs/editing.md](docs/editing.md).
 - **Your tools, built in.** `integrate starship zoxide fzf mise direnv
   atuin` replaces the `init | source` lines. Starship gets a transient
   prompt and renders its left and right prompts in parallel while you're

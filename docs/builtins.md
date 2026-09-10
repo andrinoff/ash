@@ -92,5 +92,6 @@ Typing a directory as a command (`..`, `~/src`, `./build/`) changes to it.
 | `theme [list\|choose NAME]` | highlighting colors |
 | `enable_transience`, `disable_transience` | the transient prompt |
 | `choose [--multi] ITEMS...` | an interactive picker for scripts: `git branch \| choose` |
+| `explain COMMAND LINE` | what a command and each of its options does, without running it |
 | `umask`, `ulimit`, `times`, `hash` | |
 | `help [NAME]` | |

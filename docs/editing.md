@@ -119,7 +119,7 @@ doesn't exist when a close one does.
 | `alt-s` | add or remove `sudo` at the front (on an empty line, the last command with sudo) |
 | `alt-e`, `alt-v`, `ctrl-x ctrl-e` | edit the line in `$VISUAL` / `$EDITOR` |
 | `alt-h` | open the man page for the command under the cursor |
-| `alt-w` | show `whatis` for it |
+| `alt-w` | explain the line: what the command is and what each option does (see below) |
 | `alt-l` | list the directory under the cursor |
 | `alt-p` | append `\| less` (or `$PAGER`) |
 | `alt-#` | comment the line out and keep it in history |
@@ -127,6 +127,26 @@ doesn't exist when a close one does.
 | `ctrl-c` | cancel the line |
 | `ctrl-d` | delete a character, or exit on an empty line |
 | `ctrl-q` | insert the next key literally |
+
+`alt-w` is for the command you found in a README and don't quite trust.
+It shows, under the line, what each part does:
+
+```
+❯ tar -czf backup.tgz --exclude .git src
+tar           manipulate tape archives
+  -c          Create archive
+  -z          Filter through gzip
+  -f          Archive file
+  backup.tgz  argument of -f
+  --exclude   Exclude file
+  .git        argument of --exclude
+```
+
+The descriptions come from the man page's summary line and from the
+completion definitions, so anything that completes well explains well,
+including git subcommands and cobra programs. Nothing is run. `explain`
+does the same from a script or the prompt: `explain git rebase -i
+HEAD~3`.
 
 Pressing enter on an unfinished line (an open quote, a `for` without its
 `end`, a trailing `|`) starts a new line instead of running it. Pasted text
