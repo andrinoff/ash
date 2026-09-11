@@ -243,7 +243,7 @@ type fuzzyMatcher struct {
 	fwd, bwd   []int32 // the first and last place each query rune can match
 	off        []int32 // where each query rune's cells start
 	score      []int32 // the best score with the query rune matched here
-	run        []int16 // how many matches in a row end here
+	run        []int32 // how many matches in a row end here
 	from       []int32 // where the previous query rune matched
 	posScratch []int
 }
@@ -396,7 +396,7 @@ func (m *fuzzyMatcher) best(cells int, withPos bool) (int, []int, bool) {
 			if t[j] != p[i] {
 				continue
 			}
-			best, r, src := int32(negInf), int16(0), int32(-1)
+			best, r, src := int32(negInf), int32(0), int32(-1)
 			if q := j - 1; q <= bp {
 				if v := score[po+q-fp]; v > negInf {
 					// Consecutive matches get at least the bonus of the

@@ -263,6 +263,30 @@ func TestFuzzyLongCommand(t *testing.T) {
 	}
 }
 
+// TestFuzzyLongQuery searches with queries longer than an int16 run of
+// consecutive matches, as when a long command line is the query.
+func TestFuzzyLongQuery(t *testing.T) {
+	for _, n := range []int{32767, 32768, 40000} {
+		q := strings.Repeat("a", n)
+		for _, text := range []string{q, "x " + q + " y"} {
+			m := newFuzzyMatcher(q)
+			score, pos, ok := m.match(text, true)
+			if !ok || len(pos) != n {
+				t.Fatalf("%d runes: ok %v, %d positions", n, ok, len(pos))
+			}
+			first := strings.Index(text, "a")
+			for i, p := range pos {
+				if p != first+i {
+					t.Fatalf("%d runes: position %d is %d, want %d", n, i, p, first+i)
+				}
+			}
+			if score2, _, _ := m.match(text, false); score2 != score {
+				t.Errorf("%d runes: scores %d without positions, %d with", n, score2, score)
+			}
+		}
+	}
+}
+
 func TestClassOf(t *testing.T) {
 	tests := []struct {
 		r    rune
