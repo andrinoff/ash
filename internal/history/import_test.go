@@ -41,7 +41,7 @@ func TestParseFish(t *testing.T) {
 ---
 - cmd: echo hello
   when: 1700000006
-- cmd: partial`
+- cmd: git sta`
 	want := []item{
 		{cmd: "echo hello", when: 1700000000},
 		{cmd: `printf '%s\n' a\\b`, when: 1700000001},
@@ -50,9 +50,15 @@ func TestParseFish(t *testing.T) {
 		{cmd: "no time"},
 		{cmd: `echo \x41`, when: 1700000005},
 		{cmd: "echo hello", when: 1700000006},
-		{cmd: "partial"},
+		// Like fish, not the last line without a newline: fish may still
+		// be writing it.
 	}
 	if got := parseFish(data); !reflect.DeepEqual(got, want) {
+		t.Errorf("parseFish:\n got %+v\nwant %+v", got, want)
+	}
+	// Nor the time on such a line.
+	want = []item{{cmd: "echo hello", when: 1700000000}, {cmd: "ls"}}
+	if got := parseFish("- cmd: echo hello\n  when: 1700000000\n- cmd: ls\n  when: 17000"); !reflect.DeepEqual(got, want) {
 		t.Errorf("parseFish:\n got %+v\nwant %+v", got, want)
 	}
 }

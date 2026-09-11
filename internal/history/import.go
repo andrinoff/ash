@@ -231,8 +231,10 @@ func nextLine(data string) (line, rest string) {
 // parseFish parses fish's history file, a subset of YAML in which an entry
 // is a "- cmd: <command>" line followed by indented "when: <unix seconds>"
 // and "paths:" lines (and the list of paths). Commands have backslashes
-// escaped as \\ and newlines as \n.
+// escaped as \\ and newlines as \n. Like fish, it ignores a last line
+// without a newline, which fish may still be writing.
 func parseFish(data string) []item {
+	data = data[:strings.LastIndexByte(data, '\n')+1]
 	var recs []item
 	cur := -1
 	for data != "" {
