@@ -22,17 +22,13 @@ const (
 // too long) the file is returned anyway: appends are atomic regardless, and
 // a stuck shell mustn't hang this one. Closing the file unlocks it.
 func openLocked(path string, flag int, wait time.Duration) (*os.File, error) {
-	for attempt := 0; ; attempt++ {
-		f, err := os.OpenFile(path, flag, 0o600)
-		if errors.Is(err, fs.ErrNotExist) && flag&os.O_CREATE != 0 {
-			if err = os.MkdirAll(filepath.Dir(path), 0o700); err == nil {
-				f, err = os.OpenFile(path, flag, 0o600)
-			}
-		}
+	deadline := time.Now().Add(wait)
+	for {
+		f, err := openFile(path, flag)
 		if err != nil {
 			return nil, err
 		}
-		if !lockFile(f, wait) || attempt == 3 {
+		if !lockFile(f, time.Until(deadline)) {
 			return f, nil
 		}
 		fi, err := f.Stat()
@@ -41,7 +37,23 @@ func openLocked(path string, flag int, wait time.Duration) (*os.File, error) {
 			return f, nil
 		}
 		f.Close() // replaced or removed while we waited: start over
+		if time.Now().After(deadline) {
+			// It keeps being replaced: go ahead without the lock, with
+			// the current file rather than one that is gone.
+			return openFile(path, flag)
+		}
 	}
+}
+
+// openFile opens path, creating its directory if flag has os.O_CREATE.
+func openFile(path string, flag int) (*os.File, error) {
+	f, err := os.OpenFile(path, flag, 0o600)
+	if errors.Is(err, fs.ErrNotExist) && flag&os.O_CREATE != 0 {
+		if err = os.MkdirAll(filepath.Dir(path), 0o700); err == nil {
+			f, err = os.OpenFile(path, flag, 0o600)
+		}
+	}
+	return f, err
 }
 
 // appendFile appends rec, one line, to the history file with a single
