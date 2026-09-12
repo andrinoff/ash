@@ -2,6 +2,7 @@ package history
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -124,6 +125,10 @@ func (s *Store) rewrite(read bool, edit func([]item) ([]item, bool)) error {
 	if f != nil {
 		if old, err = f.Stat(); err != nil {
 			return err
+		}
+		if !old.Mode().IsRegular() {
+			// Such as /dev/null, to keep no history: never replace it.
+			return fmt.Errorf("%s is not a regular file", path)
 		}
 		if read {
 			data, err := readAll(f, old.Size())

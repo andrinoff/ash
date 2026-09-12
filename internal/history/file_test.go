@@ -3,6 +3,7 @@ package history
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -50,6 +51,36 @@ func TestRewriteKeepsMode(t *testing.T) {
 		if !sameOwner(before, after) {
 			t.Errorf("after %s: the owner changed", op.name)
 		}
+	}
+}
+
+// TestRewriteDevNull has the history file be a symlink to /dev/null, which
+// is how some people turn history off. Adding works and keeps nothing, and
+// a rewrite must fail rather than put a file in place of /dev/null (which
+// root could do).
+func TestRewriteDevNull(t *testing.T) {
+	if _, err := os.Stat(os.DevNull); err != nil || os.DevNull != "/dev/null" {
+		t.Skip("no /dev/null")
+	}
+	path := filepath.Join(t.TempDir(), "history")
+	if err := os.Symlink(os.DevNull, path); err != nil {
+		t.Skip(err)
+	}
+	s := reopen(t, path)
+	add(t, s, "a", "b")
+	equal(t, "Recent", s.Recent(0), []string{"b", "a"})
+	equal(t, "reopened", reopen(t, path).Recent(0), nil)
+	src := filepath.Join(t.TempDir(), "bash_history")
+	writeFile(t, src, "echo imported\n")
+	if _, err := s.ImportFile("bash", src); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Errorf("ImportFile into /dev/null: %v", err)
+	}
+	s.Clear()
+	if s.Len() != 0 {
+		t.Errorf("Len = %d after Clear", s.Len())
+	}
+	if fi, err := os.Stat(os.DevNull); err != nil || fi.Mode().IsRegular() {
+		t.Fatalf("/dev/null has been replaced (%v)", err)
 	}
 }
 
