@@ -257,8 +257,12 @@ func TestFuzzyLongCommand(t *testing.T) {
 			t.Fatal(err)
 		}
 		got := s.Fuzzy(tt.q, 1)
-		if len(got) != 1 || got[0].Score != tt.score || !reflect.DeepEqual(got[0].Positions, tt.pos) {
-			t.Errorf("Fuzzy(%q): got %d matches, score %d, positions %v; want %d %v", tt.q, len(got), got[0].Score, got[0].Positions, tt.score, tt.pos)
+		if len(got) != 1 {
+			t.Errorf("Fuzzy(%q): %d matches, want 1", tt.q, len(got))
+			continue
+		}
+		if got[0].Score != tt.score || !reflect.DeepEqual(got[0].Positions, tt.pos) {
+			t.Errorf("Fuzzy(%q): score %d, positions %v; want %d %v", tt.q, got[0].Score, got[0].Positions, tt.score, tt.pos)
 		}
 	}
 }
