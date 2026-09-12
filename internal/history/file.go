@@ -120,16 +120,18 @@ func (s *Store) rewrite(read bool, edit func([]item) ([]item, bool)) error {
 		return err
 	}
 	var recs []item
-	if read && f != nil {
-		fi, err := f.Stat()
-		if err != nil {
+	var old os.FileInfo
+	if f != nil {
+		if old, err = f.Stat(); err != nil {
 			return err
 		}
-		data, err := readAll(f, fi.Size())
-		if err != nil {
-			return err
+		if read {
+			data, err := readAll(f, old.Size())
+			if err != nil {
+				return err
+			}
+			recs, _ = parseRecords(data)
 		}
-		recs, _ = parseRecords(data)
 	}
 	recs, changed := edit(recs)
 	if !changed {
@@ -147,6 +149,9 @@ func (s *Store) rewrite(read bool, edit func([]item) ([]item, bool)) error {
 	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*")
 	if err != nil {
 		return err
+	}
+	if old != nil {
+		keepOwner(tmp, old)
 	}
 	_, err = tmp.Write(buf)
 	if err == nil {
@@ -172,6 +177,17 @@ func (s *Store) rewrite(read bool, edit func([]item) ([]item, bool)) error {
 	s.fi, s.off, s.fresh = fi, int64(len(buf)), false
 	s.mu.Unlock()
 	return nil
+}
+
+// keepOwner gives f, which is to replace the file old, its permissions and,
+// as far as it can, its owner, as fish does: root rewriting someone's
+// history (sudo keeps HOME on macOS) mustn't leave them a file they can't
+// read.
+func keepOwner(f *os.File, old os.FileInfo) {
+	f.Chmod(old.Mode().Perm())
+	if uid, gid, ok := fileOwner(old); ok {
+		f.Chown(uid, gid)
+	}
 }
 
 // Merge picks up the commands other shells have added to the history file

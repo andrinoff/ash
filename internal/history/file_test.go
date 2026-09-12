@@ -7,6 +7,58 @@ import (
 	"time"
 )
 
+// TestRewriteKeepsMode checks that deleting, clearing and importing keep
+// the history file's permissions and owner, as fish does: root rewriting
+// someone's history (sudo keeps HOME on macOS) mustn't take it from them.
+func TestRewriteKeepsMode(t *testing.T) {
+	s, path := open(t)
+	add(t, s, "a", "b", "c")
+	if err := os.Chmod(path, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if os.Geteuid() == 0 {
+		// Root can give the file away, and must give it back.
+		if err := os.Chown(path, 1, 1); err != nil {
+			t.Fatal(err)
+		}
+		if before, err = os.Stat(path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	src := filepath.Join(t.TempDir(), "bash_history")
+	writeFile(t, src, "echo imported\n")
+	for _, op := range []struct {
+		name string
+		do   func()
+	}{
+		{"Delete", func() { s.Delete("a") }},
+		{"ImportFile", func() { s.ImportFile("bash", src) }},
+		{"Clear", s.Clear},
+	} {
+		op.do()
+		after, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if after.Mode() != before.Mode() {
+			t.Errorf("after %s: mode %v, want %v", op.name, after.Mode(), before.Mode())
+		}
+		if !sameOwner(before, after) {
+			t.Errorf("after %s: the owner changed", op.name)
+		}
+	}
+}
+
+func sameOwner(a, b os.FileInfo) bool {
+	ua, ga, oka := fileOwner(a)
+	ub, gb, okb := fileOwner(b)
+	return oka == okb && ua == ub && ga == gb
+}
+
 // TestOpenLockedFollowsReplacements replaces the history file over and over
 // while openLocked waits for its lock, as shells deleting commands do. It
 // must end up with the current file, locked: an entry appended to one that
