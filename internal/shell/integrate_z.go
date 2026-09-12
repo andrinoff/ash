@@ -580,9 +580,13 @@ func (sh *Shell) zJump(io *IO, args []string) int {
 	if query == "" {
 		list = true
 	}
-	// "If we hit enter on a completion just go there."
+	// "If we hit enter on a completion just go there" (or print it: -e).
 	if !list && len(words) > 0 {
 		if last := words[len(words)-1]; strings.HasPrefix(last, "/") && integIsDir(last) {
+			if echo {
+				fmt.Fprintln(io.Out, last)
+				return 0
+			}
 			return sh.changeDir(last, io, false)
 		}
 	}

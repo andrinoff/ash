@@ -246,6 +246,12 @@ func TestZJump(t *testing.T) {
 		}
 	}
 
+	// -e prints a completed directory instead of going there.
+	start := it.sh.Dir()
+	if out, _, st := it.run("z -e " + work + "/betadir"); out != work+"/betadir\n" || st != 0 || it.sh.Dir() != start {
+		t.Errorf("z -e /abs: got %q status %d, in %s", out, st, it.sh.Dir())
+	}
+
 	it.mustRun("z beta")
 	if it.sh.Dir() != work+"/betadir" {
 		t.Fatalf("z beta went to %s", it.sh.Dir())
