@@ -76,11 +76,15 @@ func TestAtuinSearch(t *testing.T) {
 		buf                 string
 		queued              []string
 		st                  int
+		errs                string
 	}{
-		{"pick", "git status\n", "", "git status", nil, 0},
-		{"pick and run", "__atuin_accept__:make test\n", "", "make test", []string{"execute"}, 0},
-		{"cancel", "", "", "git", nil, 1},
-		{"error", "", "2", "git", nil, 2},
+		{"pick", "git status\n", "", "git status", nil, 0, ""},
+		{"pick and run", "__atuin_accept__:make test\n", "", "make test", []string{"execute"}, 0, ""},
+		{"cancel", "", "", "git", nil, 1, ""},
+		{"error", "", "2", "git", nil, 2, ""},
+		// What a failing atuin prints is an error, not a pick: it goes to
+		// the terminal and the command line stays.
+		{"error message", "Error: database is locked\n", "1", "git", nil, 1, "Error: database is locked\n"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -90,8 +94,8 @@ func TestAtuinSearch(t *testing.T) {
 			if c.status != "" {
 				it.write("log.status", c.status)
 			}
-			if _, _, st := it.run("__ash_atuin_search"); st != c.st {
-				t.Errorf("status %d, want %d", st, c.st)
+			if _, errs, st := it.run("__ash_atuin_search"); st != c.st || errs != c.errs {
+				t.Errorf("status %d stderr %q, want %d %q", st, errs, c.st, c.errs)
 			}
 			if ed.buf != c.buf || ed.cursor != len(c.buf) && c.st == 0 || !equalLines(ed.queued, c.queued) {
 				t.Errorf("buffer %q cursor %d queued %q", ed.buf, ed.cursor, ed.queued)

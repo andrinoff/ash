@@ -141,6 +141,11 @@ func bAtuinSearch(sh *Shell, io *IO, args []string) int {
 		}
 		return st
 	}
+	if st != 0 {
+		// atuin failed: what it printed is its error, not a pick.
+		fmt.Fprintln(io.Err, out)
+		return st
+	}
 	accept := strings.HasPrefix(out, "__atuin_accept__:")
 	out = strings.TrimPrefix(out, "__atuin_accept__:")
 	if sh.Editor == nil {
