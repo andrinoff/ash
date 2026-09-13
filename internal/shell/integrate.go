@@ -29,9 +29,13 @@ type integrations struct {
 	// jump answers `z`: the integration enabled last (z or zoxide).
 	jump func(sh *Shell, io *IO, args []string) int
 
-	// bg counts background work (data file writes, zoxide add, atuin);
-	// WaitIntegrations waits for it.
-	bg sync.WaitGroup
+	// bgN counts background work (data file writes, zoxide add, atuin)
+	// and bgIdle is closed when it drops to zero; WaitIntegrations waits
+	// for that. (A sync.WaitGroup panics when work starts again while a
+	// Wait that timed out is still pending.)
+	bgMu   sync.Mutex
+	bgN    int
+	bgIdle chan struct{}
 
 	z      zStore
 	zoxide zoxideState
@@ -216,24 +220,39 @@ func (sh *Shell) IntegrationEnabled(tool string) bool {
 // integrations (z data file writes, zoxide add, atuin history end); the
 // frontend calls it before exiting. It reports whether everything finished.
 func (sh *Shell) WaitIntegrations(timeout time.Duration) bool {
-	done := make(chan struct{})
-	go func() {
-		sh.shared.integr.bg.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
+	in := sh.shared.integr
+	in.bgMu.Lock()
+	n, idle := in.bgN, in.bgIdle
+	in.bgMu.Unlock()
+	if n == 0 {
 		return true
-	case <-time.After(timeout):
+	}
+	t := time.NewTimer(timeout)
+	defer t.Stop()
+	select {
+	case <-idle:
+		return true
+	case <-t.C:
 		return false
 	}
 }
 
 // background runs f in a goroutine that WaitIntegrations waits for.
 func (in *integrations) background(f func()) {
-	in.bg.Add(1)
+	in.bgMu.Lock()
+	if in.bgN == 0 {
+		in.bgIdle = make(chan struct{})
+	}
+	in.bgN++
+	in.bgMu.Unlock()
 	go func() {
-		defer in.bg.Done()
+		defer func() {
+			in.bgMu.Lock()
+			if in.bgN--; in.bgN == 0 {
+				close(in.bgIdle)
+			}
+			in.bgMu.Unlock()
+		}()
 		f()
 	}()
 }

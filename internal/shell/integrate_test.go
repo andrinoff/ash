@@ -3,6 +3,7 @@ package shell
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestIntegrateBuiltin(t *testing.T) {
@@ -122,6 +123,31 @@ func TestIntegrationEvalKeepsStatus(t *testing.T) {
 	}
 	if v := it.sh.Get("FROM_TOOL"); v != "a b" {
 		t.Errorf("FROM_TOOL=%q", v)
+	}
+}
+
+// WaitIntegrations may give up while work still runs (the frontend waits
+// with a timeout); work started afterwards must not trip over the wait it
+// abandoned (a sync.WaitGroup panics: "reused before previous Wait has
+// returned", which kills the shell).
+func TestWaitIntegrationsAfterTimeout(t *testing.T) {
+	sh := New()
+	in := sh.shared.integr
+	// Nothing to wait for is finished at once, whatever the timeout.
+	if !sh.WaitIntegrations(0) {
+		t.Fatal("nothing runs, yet WaitIntegrations timed out")
+	}
+	for i := 0; i < 20000; i++ {
+		release := make(chan struct{})
+		in.background(func() { <-release })
+		if sh.WaitIntegrations(0) {
+			t.Fatal("WaitIntegrations reported running work as finished")
+		}
+		close(release)
+		in.background(func() {})
+	}
+	if !sh.WaitIntegrations(10 * time.Second) {
+		t.Fatal("background work did not finish")
 	}
 }
 
