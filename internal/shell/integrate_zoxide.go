@@ -79,7 +79,18 @@ func (z *zoxideState) drain() {
 			return
 		}
 		z.mu.Unlock()
-		c := exec.Command(exe, append([]string{"add", "--"}, dirs...)...)
+		// zoxide add fails as a whole, saving nothing, when one of its
+		// directories is gone; drop the ones removed since the cd.
+		live := dirs[:0]
+		for _, d := range dirs {
+			if integIsDir(d) {
+				live = append(live, d)
+			}
+		}
+		if len(live) == 0 {
+			continue
+		}
+		c := exec.Command(exe, append([]string{"add", "--"}, live...)...)
 		c.Env = env
 		c.Dir = "/"
 		c.Run()

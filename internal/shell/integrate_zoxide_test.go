@@ -135,6 +135,45 @@ func TestZoxideAdd(t *testing.T) {
 	}
 }
 
+// `zoxide add` gives up on the whole call when one of its directories is
+// gone ("not a directory"), so a batch must not carry a directory that was
+// removed while the batch waited for the previous add.
+func TestZoxideAddSkipsRemovedDirs(t *testing.T) {
+	t.Chdir(t.TempDir())
+	it := newIntegTest(t)
+	// The first add waits for $LOG.go, so the next cds pile up into one
+	// batch; like zoxide, any argument that is not a directory fails it.
+	it.tool("zoxide", `if [ ! -e "$LOG.first" ]; then
+	: > "$LOG.first"
+	while [ ! -e "$LOG.go" ]; do sleep 0.01; done
+fi
+shift 2
+for d; do [ -d "$d" ] || { echo "zoxide: not a directory: $d" >&2; exit 1; }; done`)
+	it.mustRun("integrate zoxide")
+	a, b, c := it.mkdir("a"), it.mkdir("b"), it.mkdir("c")
+	it.mustRun("cd " + a)
+	for deadline := time.Now().Add(10 * time.Second); !fileExists(filepath.Join(it.home, "log.first")); {
+		if time.Now().After(deadline) {
+			t.Fatal("the first zoxide add did not start")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	it.mustRun("cd " + b + "; cd " + c)
+	if err := os.Remove(b); err != nil {
+		t.Fatal(err)
+	}
+	it.write("log.go", "")
+	want := []string{"zoxide [add] [--] [" + a + "]", "zoxide [add] [--] [" + c + "]"}
+	if calls := it.calls(); !equalLines(calls, want) {
+		t.Errorf("calls\n%q\nwant\n%q", calls, want)
+	}
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}
+
 func TestRealZoxide(t *testing.T) {
 	t.Chdir(t.TempDir())
 	it := newIntegTest(t)
