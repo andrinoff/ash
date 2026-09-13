@@ -69,9 +69,10 @@ func classOf(r rune) charClass {
 }
 
 // bonusFor is the bonus for matching a character of class cur that follows
-// one of class prev.
+// one of class prev. Like fzf 0.74, punctuation counts as starting a word
+// too: the "-" of "ls -la" or the "/" of "cd /src" earns the boundary bonus.
 func bonusFor(prev, cur charClass) int {
-	if cur > classDelimiter { // a word character
+	if cur >= classNonWord {
 		switch prev {
 		case classWhite:
 			return bonusBoundaryWhite

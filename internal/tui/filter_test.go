@@ -68,6 +68,11 @@ func TestRankingMatchesFzf(t *testing.T) {
 		{rankCase, "ob", "f-o-o-b|FooBar|fooBAR|foo bar|Foo_bar|foobar"},
 		{rankCase, "oo b", "f-o-o-b|foo bar|Foo_bar|FooBar|fooBAR|foobar"},
 		{rankCase, "Foo", "FooBar|Foo_bar"},
+		// Punctuation at the start of a word gets the boundary bonus.
+		{[]string{"ls-la", "ls -la"}, "-l", "ls -la|ls-la"},
+		{[]string{"make-test", "make -test"}, "-t", "make -test|make-test"},
+		{[]string{"C-", ", - ", "- 1"}, "-", ", - |- 1|C-"},
+		{[]string{"x/", "x /"}, "/", "x /|x/"},
 		{rankCmds, "", strings.Join(rankCmds, "|")},
 		{rankCmds, "zzz", ""},
 	}

@@ -39,6 +39,12 @@ func TestMatchScoreAndPositions(t *testing.T) {
 		// b after a tab is at a word boundary: 33 carried over the gap,
 		// plus 16 + 10.
 		{"ab", "a\tb", 59, []int{0, 2}},
+		// Punctuation after a space starts a word as well: "-" earns
+		// 16 + 2*10 and "l" carries that bonus, 16 + 10.
+		{"-l", "ls -la", 62, []int{3, 4}},
+		{"/", "cd /src", 36, []int{3}},
+		// After a letter it does not: 16 + 2*8, then 16 + 8.
+		{"-l", "ls-la", 56, []int{2, 3}},
 	}
 	for _, tt := range tests {
 		p := parsePattern(tt.query)
