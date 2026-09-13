@@ -592,7 +592,9 @@ func (sh *Shell) zJump(io *IO, args []string) int {
 	}
 	pattern := query
 	if here {
-		pattern = "^" + regexp.QuoteMeta(sh.dir)
+		// The current directory and what is below it; /a/b must not let
+		// its sibling /a/bc through.
+		pattern = "^" + regexp.QuoteMeta(strings.TrimSuffix(sh.dir, "/")) + "(/|$)"
 		if query != "" {
 			pattern += ".*" + query
 		}

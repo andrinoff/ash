@@ -291,6 +291,30 @@ func TestZJump(t *testing.T) {
 	}
 }
 
+// -c stays below the current directory: a sibling whose name merely starts
+// with it (alphadir-zz next to alphadir) is not below it.
+func TestZHereStaysBelow(t *testing.T) {
+	it, work := zTest(t)
+	it.mkdir("work/alphadir-zz/sub")
+	it.write(".local/share/z/data",
+		work+"/alphadir|1|1699999999\n"+
+			work+"/alphadir/sub|3|1699999990\n"+
+			work+"/alphadir-zz/sub|90|1699999999\n")
+	it.mustRun("cd " + work + "/alphadir") // rank 2, visited now: 60000
+	if out, _, st := it.run("z -c -e sub"); out != work+"/alphadir/sub\n" || st != 0 {
+		t.Errorf("z -c -e sub: %q status %d", out, st)
+	}
+	want := "common:    " + work + "/alphadir\n60000      " + work + "/alphadir\n89928      " + work + "/alphadir/sub\n"
+	if out := it.mustRun("z -c -l"); out != want {
+		t.Errorf("z -c -l:\n%s\nwant:\n%s", out, want)
+	}
+	// From / everything is below.
+	it.mustRun("cd /")
+	if out := it.mustRun("z -c -e zz"); out != work+"/alphadir-zz/sub\n" {
+		t.Errorf("z -c -e zz from /: %q", out)
+	}
+}
+
 func TestZNeedsIntegrate(t *testing.T) {
 	it := newIntegTest(t)
 	if _, _, st := it.run("z foo"); st != 127 {
