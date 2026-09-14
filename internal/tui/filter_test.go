@@ -73,6 +73,10 @@ func TestRankingMatchesFzf(t *testing.T) {
 		{[]string{"make-test", "make -test"}, "-t", "make -test|make-test"},
 		{[]string{"C-", ", - ", "- 1"}, "-", ", - |- 1|C-"},
 		{[]string{"x/", "x /"}, "/", "x /|x/"},
+		// Case folding is for upper-case letters only; these used to match
+		// (and, after a longer item, to crash the matcher).
+		{[]string{"xⅦ", "xⅶ"}, "ⅶ", "xⅶ"},
+		{[]string{"zzzzzzzzzzⓐ", "Ⓐ"}, "ⓐ", "zzzzzzzzzzⓐ"},
 		{rankCmds, "", strings.Join(rankCmds, "|")},
 		{rankCmds, "zzz", ""},
 	}

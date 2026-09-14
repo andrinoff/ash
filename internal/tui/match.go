@@ -273,11 +273,12 @@ func (m *matcher) matchTerm(t *term, text string, withPos bool) (int, bool) {
 }
 
 // isSubsequence is a quick allocation-free check that rejects most items
-// before the scoring pass decodes them.
+// before the scoring pass decodes them. It folds case as prepare does:
+// upper-case letters only, so "ⅶ" matches neither "Ⅶ" here nor in fzf.
 func isSubsequence(text string, pat []rune, caseSensitive bool) bool {
 	pi := 0
 	for _, r := range text {
-		if !caseSensitive {
+		if !caseSensitive && (r < utf8.RuneSelf || unicode.IsUpper(r)) {
 			r = toLower(r)
 		}
 		if r == pat[pi] {
@@ -339,6 +340,10 @@ func (m *matcher) fuzzy(t *term, text string, withPos bool) (int, bool) {
 			}
 			last = i
 		}
+	}
+	if pidx < M {
+		// F holds stale positions from an earlier item; never use them.
+		return 0, false
 	}
 	f0 := F[0]
 	width := last - f0 + 1

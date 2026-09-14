@@ -36,6 +36,9 @@ func TestMatchScoreAndPositions(t *testing.T) {
 		{"internal !tui", "internal/tui/tui.go", -1, nil},
 		{"x", "", -1, nil},
 		{"é", "café", 16, []int{3}},
+		// Only upper-case letters fold: Ⅶ is a number and Ⓐ a symbol.
+		{"ⅶ", "Ⅶ", -1, nil},
+		{"aⓐ", "aⒶ", -1, nil},
 		// b after a tab is at a word boundary: 33 carried over the gap,
 		// plus 16 + 10.
 		{"ab", "a\tb", 59, []int{0, 2}},
