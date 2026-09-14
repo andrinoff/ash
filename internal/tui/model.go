@@ -148,7 +148,7 @@ func newModel(k kind, items []item, opts ChooseOptions) *model {
 		m.all[i] = result{idx: int32(i), length: int32(trimmedLen(items[i].text))}
 		if k == kindHistory {
 			m.timeWidth = max(m.timeWidth, len(items[i].when))
-			m.dirWidth = max(m.dirWidth, ansi.StringWidthWc(items[i].dir))
+			m.dirWidth = max(m.dirWidth, ansi.StringWidthWc(sanitize(items[i].dir)))
 			m.anyFailed = m.anyFailed || items[i].failed
 		}
 	}
@@ -400,11 +400,11 @@ func (m *model) render() string {
 	var b strings.Builder
 	w := max(m.width, 1)
 	for _, h := range m.header {
-		b.WriteString(m.styles.Header.Render(ansi.TruncateWc(sanitize(h), w, ellipsis)))
+		b.WriteString(m.styles.Header.Render(truncateWc(sanitize(h), w, ellipsis)))
 		b.WriteByte('\n')
 	}
 
-	in := ansi.TruncateWc(m.input.View(), w, "")
+	in := truncateWc(m.input.View(), w, "")
 	b.WriteString(in)
 	inW := ansi.StringWidthWc(in)
 	if c := m.counter(); inW+len(c)+1 <= w {
@@ -490,10 +490,7 @@ func (m *model) renderRow(b *strings.Builder, i, w int) {
 	}
 	b.WriteString(strings.Repeat(" ", cmdW-ansi.StringWidthWc(text)+2))
 	if dirW > 0 {
-		d := sanitize(it.dir)
-		if dw := ansi.StringWidthWc(d); dw > dirW {
-			d = ansi.TruncateLeftWc(d, dw-dirW+1, ellipsis)
-		}
+		d := truncateLeftWc(sanitize(it.dir), dirW, ellipsis)
 		b.WriteString(m.styles.Dim.Render(d))
 		b.WriteString(strings.Repeat(" ", dirW-ansi.StringWidthWc(d)))
 		if timeW > 0 {
@@ -559,18 +556,50 @@ func (m *model) highlight(it *item, pos []int, cur bool, width int) string {
 			// Drop cells from the left so the last match is visible,
 			// with a cell of context after it when there is more text.
 			cut := min(lastCol-width+2, total-width)
-			out = ansi.TruncateLeftWc(out, cut+1, ellipsis)
+			out = truncateLeftWc(out, total-cut, ellipsis)
 		}
 	}
-	return ansi.TruncateWc(out, width, ellipsis)
+	return truncateWc(out, width, ellipsis)
+}
+
+// truncateWc cuts s, which may hold escape sequences, to at most width
+// cells, ending it with tail. Cells are counted per codepoint, as Bubble
+// Tea's renderer counts them. ansi.TruncateWc returns s whole when its
+// grapheme width fits, but "👨‍👩‍👧" is one grapheme and six cells; padding s
+// defeats that shortcut, and the cut then falls inside s.
+func truncateWc(s string, width int, tail string) string {
+	if ansi.StringWidthWc(s) <= width {
+		return s
+	}
+	return ansi.TruncateWc(s+strings.Repeat(" ", width+1), width, tail)
+}
+
+// truncateLeftWc cuts s from the left to at most width cells, starting it
+// with prefix. ansi.TruncateLeftWc keeps a wide character that straddles
+// the cut, a cell too many; this drops it as well.
+func truncateLeftWc(s string, width int, prefix string) string {
+	sw := ansi.StringWidthWc(s)
+	if sw <= width {
+		return s
+	}
+	if width <= 0 {
+		return ""
+	}
+	for n := sw - width + ansi.StringWidthWc(prefix); ; n++ {
+		if t := ansi.TruncateLeftWc(s, n, prefix); ansi.StringWidthWc(t) <= width {
+			return t
+		}
+	}
 }
 
 // sanitize makes control characters visible without changing the number
-// of runes, so match positions still line up.
+// of runes, so match positions still line up. Bytes that are not UTF-8
+// become "�" (strings.Map does that), as they are drawn: measured raw, they
+// take no room, and the row would come out wider than measured.
 func sanitize(s string) string {
 	clean := true
 	for _, r := range s {
-		if r < 0x20 || r == 0x7f || r >= 0x80 && r < 0xa0 {
+		if r < 0x20 || r == 0x7f || r >= 0x80 && r < 0xa0 || r == utf8.RuneError {
 			clean = false
 			break
 		}

@@ -403,6 +403,46 @@ func TestControlCharactersAreVisible(t *testing.T) {
 	}
 }
 
+// Rows never come out wider than the terminal, whatever the items hold:
+// wide characters straddling a cut, clusters like "👨‍👩‍👧" (one grapheme but
+// six cells to the renderer), bytes that are not UTF-8, control characters.
+// Directories and commands like these used to crash the history browser
+// with a negative strings.Repeat count.
+func TestRowsFitTheWidth(t *testing.T) {
+	now := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+	odd := []string{
+		"/home/u/世界世界世界世界世界世界世界世界世界",
+		"echo " + strings.Repeat("👨‍👩‍👧", 7),
+		"/tmp/😀😀😀😀😀😀😀😀😀😀😀😀",
+		"bad \xff\xfe\xfd bytes \xc3\x28 and some more text after them",
+		"tabs\tand\nnewlines\x1b[31m and escapes",
+	}
+	var hist []HistoryItem
+	for i, s := range odd {
+		hist = append(hist, HistoryItem{Cmd: s, When: now.Add(-time.Duration(i+1) * time.Hour), Dir: odd[len(odd)-1-i], Status: i % 2})
+	}
+	models := map[string]func() *model{
+		"choose":  func() *model { return chooseModel(odd, ChooseOptions{Multi: true, Header: odd[1]}) },
+		"dir":     func() *model { return newModel(kindDir, dirItems(odd, "/home/u"), ChooseOptions{}) },
+		"history": func() *model { return newModel(kindHistory, historyItems(hist, now, "/home/u"), ChooseOptions{}) },
+	}
+	for name, mk := range models {
+		for _, query := range []string{"", "e", "世界", "bytes", "👩"} {
+			for w := 8; w <= 70; w++ {
+				m := mk()
+				m.input.SetValue(query)
+				m.refilter()
+				m.Update(tea.WindowSizeMsg{Width: w, Height: 10})
+				for i, line := range strings.Split(m.View().Content, "\n") {
+					if lw := ansi.StringWidthWc(line); lw > w {
+						t.Errorf("%s, query %q, %d columns: line %d is %d cells wide: %q", name, query, w, i, lw, line)
+					}
+				}
+			}
+		}
+	}
+}
+
 func TestRelTime(t *testing.T) {
 	now := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
 	day := 24 * time.Hour
@@ -485,6 +525,7 @@ func TestSanitize(t *testing.T) {
 		{"\x00\x7f", "␀␡"},
 		{"\u0085", "�"},
 		{"ünïcödé", "ünïcödé"},
+		{"a\xffb\xc3", "a�b�"},
 	}
 	for _, tt := range tests {
 		got := sanitize(tt.in)
