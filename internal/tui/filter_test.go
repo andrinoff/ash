@@ -88,6 +88,47 @@ func TestRankingMatchesFzf(t *testing.T) {
 	}
 }
 
+// Past 100*1024 cells (text runes times query runes) fzf matches greedily
+// rather than optimally, and so does the picker, which also keeps its
+// memory bounded on huge lines. The orders are fzf 0.74's.
+func TestLongItemsMatchGreedily(t *testing.T) {
+	long := func(n int) string { return "xaxb" + strings.Repeat("y", n) + " ab" }
+	tests := []struct {
+		items []string
+		want  []int // item indices, best first
+	}{
+		// 60007 runes × 2: the greedy match "axb" scores 29, "xab" 36.
+		{[]string{long(60000), "xab"}, []int{1, 0}},
+		// 40007 × 2 fits: the best match, " ab", scores 62.
+		{[]string{long(40000), "xab"}, []int{0, 1}},
+	}
+	for _, tt := range tests {
+		its := make([]item, len(tt.items))
+		for i, s := range tt.items {
+			its[i] = item{text: s, value: s}
+		}
+		m := newModel(kindChoose, its, ChooseOptions{Query: "ab"})
+		var got []int
+		for _, r := range m.matches {
+			got = append(got, int(r.idx))
+		}
+		if !slices.Equal(got, tt.want) {
+			t.Errorf("%d-rune item: order %v, want %v", len(tt.items[0]), got, tt.want)
+		}
+	}
+
+	var m matcher
+	p := parsePattern("ab")
+	if score, pos, ok := m.match(&p, long(60000), true); !ok || score != 29 || !slices.Equal(pos, []int{1, 3}) {
+		t.Errorf("greedy match: score %d at %v (ok %v), want 29 at [1 3]", score, pos, ok)
+	}
+	p = parsePattern("abcdefghij")
+	m.match(&p, strings.Repeat("abcdefghij ", 100000), false)
+	if c := cap(m.h) + cap(m.c); c > 4*maxCells {
+		t.Errorf("a 1.1 MB line took %d cells of scratch space", c)
+	}
+}
+
 // Filtering from the previous result (as when typing) must give the same
 // answer as filtering everything.
 func TestIncrementalFilterAgreesWithFull(t *testing.T) {

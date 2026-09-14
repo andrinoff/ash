@@ -315,6 +315,10 @@ func grow(s []int, n int) []int {
 	return s[:n]
 }
 
+// maxCells bounds the dynamic program, as fzf's slab does: when the text's
+// runes times the query's exceed it, fzf (and so this) matches greedily.
+const maxCells = 100 * 1024
+
 // fuzzy finds the best-scoring way to match the term's runes in order,
 // with a Smith-Waterman style dynamic program over the window between the
 // first possible start and the last possible end (fzf's algorithm v2).
@@ -326,6 +330,9 @@ func (m *matcher) fuzzy(t *term, text string, withPos bool) (int, bool) {
 	}
 	m.prepare(text, t.caseSensitive)
 	T, B := m.text, m.bonus
+	if len(T)*M > maxCells || M > 1000 {
+		return m.greedy(pat, withPos)
+	}
 
 	// First occurrence of each pattern rune, matched greedily, and the
 	// last occurrence of the final pattern rune.
@@ -461,6 +468,72 @@ func (m *matcher) fuzzy(t *term, text string, withPos bool) (int, bool) {
 		}
 	}
 	return maxScore, true
+}
+
+// greedy is fzf's algorithm v1, for texts too long for the dynamic
+// program: the first match scanning forward, narrowed to the shortest
+// window ending where it does, and scored as it falls (fzf's
+// calculateScore). It runs on the text prepare decoded.
+func (m *matcher) greedy(pat []rune, withPos bool) (int, bool) {
+	T, B := m.text, m.bonus
+	M := len(pat)
+	pidx, start, end := 0, -1, -1
+	for i, r := range T {
+		if r == pat[pidx] {
+			if start < 0 {
+				start = i
+			}
+			if pidx++; pidx == M {
+				end = i + 1
+				break
+			}
+		}
+	}
+	if end < 0 {
+		return 0, false
+	}
+	for i, p := end-1, M-1; i >= start; i-- {
+		if T[i] == pat[p] {
+			if p--; p < 0 {
+				start = i
+				break
+			}
+		}
+	}
+
+	score, inGap, run, firstBonus := 0, false, 0, 0
+	pidx = 0
+	for i := start; i < end && pidx < M; i++ {
+		if T[i] != pat[pidx] {
+			if inGap {
+				score += scoreGapExtension
+			} else {
+				score += scoreGapStart
+			}
+			inGap, run, firstBonus = true, 0, 0
+			continue
+		}
+		if withPos {
+			m.pos = append(m.pos, i)
+		}
+		b := B[i]
+		if run == 0 {
+			firstBonus = b
+		} else {
+			if b >= bonusBoundary && b > firstBonus {
+				firstBonus = b
+			}
+			b = max(b, firstBonus, bonusConsecutive)
+		}
+		if pidx == 0 {
+			b *= bonusFirstCharMultiplier
+		}
+		score += scoreMatch + b
+		inGap = false
+		run++
+		pidx++
+	}
+	return score, true
 }
 
 // literal handles the exact, prefix, suffix and equal term kinds.
