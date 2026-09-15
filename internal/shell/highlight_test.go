@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -757,6 +758,41 @@ func TestHighlightDirCache(t *testing.T) {
 	if _, paths := hlRoles(sh, "cat src/ne", false); paths != "    ______" {
 		t.Errorf("stale listing: paths %q", paths)
 	}
+}
+
+// A huge directory isn't listed for prefix matches (that would stall
+// typing and hold all its names), and it isn't retried on every keystroke.
+func TestHighlightBigDir(t *testing.T) {
+	sh := hlShell(t)
+	defer func(n int) { hlDirMax = n }(hlDirMax)
+	hlDirMax = 40
+	for dir, n := range map[string]int{"few": 40, "many": 41} {
+		if err := os.Mkdir(filepath.Join(sh.dir, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for i := range n {
+			if err := os.WriteFile(filepath.Join(sh.dir, dir, fmt.Sprintf("f%02d", i)), nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	checkRoles(t, sh, false, []hlCase{
+		{src: `cat few/f3`, roles: `ccc.pppppp`, paths: `    ______`},
+		{src: `cat many/f3`, roles: `ccc.ppppppp`},
+		{src: `cat many/f30`, roles: `ccc.pppppppp`, paths: `    ________`}, // an existing file
+	})
+	many := filepath.Join(sh.dir, "many")
+	hlDirCache.Lock()
+	defer hlDirCache.Unlock()
+	for _, l := range hlDirCache.lists {
+		if l != nil && l.dir == many {
+			if !l.big || l.names != nil {
+				t.Errorf("listing of a big directory: big %v, %d names", l.big, len(l.names))
+			}
+			return
+		}
+	}
+	t.Error("big directory not remembered")
 }
 
 // Hostile input (a pasted blob of brackets, say) must not make

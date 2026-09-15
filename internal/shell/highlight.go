@@ -3096,10 +3096,16 @@ func (h *highlighter) dirHasPrefix(d, frag string, dir bool) bool {
 type hlDirList struct {
 	dir   string
 	mod   int64
+	big   bool // over hlDirMax entries: not listed
 	lower []string
 	names []string
 	types []os.FileMode
 }
+
+// hlDirMax is the most entries read from one directory for prefix
+// matches. Reading a huge one (a Maildir, /nix/store) would stall typing
+// and keep its names in memory; such directories just get no underline.
+var hlDirMax = 1 << 13
 
 var hlDirCache struct {
 	sync.Mutex
@@ -3113,6 +3119,9 @@ func (h *highlighter) listDir(d string, mod int64) *hlDirList {
 	for _, l := range c.lists {
 		if l != nil && l.dir == d && l.mod == mod {
 			c.Unlock()
+			if l.big {
+				return nil
+			}
 			return l
 		}
 	}
@@ -3124,18 +3133,37 @@ func (h *highlighter) listDir(d string, mod int64) *hlDirList {
 	if err != nil {
 		return nil
 	}
-	ents, _ := f.ReadDir(-1)
-	f.Close()
-	l := &hlDirList{dir: d, mod: mod, lower: make([]string, len(ents)), names: make([]string, len(ents)), types: make([]os.FileMode, len(ents))}
-	idx := make([]int, len(ents))
-	low := make([]string, len(ents))
-	for i, e := range ents {
-		idx[i] = i
-		low[i] = strings.ToLower(e.Name())
+	var ents []os.DirEntry
+	big := false
+	for {
+		chunk, err := f.ReadDir(256)
+		ents = append(ents, chunk...)
+		if len(ents) > hlDirMax {
+			big = true
+			break
+		}
+		if err != nil || len(chunk) == 0 {
+			break
+		}
+		if h.slow() {
+			f.Close()
+			return nil // out of time: maybe on the next keystroke
+		}
 	}
-	sort.Slice(idx, func(a, b int) bool { return low[idx[a]] < low[idx[b]] })
-	for i, j := range idx {
-		l.lower[i], l.names[i], l.types[i] = low[j], ents[j].Name(), ents[j].Type()
+	f.Close()
+	l := &hlDirList{dir: d, mod: mod, big: big}
+	if !big {
+		l.lower, l.names, l.types = make([]string, len(ents)), make([]string, len(ents)), make([]os.FileMode, len(ents))
+		idx := make([]int, len(ents))
+		low := make([]string, len(ents))
+		for i, e := range ents {
+			idx[i] = i
+			low[i] = strings.ToLower(e.Name())
+		}
+		sort.Slice(idx, func(a, b int) bool { return low[idx[a]] < low[idx[b]] })
+		for i, j := range idx {
+			l.lower[i], l.names[i], l.types[i] = low[j], ents[j].Name(), ents[j].Type()
+		}
 	}
 	c.Lock()
 	slot := -1
@@ -3151,5 +3179,8 @@ func (h *highlighter) listDir(d string, mod int64) *hlDirList {
 	}
 	c.lists[slot] = l
 	c.Unlock()
+	if big {
+		return nil
+	}
 	return l
 }
