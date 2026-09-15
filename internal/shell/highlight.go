@@ -2,6 +2,7 @@ package shell
 
 import (
 	"os"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -2917,8 +2918,46 @@ func (h *highlighter) program(name string) bool {
 	if h.slow() {
 		return true
 	}
-	_, err := h.sh.shared.paths.lookup(name, h.sh.GetList("PATH"), h.sh.dir)
-	return err == nil
+	return h.inPath(name)
+}
+
+// inPath looks name up in $PATH the way the executor does. It shares the
+// executor's cache of programs found but never records a failure there:
+// a command highlighted before it is installed must run once it is.
+func (h *highlighter) inPath(name string) bool {
+	sh := h.sh
+	path := sh.GetList("PATH")
+	key := strings.Join(path, "\x00")
+	c := sh.shared.paths
+	c.mu.Lock()
+	if key != c.key {
+		c.key, c.hits, c.miss = key, map[string]string{}, map[string]bool{}
+	}
+	_, ok := c.hits[name]
+	c.mu.Unlock()
+	if ok {
+		return true
+	}
+	for _, d := range path {
+		if d == "" {
+			d = "."
+		}
+		if !filepath.IsAbs(d) {
+			d = filepath.Join(sh.dir, d)
+		}
+		p := filepath.Join(d, name)
+		st, err := os.Stat(p)
+		if err != nil || st.IsDir() || st.Mode()&0o111 == 0 {
+			continue
+		}
+		c.mu.Lock()
+		if c.key == key {
+			c.hits[name] = p // also overrides a miss the shell remembers
+		}
+		c.mu.Unlock()
+		return true
+	}
+	return false
 }
 
 // hlAbbr reports whether word is an abbreviation in command position,

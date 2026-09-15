@@ -696,6 +696,44 @@ func TestHighlightBudget(t *testing.T) {
 	}
 }
 
+// Highlighting a command that isn't installed yet must not make the shell
+// remember it as missing: installing it (from another terminal, say) and
+// pressing Enter has to work.
+func TestHighlightNoStaleMisses(t *testing.T) {
+	sh := hlShell(t)
+	bin := sh.GetList("PATH")[0]
+	run := func(name string) (int, string, string) {
+		out, errb := &lockedBuffer{}, &lockedBuffer{}
+		st := sh.RunString(name, "", &IO{In: &Stream{}, Out: &Stream{W: out}, Err: &Stream{W: errb}})
+		return st, out.String(), errb.String()
+	}
+	for _, name := range []string{"newcmd", "newcmd2"} {
+		for _, line := range []string{name, "sudo " + name} {
+			hlRoles(sh, line, false)
+			sh.SuggestionOK(line)
+		}
+	}
+	// The shell itself remembers a failed run; seeing the program while
+	// highlighting corrects that.
+	if st, _, _ := run("newcmd2"); st != 127 {
+		t.Fatalf("newcmd2 ran before it was installed: %d", st)
+	}
+	for _, name := range []string{"newcmd", "newcmd2"} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\necho ran\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if roles, _ := hlRoles(sh, name, false); roles != strings.Repeat("c", len(name)) {
+			t.Errorf("installed %s highlighted as %q", name, roles)
+		}
+		if !sh.SuggestionOK(name) {
+			t.Errorf("installed %s not suggested", name)
+		}
+		if st, out, errs := run(name); st != 0 || out != "ran\n" {
+			t.Errorf("running installed %s: status %d, out %q, err %q", name, st, out, errs)
+		}
+	}
+}
+
 // Directory listings for prefix matches are reused until the directory
 // changes.
 func TestHighlightDirCache(t *testing.T) {
