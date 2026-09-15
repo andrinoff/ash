@@ -631,6 +631,11 @@ func TestSuggestionOK(t *testing.T) {
 		{"$(nosuch) x", true},
 		{"true && nosuch", true},
 		{"f() { nosuch; }", true},
+		// Defining a function runs nothing.
+		{"function f; nosuch; end", true},
+		{"function f -d desc\n  nosuch\nend", true},
+		{"function f { nosuch; }", true},
+		{"function f() { nosuch; }", true},
 		{"", true},
 		{"   ", true},
 		{"# comment", true},

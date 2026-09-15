@@ -818,6 +818,9 @@ func (h *highlighter) keyword(kw string, pos, end int, c *hlCmd, fresh bool) int
 	case "function":
 		c.begin(atStmt)
 		c.state = stFuncName
+		if h.probe && h.depth == 0 {
+			h.done = true // defining a function runs nothing
+		}
 	case "{":
 		if fresh && is(frFunc) {
 			h.pop() // function name; { ... } is an sh body after all
