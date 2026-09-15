@@ -281,11 +281,21 @@ func checkClean(t *testing.T, ft *fakeTerm, before unix.Termios) {
 	if after := ft.termios(); after != before {
 		t.Errorf("terminal settings changed:\nbefore %+v\nafter  %+v", before, after)
 	}
+	restored := func(out string) bool {
+		i := strings.LastIndex(out, leaveAlt)
+		return i >= 0 && strings.Contains(out[i:], "\x1b[?25h")
+	}
+	// The picker wrote its last bytes before returning, but the reader of
+	// the master end may not have collected them yet on a busy machine.
 	out := ft.output()
+	for deadline := time.Now().Add(2 * time.Second); !restored(out) && time.Now().Before(deadline); {
+		time.Sleep(5 * time.Millisecond)
+		out = ft.output()
+	}
 	if !strings.HasPrefix(out, enterAlt) {
 		t.Errorf("output does not start on the alternate screen: %q", out)
 	}
-	if i := strings.LastIndex(out, leaveAlt); i < 0 || !strings.Contains(out[i:], "\x1b[?25h") {
+	if !restored(out) {
 		t.Errorf("output does not end back on the main screen with the cursor shown: %q", out)
 	}
 	if p := ft.pending(); p != "" {
