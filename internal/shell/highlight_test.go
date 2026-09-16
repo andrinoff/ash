@@ -168,6 +168,8 @@ func TestHighlightSh(t *testing.T) {
 			roles: `cccc.vv.vvvv.vv.vv.vv.vv`},
 		{src: `echo ${x:-def} ${#x} ${x/a/b} ${x:1:2}`,
 			roles: `cccc.vvvOOpppv.vvOvv.vvvOpOpv.vvvOpOpv`},
+		{src: `echo ${!ref} ${!pre*} ${!pre@} ${!arr[@]} ${x@Q}`,
+			roles: `cccc.vvOvvvv.vvOvvvOv.vvOvvvOv.vvOvvvOpOv.vvvOOv`},
 		{src: `echo $x[1] $x[2..-1]`,
 			roles: `cccc.vvOpO.vvOpppppO`},
 		{src: `echo (ls -la) $(ls) "a$(ls)b"`,

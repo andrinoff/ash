@@ -2025,9 +2025,10 @@ func (h *highlighter) bracedParam(pos int, inDQ bool, f *hlWord) int {
 	src := h.src
 	h.fill(pos, pos+2, hlVariable)
 	p := pos + 2
-	simple := true
+	simple, bang := true, false
 	if p+1 < h.lim && (src[p] == '#' || src[p] == '!') && src[p+1] != '}' {
 		h.col[p] = hlOperator // ${#name} length, ${!name} indirection
+		bang = src[p] == '!'
 		p++
 		simple = false
 	}
@@ -2048,6 +2049,10 @@ func (h *highlighter) bracedParam(pos int, inDQ bool, f *hlWord) int {
 	}
 	h.fill(nameStart, p, hlVariable)
 	name := src[nameStart:p]
+	if bang && p+1 < h.lim && (src[p] == '*' || src[p] == '@') && src[p+1] == '}' {
+		h.col[p] = hlOperator // ${!prefix*}: the names starting with prefix
+		p++
+	}
 	if p < h.lim && src[p] == '[' {
 		simple = false
 		e := h.scanTo(p+1, "]}\n")
