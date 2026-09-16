@@ -3061,7 +3061,11 @@ func (h *highlighter) cdProbe(v string) bool {
 	}
 	if dest == "" {
 		dest = h.abs(v)
-		if st, ok := h.stat(dest); !ok || !st.mode.IsDir() {
+		st, ok := h.stat(dest)
+		if !ok {
+			return h.fsOff // out of time: give it the benefit of the doubt
+		}
+		if !st.mode.IsDir() {
 			return false
 		}
 	}

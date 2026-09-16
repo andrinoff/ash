@@ -710,6 +710,17 @@ func TestHighlightBudget(t *testing.T) {
 	if roles, _ := hlRoles(sh, "nosuch", false); roles != "!!!!!!" {
 		t.Errorf("budget leaked into the next call: %q", roles)
 	}
+	// Suggestions get the benefit of the doubt too.
+	for _, line := range []string{"nosuch", "./nope.sh", "cd src", "cd nope"} {
+		h = sh.newHighlighter(line)
+		h.probe = true
+		h.start = time.Now().Add(-time.Minute)
+		h.list(0, 0)
+		if h.bad {
+			t.Errorf("%q: suggestion hidden over budget", line)
+		}
+		h.release()
+	}
 }
 
 // Highlighting a command that isn't installed yet must not make the shell
