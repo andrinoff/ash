@@ -313,6 +313,7 @@ var hlDecorators = map[string]*hlDeco{
 	"env":   {kind: kindExternal, argOpts: "CLPSUu", assigns: true, longArg: []string{"--chdir", "--split-string", "--unset"}},
 	"nohup": {kind: kindExternal},
 	"nice":  {kind: kindExternal, argOpts: "n", longArg: []string{"--adjustment"}},
+	"time":  {kind: kindExternal, argOpts: "fo"}, // the program, where the keyword isn't one
 }
 
 // hlTime is the time keyword, which takes -p and then any command.
@@ -637,8 +638,13 @@ func (h *highlighter) command(pos int, c *hlCmd) int {
 	if end == pos {
 		return pos
 	}
-	if c.kwOK && h.w.static && !h.w.quoted && hlKeywords[src[pos:end]] {
-		return h.keyword(src[pos:end], pos, end, c, fresh)
+	if kw := src[pos:end]; c.kwOK && h.w.static && !h.w.quoted && hlKeywords[kw] {
+		// Like the parser, take "time" after | or an assignment for the
+		// program (/usr/bin/time): only a pipeline can start with the
+		// keyword.
+		if kw != "time" || c.at != atCmd {
+			return h.keyword(kw, pos, end, c, fresh)
+		}
 	}
 	name, known := h.value(true)
 	role := hlCommand

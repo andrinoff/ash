@@ -15,7 +15,7 @@ import (
 // hlShell returns a shell whose PATH, HOME, config and working directory
 // are temporary and known:
 //
-//	bin/        cat env git grep ls make nice nohup sudo vim; notexec (not executable)
+//	bin/        cat env git grep ls make nice nohup sudo time vim; notexec (not executable)
 //	home/       .config/ proj/
 //	functions/  hello.fish (autoloadable; sets $hl_loaded when loaded)
 //	work/       README.md main.go notes.txt "my file.txt" run.sh (executable)
@@ -44,7 +44,7 @@ func hlShell(t testing.TB) *Shell {
 			t.Fatal(err)
 		}
 	}
-	for _, n := range []string{"cat", "env", "git", "grep", "ls", "make", "nice", "nohup", "sudo", "vim"} {
+	for _, n := range []string{"cat", "env", "git", "grep", "ls", "make", "nice", "nohup", "sudo", "time", "vim"} {
 		mk("bin/"+n, 0o755, "#!/bin/sh\n")
 	}
 	mk("bin/notexec", 0o644, "")
@@ -421,6 +421,12 @@ func TestHighlightCommands(t *testing.T) {
 		{src: `nohup nice -n 10 make`, roles: `ccccc.cccc.oo.pp.cccc`},
 		{src: `sudo -- -x`, roles: `cccc.oo.!!`},
 		{src: `time nosuch`, roles: `kkkk.!!!!!!`},
+		// Only a pipeline starts with the time keyword; elsewhere the
+		// parser runs the program.
+		{src: `FOO=1 time ls`, roles: `vvvOp.cccc.cc`},
+		{src: `ls | time -o out cat`, roles: `cc.;.cccc.oo.ppp.ccc`},
+		{src: `sudo time nosuch`, roles: `cccc.cccc.!!!!!!`},
+		{src: `! time ls && time ls`, roles: `k.kkkk.cc.;;.kkkk.cc`},
 		{src: `ec`, roles: `!!`}, // still being typed: fish shows it red too
 	})
 	if _, ok := sh.funcs["hello"]; ok || sh.IsSet("hl_loaded") {
@@ -626,6 +632,8 @@ func TestSuggestionOK(t *testing.T) {
 		{"sudo nosuch", false},
 		{"env FOO=1 nosuch", false},
 		{"time nosuch", false},
+		{"FOO=1 time nosuch", false},
+		{"FOO=1 time ls", true},
 		{"if nosuch; then ls; fi", false},
 		{"if ls; then nosuch; fi", true},
 		{"for x in a; do nosuch; done", false},
