@@ -287,6 +287,7 @@ type hlCmd struct {
 	elseIf   bool   // fish: "else" may be followed by "if"
 	funcOpts bool   // the fish function header has options
 	funcSh   bool   // function name() { ... }
+	query    bool   // command -v: the next words are names to look up
 	deco     *hlDeco
 }
 
@@ -300,12 +301,13 @@ type hlDeco struct {
 	longArg []string // long options that take a value
 	assigns bool     // NAME=value words may come first
 	query   string   // options that turn the names into lookups (command -v)
+	queryL  []string // long ones
 	stop    string   // options after which no command follows (sudo -e)
 }
 
 var hlDecorators = map[string]*hlDeco{
-	"command": {kind: kindExternal, query: "aqsvV"},
-	"builtin": {kind: kindBuiltin},
+	"command": {kind: kindExternal, query: "aqsvV", queryL: []string{"--all", "--query", "--quiet", "--search"}},
+	"builtin": {kind: kindBuiltin, query: "q", queryL: []string{"--query"}},
 	"exec":    {kind: kindExternal, argOpts: "a"},
 	"sudo": {kind: kindExternal, argOpts: "CDgpRrTtUu", assigns: true, stop: "eKlVv",
 		longArg: []string{"--chdir", "--close-from", "--command-timeout", "--group", "--host", "--other-user", "--prompt", "--role", "--type", "--user"}},
@@ -650,15 +652,26 @@ func (h *highlighter) command(pos int, c *hlCmd) int {
 	role := hlCommand
 	if known && !h.commandOK(name, c.kind) {
 		role = hlError
+		if c.query {
+			role = hlParam // "command -v name" only asks
+		}
 	}
 	if role == hlError {
 		h.fill(pos, end, hlError)
 	} else {
-		h.classify(pos, end, hlCommand)
+		h.classify(pos, end, role)
 	}
 	c.needCmd = false
 	if h.probe && h.depth == 0 && known && role == hlError {
 		h.bad, h.done = true, true
+		return end
+	}
+	if c.query {
+		// The names are looked up, not run: no decorators or cd here.
+		c.state, c.deco, c.args = stArgs, nil, false
+		if h.probe && h.depth == 0 {
+			h.done = true
+		}
 		return end
 	}
 	if d := hlDecorators[name]; d != nil && known {
@@ -695,6 +708,9 @@ func (h *highlighter) decoWord(pos int, c *hlCmd) int {
 			if strings.IndexByte(opt, '=') < 0 && hlContains(d.longArg, opt) {
 				c.state = stDecoArg
 			}
+			if hlContains(d.queryL, opt) {
+				c.lookup(d)
+			}
 		default:
 			for i := 1; i < len(opt); i++ {
 				ch := opt[i]
@@ -706,7 +722,7 @@ func (h *highlighter) decoWord(pos int, c *hlCmd) int {
 					return end
 				}
 				if strings.IndexByte(d.query, ch) >= 0 {
-					c.kind = kindAny
+					c.lookup(d)
 				}
 				if strings.IndexByte(d.argOpts, ch) >= 0 {
 					if i == len(opt)-1 {
@@ -720,6 +736,14 @@ func (h *highlighter) decoWord(pos int, c *hlCmd) int {
 	}
 	c.state = stCmd
 	return h.command(pos, c)
+}
+
+// lookup switches a decorator like command -v to looking names up.
+func (c *hlCmd) lookup(d *hlDeco) {
+	c.query = true
+	if d.kind == kindExternal {
+		c.kind = kindAny // command -v also finds functions and builtins
+	}
 }
 
 func hlContains(list []string, s string) bool {

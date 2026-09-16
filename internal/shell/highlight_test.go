@@ -407,6 +407,12 @@ func TestHighlightCommands(t *testing.T) {
 		{src: `command ls`, roles: `ccccccc.cc`},
 		{src: `command cd`, roles: `ccccccc.!!`}, // command skips builtins
 		{src: `command -v cd`, roles: `ccccccc.oo.cc`},
+		// Lookups only ask: an unknown name is no error, nor run.
+		{src: `command -v nosuch`, roles: `ccccccc.oo.pppppp`},
+		{src: `command --search sudo nosuch`, roles: `ccccccc.oooooooo.cccc.pppppp`},
+		{src: `command -sq ls; and ls`, roles: `ccccccc.ooo.cc;.kkk.cc`},
+		{src: `builtin -q echo ls`, roles: `ccccccc.oo.cccc.pp`},
+		{src: `builtin --query ls`, roles: `ccccccc.ooooooo.pp`},
 		{src: `builtin echo`, roles: `ccccccc.cccc`},
 		{src: `builtin ls`, roles: `ccccccc.!!`},
 		{src: `exec ls`, roles: `cccc.cc`},
@@ -633,6 +639,8 @@ func TestSuggestionOK(t *testing.T) {
 		{"env FOO=1 nosuch", false},
 		{"time nosuch", false},
 		{"FOO=1 time nosuch", false},
+		{"command -v nosuch", true},
+		{"command nosuch", false},
 		{"FOO=1 time ls", true},
 		{"if nosuch; then ls; fi", false},
 		{"if ls; then nosuch; fi", true},
