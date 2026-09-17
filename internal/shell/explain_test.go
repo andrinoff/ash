@@ -46,6 +46,8 @@ func TestExplain(t *testing.T) {
 	}{
 		{"frob -xvf a.tgz", []row{cmd, opt("-x", "Extract"), opt("-v", "Verbose"), opt("-f", "Archive file"), val("a.tgz", "-f")}},
 		{"frob -fa.tgz", []row{cmd, opt("-f", "Archive file"), val("a.tgz", "-f")}},
+		{"frob -v9", []row{cmd, opt("-v", "Verbose"), val("9", "-v")}},
+		{"frob -vq", []row{cmd, opt("-v", "Verbose"), opt("-q", "")}},
 		{"frob --level 9 --level=3", []row{cmd, opt("--level", "Compression level"), val("9", "--level"),
 			opt("--level", "Compression level"), val("3", "--level")}},
 		{"frob -name '*.go'", []row{cmd, opt("-name", "Match a name"), val("'*.go'", "-name")}},
@@ -58,10 +60,17 @@ func TestExplain(t *testing.T) {
 		{"sudo -u root frob -x", []row{{Word: "sudo", Desc: "/usr/bin/sudo", Kind: "command"}, opt("-u", "Run as user"),
 			val("root", "-u"), cmd, opt("-x", "Extract")}},
 		{"A=1 frob | nosuchcmd-ash", []row{{Word: "A=1", Desc: "set A for this command", Kind: "assign"}, cmd,
+			{Word: "|", Desc: "its output goes to", Kind: "operator"},
 			{Word: "nosuchcmd-ash", Desc: "not found", Kind: "missing"}}},
 		// an unfinished line still gets explained
 		{"frob -f 'my file", []row{cmd, opt("-f", "Archive file"), val("'my file", "-f")}},
 		{"echo $HOME", []row{{Word: "echo", Desc: builtinHelp["echo"], Kind: "command"}, arg("$HOME", "")}},
+		{"frob 2>&1 >out | frob && frob || frob", []row{cmd,
+			{Word: "2>&1", Desc: "send errors where the output goes", Kind: "redirect", Indent: 1},
+			{Word: ">out", Desc: "write the output to out, replacing it", Kind: "redirect", Indent: 1},
+			{Word: "|", Desc: "its output goes to", Kind: "operator"}, cmd,
+			{Word: "&&", Desc: "and if that worked:", Kind: "operator"}, cmd,
+			{Word: "||", Desc: "or if that failed:", Kind: "operator"}, cmd}},
 		{"", nil},
 	}
 	for _, tt := range tests {

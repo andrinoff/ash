@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -23,7 +26,7 @@ import (
 type ExplainRow struct {
 	Word   string
 	Desc   string
-	Kind   string // command, option, value, arg, assign, missing
+	Kind   string // command, option, value, arg, assign, missing, redirect, operator
 	Indent int    // 0 for a command, 1 for its arguments
 }
 
@@ -116,17 +119,31 @@ func (ex *explainer) command(c syntax.Command) {
 	switch c := c.(type) {
 	case *syntax.CallExpr:
 		ex.call(c.Assigns, c.Args)
+		ex.redirects(c.Redirs)
 	case *syntax.EnvCmd:
 		if call, ok := c.Cmd.(*syntax.CallExpr); ok {
 			ex.call(append(append([]*syntax.Assign(nil), c.Assigns...), call.Assigns...), call.Args)
+			ex.redirects(call.Redirs)
 		} else {
 			ex.command(c.Cmd)
 		}
 	case *syntax.BinaryCmd:
 		ex.command(c.X)
+		if c.Op == syntax.AndOp {
+			ex.add("&&", "and if that worked:", "operator", 0)
+		} else {
+			ex.add("||", "or if that failed:", "operator", 0)
+		}
 		ex.command(c.Y)
 	case *syntax.Pipeline:
-		for _, x := range c.Cmds {
+		for i, x := range c.Cmds {
+			if i > 0 {
+				what := "its output goes to"
+				if i-1 < len(c.PipeErr) && c.PipeErr[i-1] {
+					what = "its output and errors go to"
+				}
+				ex.add("|", what, "operator", 0)
+			}
 			ex.command(x)
 		}
 	case *syntax.Block:
@@ -185,6 +202,74 @@ func (ex *explainer) call(assigns []*syntax.Assign, args []*syntax.Word) {
 	for len(words) > 0 {
 		words = ex.simple(words)
 	}
+}
+
+// redirects explains redirections: what goes where.
+func (ex *explainer) redirects(rs []*syntax.Redirect) {
+	for _, r := range rs {
+		word, target := "", ""
+		if r.Target != nil {
+			t := ex.word(r.Target)
+			target = t.value
+			if end := min(r.Target.End, len(ex.src)); r.Pos >= 0 && r.Pos <= end {
+				word = ex.src[r.Pos:end]
+			}
+		}
+		if word == "" {
+			word = r.Op.String()
+		}
+		ex.add(word, redirectDesc(r.Op, r.Fd, target), "redirect", 1)
+	}
+}
+
+func redirectDesc(op syntax.RedirOp, fd int, target string) string {
+	stream := func(fd, def int) string {
+		if fd < 0 {
+			fd = def
+		}
+		switch fd {
+		case 0:
+			return "standard input"
+		case 1:
+			return "the output"
+		case 2:
+			return "errors"
+		}
+		return "descriptor " + strconv.Itoa(fd)
+	}
+	switch op {
+	case syntax.RedirIn:
+		return "read " + stream(fd, 0) + " from " + target
+	case syntax.RedirOut, syntax.RedirClobber:
+		return "write " + stream(fd, 1) + " to " + target + ", replacing it"
+	case syntax.RedirNoClobber:
+		return "write " + stream(fd, 1) + " to " + target + " unless it exists"
+	case syntax.RedirAppend:
+		return "add " + stream(fd, 1) + " to the end of " + target
+	case syntax.RedirInOut:
+		return "open " + target + " for reading and writing"
+	case syntax.RedirDupIn, syntax.RedirDupOut:
+		def := 1
+		if op == syntax.RedirDupIn {
+			def = 0
+		}
+		switch n, err := strconv.Atoi(target); {
+		case target == "-":
+			return "close " + stream(fd, def)
+		case err == nil:
+			return "send " + stream(fd, def) + " where " + stream(n, n) + " goes"
+		}
+		return "write the output and errors to " + target
+	case syntax.RedirAll:
+		return "write the output and errors to " + target + ", replacing it"
+	case syntax.RedirAllAppend:
+		return "add the output and errors to the end of " + target
+	case syntax.RedirHeredoc, syntax.RedirHeredocTabs:
+		return "the lines that follow are " + stream(fd, 0)
+	case syntax.RedirHerestring:
+		return "this text is " + stream(fd, 0)
+	}
+	return ""
 }
 
 // precommands run the command after their own options.
@@ -339,6 +424,11 @@ func (ex *explainer) option(before []exWord, cmd, opt string) (rows []ExplainRow
 			if j == 1 {
 				return []ExplainRow{{Word: opt, Desc: ex.candidateDesc(before, opt), Kind: "option", Indent: 1}}, ""
 			}
+			if rest := opt[j:]; strings.Trim(rest, "0123456789") == "" {
+				// -j8, -n5: a number stuck to the option before
+				prev := rows[len(rows)-1].Word
+				return append(rows, ExplainRow{Word: rest, Desc: "argument of " + prev, Kind: "value", Indent: 1}), ""
+			}
 			rows = append(rows, ExplainRow{Word: "-" + opt[j:j+1], Kind: "option", Indent: 1})
 			continue
 		}
@@ -458,21 +548,61 @@ func (sh *Shell) manSummary(name, path string) string {
 			dirs = append(dirs, d)
 		}
 	}
-	dirs = append(dirs, "/usr/share/man", "/usr/local/share/man", "/opt/homebrew/share/man")
-	desc := ""
-search:
-	for _, d := range dirs {
-		for _, sec := range [...]string{"1", "8", "6"} {
-			for _, ext := range [...]string{"", ".gz"} {
-				if desc = readManSummary(filepath.Join(d, "man"+sec, name+"."+sec+ext), 0); desc != "" {
-					break search
-				}
-			}
-		}
+	dirs = append(dirs, systemManDirs()...)
+	desc := findManSummary(name, dirs)
+	if desc == "" && runtime.GOOS == "darwin" {
+		// /usr/bin/make and friends are Xcode's, and so are their pages
+		desc = findManSummary(name, xcodeManDirs())
 	}
 	manSummaries.Store(name, desc)
 	return desc
 }
+
+func findManSummary(name string, dirs []string) string {
+	for _, d := range dirs {
+		for _, sec := range [...]string{"1", "8", "6"} {
+			for _, ext := range [...]string{"", ".gz"} {
+				if desc := readManSummary(filepath.Join(d, "man"+sec, name+"."+sec+ext), 0); desc != "" {
+					return desc
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// systemManDirs returns the standard directories and the ones listed in
+// /etc/manpaths and /etc/manpaths.d (macOS).
+var systemManDirs = sync.OnceValue(func() []string {
+	dirs := []string{"/usr/share/man", "/usr/local/share/man", "/opt/homebrew/share/man"}
+	files := []string{"/etc/manpaths"}
+	if more, err := filepath.Glob("/etc/manpaths.d/*"); err == nil {
+		files = append(files, more...)
+	}
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		for _, l := range strings.Split(string(b), "\n") {
+			if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
+				dirs = append(dirs, l)
+			}
+		}
+	}
+	return dirs
+})
+
+// xcodeManDirs returns the man directories of the selected Xcode or
+// command line tools.
+var xcodeManDirs = sync.OnceValue(func() []string {
+	out, err := exec.Command("/usr/bin/xcode-select", "-p").Output()
+	if err != nil {
+		return nil
+	}
+	dev := strings.TrimSpace(string(out))
+	return []string{filepath.Join(dev, "usr", "share", "man"), filepath.Join(dev, "Toolchains", "XcodeDefault.xctoolchain", "usr", "share", "man")}
+})
 
 // readManSummary reads the NAME section of a man page in mdoc (.Nd) or
 // man (.SH NAME) format.
@@ -572,10 +702,10 @@ func (sh *Shell) FormatExplain(rows []ExplainRow, color bool) string {
 			pad = 0
 		}
 		role := map[string]string{"command": "command", "option": "option", "value": "quote", "arg": "param",
-			"assign": "param", "missing": "error"}[r.Kind]
+			"assign": "param", "missing": "error", "redirect": "redirection", "operator": "operator"}[r.Kind]
 		b.WriteString(indent + paint(role, word))
 		if r.Desc != "" {
-			desc := r.Desc
+			desc := strings.Join(strings.Fields(r.Desc), " ")
 			if r.Kind == "value" || r.Kind == "missing" || desc == "file" || desc == "directory" {
 				desc = paint("autosuggestion", desc)
 			}
