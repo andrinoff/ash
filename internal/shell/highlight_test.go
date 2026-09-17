@@ -213,6 +213,8 @@ func TestHighlightSh(t *testing.T) {
 			roles: `ccc.rrrrrrr.qq.rrr`},
 		{src: "cat <<-EOF\n\thi\n\tEOF",
 			roles: `ccc.rrrrrr.qqq..rrr`},
+		{src: "cat <<EOF\na\x00b $x\nEOF", // a NUL byte doesn't end the line
+			roles: `ccc.rrrrr.qqqqvv.rrr`},
 		{src: `cat <<< "$x" <<<word`,
 			roles: `ccc.rrr.rrrr.rrrrrrr`},
 		{src: `cat <(ls) >(cat)`,

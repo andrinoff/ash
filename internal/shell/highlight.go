@@ -1901,14 +1901,14 @@ func (h *highlighter) doubleQuote(pos int, f *hlWord) int {
 	return pos
 }
 
-// quotedText colors double-quoted text (or a heredoc body line) up to the
-// closing quote, which it leaves for the caller.
+// quotedText colors double-quoted text (or, with quote 0, a heredoc body
+// line) up to the closing quote, which it leaves for the caller.
 func (h *highlighter) quotedText(pos int, quote byte, f *hlWord) int {
 	src := h.src
 	for pos < h.lim {
 		c := src[pos]
 		switch {
-		case c == quote:
+		case c == quote && quote != 0:
 			return pos
 		case c == '\\':
 			if pos+1 < h.lim {
