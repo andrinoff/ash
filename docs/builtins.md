@@ -93,5 +93,6 @@ Typing a directory as a command (`..`, `~/src`, `./build/`) changes to it.
 | `enable_transience`, `disable_transience` | the transient prompt |
 | `choose [--multi] ITEMS...` | an interactive picker for scripts: `git branch \| choose` |
 | `explain COMMAND LINE` | what a command and each of its options does, without running it |
+| `clip [TEXT...]`, `clip -o` | copy text or standard input to the clipboard, or print it; over SSH the copy reaches the clipboard of the machine you're at |
 | `umask`, `ulimit`, `times`, `hash` | |
 | `help [NAME]` | |

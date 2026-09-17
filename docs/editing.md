@@ -115,7 +115,7 @@ doesn't exist when a close one does.
 | `alt-u` / `alt-c` | uppercase / capitalize the word |
 | `ctrl-z`, `ctrl-_` / `alt-/` | undo / redo |
 | `alt-enter` | insert a newline |
-| `ctrl-x` / `ctrl-v` | copy the line to the clipboard / paste from it (over SSH the copy goes through the terminal, OSC 52, so it lands on your local clipboard) |
+| `ctrl-x` / `ctrl-v` | copy the line to the clipboard / paste from it (over SSH the copy goes through the terminal, OSC 52, so it lands on your local clipboard; `clip` does the same for a pipe: `git diff \| clip`) |
 | `alt-s` | add or remove `sudo` at the front (on an empty line, the last command with sudo) |
 | `alt-e`, `alt-v`, `ctrl-x ctrl-e` | edit the line in `$VISUAL` / `$EDITOR` |
 | `alt-h` | open the man page for the command under the cursor |
