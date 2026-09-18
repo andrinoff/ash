@@ -50,6 +50,12 @@ current shell; `exit` takes you back.
   prompt and renders its left and right prompts in parallel while you're
   already typing. There's a native `z` that shares its data file with
   fish's z plugin. See [docs/integrations.md](docs/integrations.md).
+- **Programs can talk back.** Every command gets `$ASH_ACTION_FILE`. A
+  program that writes `cd /some/dir` or `export NAME=value` there changes
+  the shell when it exits, which is how `integrate yazi lazygit` leaves
+  you in the directory you quit them in. Your own scripts can do it too,
+  in any language. See
+  [docs/integrations.md](docs/integrations.md#talking-back-to-the-shell).
 - **fish's completions.** If fish is installed, ash reads its completion
   files, so `git <tab>`, `brew <tab>` and a thousand others work out of
   the box. Go programs built with cobra (gh, kubectl, helm...) complete
@@ -113,7 +119,7 @@ useful kind.
 - [docs/language.md](docs/language.md): syntax, variables, quoting, expansion
 - [docs/editing.md](docs/editing.md): keys, completion, history, vi mode
 - [docs/config.md](docs/config.md): config files, prompt, themes, abbreviations
-- [docs/integrations.md](docs/integrations.md): starship, zoxide, fzf, mise, direnv, atuin
+- [docs/integrations.md](docs/integrations.md): starship, zoxide, fzf, mise, direnv, atuin, file managers, `$ASH_ACTION_FILE`
 - [docs/builtins.md](docs/builtins.md): every builtin
 - [docs/from-fish.md](docs/from-fish.md): moving a fish setup over
 
