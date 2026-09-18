@@ -488,7 +488,8 @@ func (lx *compLexer) dquote(val *strings.Builder, w *compWord, st *wordState) bo
 }
 
 // dollar scans an expansion starting with '$'. Expansions are kept in
-// the value as typed. It reports whether the cursor was reached.
+// the value as typed, including a variable name the cursor is in. It
+// reports whether the cursor was reached.
 func (lx *compLexer) dollar(val *strings.Builder, w *compWord, st *wordState, inDQ bool) bool {
 	start := lx.i
 	j := lx.i + 1
@@ -496,6 +497,7 @@ func (lx *compLexer) dollar(val *strings.Builder, w *compWord, st *wordState, in
 		// a lone '$' before the cursor: complete variable names
 		w.expand = true
 		w.markExp(start, j)
+		val.WriteByte('$')
 		st.varPos = j
 		lx.i = j
 		return true
@@ -547,6 +549,7 @@ func (lx *compLexer) dollar(val *strings.Builder, w *compWord, st *wordState, in
 			n++
 		}
 		if n >= len(lx.s) {
+			val.WriteString(lx.s[start:n])
 			st.varPos, st.varBrace = k, true
 			lx.i = n
 			return true
@@ -611,6 +614,7 @@ func (lx *compLexer) dollar(val *strings.Builder, w *compWord, st *wordState, in
 		}
 		if n >= len(lx.s) {
 			w.markExp(start, n)
+			val.WriteString(lx.s[start:n])
 			st.varPos = j
 			lx.i = n
 			return true

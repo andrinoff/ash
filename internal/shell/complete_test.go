@@ -247,6 +247,18 @@ func TestCompleteVariables(t *testing.T) {
 	if it := find(c, "$ashtestvar"); it == nil || it.Description != "one two" || it.Kind != "variable" || it.Label() != "$ashtestvar" {
 		t.Errorf("variable: %+v", it)
 	}
+	// complete -C prints the whole token, $ included
+	for _, tt := range []struct{ src, want string }{
+		{`complete -C 'echo $ashtestvar2'`, "$ashtestvar2\tx\n"},
+		{`complete -C 'echo foo$ashtestvar2'`, "foo$ashtestvar2\tx\n"},
+		{`complete -C 'echo "$ashtestvar2'`, "$ashtestvar2\tx\n"},
+		{`complete -C 'echo ${ashtestvar2'`, "${ashtestvar2}\tx\n"},
+		{`complete --escape -C 'echo $ashtestvar2'`, "$ashtestvar2\tx\n"},
+	} {
+		if got := run(t, sh, tt.src); got != tt.want {
+			t.Errorf("%s: got %q, want %q", tt.src, got, tt.want)
+		}
+	}
 }
 
 func TestCompleteSpecs(t *testing.T) {
