@@ -505,6 +505,9 @@ func (r *compRun) completeArgs(col *collector, idx int) {
 		}
 		r.ed.buf, r.ed.pos, r.ed.tok = transient, len(transient), tokOff
 		clear(r.conds)
+		// Like fish, load the command's function first: it may say what it
+		// wraps (function --wraps) or define completions.
+		r.loadFunc(name)
 		u, f := r.specComplete(col, name, argv)
 		if !u {
 			useFiles = false
@@ -585,12 +588,7 @@ func (r *compRun) preloadFunc(name string) {
 		return
 	}
 	r.seen[name] = true
-	fn := r.sh.lookupFunc(name)
-	if fn == nil && strings.HasPrefix(name, "__fish_") {
-		// a helper from fish's function library
-		r.c.fish.ensureFunctions(r.sh)
-		fn = r.sh.lookupFunc(name)
-	}
+	fn := r.loadFunc(name)
 	if fn == nil {
 		return
 	}
@@ -601,6 +599,18 @@ func (r *compRun) preloadFunc(name string) {
 	if fn.BodyCmd != nil {
 		walkCommand(fn.BodyCmd, r.preloadFunc)
 	}
+}
+
+// loadFunc returns the function name, autoloading it into the completion
+// shell if needed, or nil.
+func (r *compRun) loadFunc(name string) *Function {
+	fn := r.sh.lookupFunc(name)
+	if fn == nil && strings.HasPrefix(name, "__fish_") {
+		// a helper from fish's function library
+		r.c.fish.ensureFunctions(r.sh)
+		fn = r.sh.lookupFunc(name)
+	}
+	return fn
 }
 
 // walkCommands calls f with the literal command names used in stmts,

@@ -424,12 +424,23 @@ function ashtestf --wraps ashtest
 end
 alias ashtestal='ashtest -v'
 `)
+	// a wrapper that is only autoloadable (saved with funcsave): like
+	// fish, completion loads it to learn what it wraps
+	fdir := filepath.Join(sh.ConfigDir(), "functions")
+	if err := os.MkdirAll(fdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fdir, "ashtestlazyf.fish"), []byte("function ashtestlazyf --wraps 'ashtest -v'\nend\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	checkCompletions(t, sh, []compCase{
 		{"ashtestw --he", []string{"--help"}},
 		{"ashtestf --he", []string{"--help"}},
 		{"ashtestal --he", []string{"--help"}},
 		{"ashtestal ", []string{"verbose-arg"}},
 		{"ashtestw ", nil},
+		{"ashtestlazyf --he", []string{"--help"}},
+		{"ashtestlazyf ", []string{"verbose-arg"}},
 	})
 }
 
