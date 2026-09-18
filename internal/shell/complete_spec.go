@@ -33,6 +33,8 @@ type compOpt struct {
 
 	argWords  []*syntax.Word   // args, parsed
 	condStmts [][]*syntax.Stmt // conds, parsed
+
+	file string // the completion file that defined it, if any
 }
 
 // compEntry holds the specs of one command (or command pattern).
@@ -178,10 +180,36 @@ func (c *completions) entry(cmd string, isPath, create bool) *compEntry {
 // addOpt adds a spec for cmd.
 func (c *completions) addOpt(cmd string, isPath bool, o *compOpt) {
 	c.mu.Lock()
+	if n := len(c.loading); n > 0 {
+		o.file = c.loading[n-1]
+	}
 	e := c.entry(cmd, isPath, true)
 	// Readers keep slices of e.opts; appending never changes what they see.
 	e.opts = append(e.opts, o)
 	c.mu.Unlock()
+}
+
+// dropSpecs erases the specs that a completion file defined.
+func (c *completions) dropSpecs(file string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, e := range c.order {
+		var keep []*compOpt
+		for i, o := range e.opts {
+			if o.file == file {
+				if keep == nil {
+					keep = append(make([]*compOpt, 0, len(e.opts)), e.opts[:i]...)
+				}
+				continue
+			}
+			if keep != nil {
+				keep = append(keep, o)
+			}
+		}
+		if keep != nil {
+			e.opts = keep
+		}
+	}
 }
 
 // removeOpts erases specs of cmd: all of them, or the options named.

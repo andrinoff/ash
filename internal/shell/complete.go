@@ -21,25 +21,36 @@ type completions struct {
 	order     []*compEntry          // every entry, in creation order
 	wraps     map[string][]string   // complete -w targets by command
 	wrapOrder []string
-	loaded    map[string]bool // commands whose completion file was looked up
-	loading   []string        // completion files being sourced (innermost last)
+	loaded    map[string]loadState // commands whose completion file was looked up
+	loading   []string             // completion files being sourced (innermost last)
 
 	active atomic.Pointer[compRun] // the completion being computed, if any
+	runs   atomic.Uint64           // numbers completions run in subshells
 
-	dirs   dirCache
-	fish   fishLib
-	walked sync.Map // *Function -> struct{}: bodies already scanned for autoloads
-	users  struct {
+	dirs       dirCache
+	fish       fishLib
+	walked     sync.Map // *Function -> struct{}: bodies already scanned for autoloads
+	autoloaded sync.Map // function name -> struct{}: autoloaded for completion code
+	users      struct {
 		once sync.Once
 		list []userHome
 	}
+}
+
+// loadState says where the completion file of a command was sourced.
+// Functions and variables a subshell defines (complete -C in a command
+// substitution) go away with it, so such a file is sourced again by the
+// next completion that needs it.
+type loadState struct {
+	file string // the file, "" if there is none
+	run  uint64 // the completion (in a subshell) that sourced it; 0: the shell itself
 }
 
 func newCompletions() *completions {
 	return &completions{
 		entries: map[string]*compEntry{},
 		wraps:   map[string][]string{},
-		loaded:  map[string]bool{},
+		loaded:  map[string]loadState{},
 	}
 }
 
@@ -54,6 +65,7 @@ type compRun struct {
 	ed    *compEditor     // what `commandline` sees
 	prev  *compRun        // enclosing completion (complete -C in a script)
 	depth int
+	id    uint64 // for loadState: 0 in the shell itself, else unique to a completion in a subshell
 
 	closeQuote bool       // the closing quote after the cursor is replaced too
 	restore    savedState // shell state to put back when done
@@ -144,6 +156,9 @@ func (sh *Shell) beginComplete(line *compLine) *compRun {
 		// loads are visible to the main shell rather than to a subshell.
 		r.sh = prev.sh
 		r.seen = prev.seen
+		r.id = prev.id
+	} else if sh.subshell {
+		r.id = c.runs.Add(1)
 	}
 	r.io = quietIO()
 	var inner Editor
@@ -604,11 +619,26 @@ func (r *compRun) preloadFunc(name string) {
 // loadFunc returns the function name, autoloading it into the completion
 // shell if needed, or nil.
 func (r *compRun) loadFunc(name string) *Function {
-	fn := r.sh.lookupFunc(name)
-	if fn == nil && strings.HasPrefix(name, "__fish_") {
-		// a helper from fish's function library
-		r.c.fish.ensureFunctions(r.sh)
-		fn = r.sh.lookupFunc(name)
+	sh := r.sh
+	if fn := sh.funcs[name]; fn != nil {
+		return fn
+	}
+	fn := sh.lookupFunc(name)
+	if fn == nil {
+		if _, ok := r.c.autoloaded.Load(name); ok {
+			// Autoloaded before by a subshell (complete -C in a command
+			// substitution), which kept it to itself, and the autoloader
+			// doesn't try a name twice: load it again here.
+			sh.shared.autoload.forget(name)
+			fn = sh.lookupFunc(name)
+		} else if strings.HasPrefix(name, "__fish_") {
+			// a helper from fish's function library
+			r.c.fish.ensureFunctions(sh)
+			fn = sh.lookupFunc(name)
+		}
+	}
+	if fn != nil {
+		r.c.autoloaded.Store(name, struct{}{})
 	}
 	return fn
 }

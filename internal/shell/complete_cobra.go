@@ -51,19 +51,18 @@ func init() {
 	builtinHelp["__ash_cobra_complete"] = "ask a cobra program to complete its own arguments"
 }
 
-// loadCobra defines completions for cmd if it is a cobra program, and
-// reports whether it did. load tries it when there is no completion file,
-// or when the file is one cobra generated.
-func (r *compRun) loadCobra(cmd string) bool {
+// cobraSpec returns completion code for cmd, under a made-up file name,
+// if it is a cobra program; findFile uses it when there is no completion
+// file, or when the file is one cobra generated.
+func (r *compRun) cobraSpec(cmd string) (string, []byte) {
 	p, ok := r.sh.LookPath(cmd)
 	if !ok || !isCobra(p) {
-		return false
+		return "", nil
 	}
 	// The condition asks the program and fails when files should be
 	// completed instead; the candidates are what it answered.
 	src := "complete -c " + Quote(cmd) + " -n __ash_cobra_complete -f -a '(__ash_cobra_complete --results)'\n"
-	r.source("cobra:"+cmd, []byte(src))
-	return true
+	return "cobra:" + cmd, []byte(src)
 }
 
 // cobraScript reports whether a completion file is a script cobra wrote

@@ -561,6 +561,54 @@ false
 	})
 }
 
+func TestCompleteInSubshell(t *testing.T) {
+	sh, _ := newCompShell(t)
+	cdir := filepath.Join(sh.ConfigDir(), "completions")
+	fdir := filepath.Join(sh.ConfigDir(), "functions")
+	for _, d := range []string{cdir, fdir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := map[string]string{
+		filepath.Join(fdir, "__ashtestsub_helper.fish"): "function __ashtestsub_helper\n    true\nend\n",
+		filepath.Join(cdir, "ashtestsub.fish"): `
+set -g __ashtestsub_prefix item
+function __ashtestsub_items
+    echo $__ashtestsub_prefix"1"
+    echo $__ashtestsub_prefix"2"
+end
+complete -c ashtestsub -f -n __ashtestsub_helper -a '(__ashtestsub_items)'
+complete -c ashtestsub -s q -d Quiet
+`,
+	}
+	for p, src := range files {
+		if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// complete -C in a command substitution runs in a subshell, which
+	// keeps the functions and variables of the completion file (and the
+	// helpers it autoloads) to itself
+	for i := 0; i < 2; i++ {
+		if out := run(t, sh, `set -l x (complete -C 'ashtestsub '); echo $x`); out != "item1 item2\n" {
+			t.Errorf("complete -C in a subshell (%d): %q", i, out)
+		}
+	}
+	// the shell itself still gets them
+	checkCompletions(t, sh, []compCase{{"ashtestsub ", []string{"item1", "item2"}}})
+	if out := run(t, sh, `complete -C 'ashtestsub '`); out != "item1\nitem2\n" {
+		t.Errorf("complete -C: %q", out)
+	}
+	if out := run(t, sh, `set -l x (complete -C 'ashtestsub '); echo $x`); out != "item1 item2\n" {
+		t.Errorf("complete -C in a subshell, after: %q", out)
+	}
+	// and the file's specs were not defined twice
+	if out := run(t, sh, "complete -c ashtestsub"); strings.Count(out, "\n") != 2 {
+		t.Errorf("specs:\n%s", out)
+	}
+}
+
 func TestCompletePanic(t *testing.T) {
 	sh, _ := newCompShell(t)
 	builtins["__ashtest_panic"] = func(sh *Shell, io *IO, args []string) int { panic("boom") }

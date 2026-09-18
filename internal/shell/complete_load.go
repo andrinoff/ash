@@ -22,38 +22,64 @@ import (
 // Without one, a program built with cobra completes itself (see
 // complete_cobra.go).
 
-// load sources the completion file for cmd, the first time only.
+// load sources the completion file for cmd, the first time only (see
+// loadState for completions run in subshells).
 func (r *compRun) load(cmd string) {
 	if cmd == "" || cmd == "." || cmd == ".." || strings.ContainsAny(cmd, "/\x00") {
 		return
 	}
 	c := r.c
 	c.mu.Lock()
-	if c.loaded[cmd] {
+	st, ok := c.loaded[cmd]
+	if ok && (st.run == 0 || st.run == r.id) {
 		c.mu.Unlock()
 		return
 	}
-	c.loaded[cmd] = true
+	c.loaded[cmd] = loadState{run: r.id}
 	c.mu.Unlock()
-	if p := r.findCompletion(cmd); p != "" {
-		if b, err := os.ReadFile(p); err == nil && !(cobraScript(b) && r.loadCobra(cmd)) {
-			r.source(p, b)
-		}
-		return
+	if ok && st.file != "" {
+		// A subshell sourced it, and its functions and variables went
+		// away with it: forget its specs, and source it again here.
+		c.dropSpecs(st.file)
 	}
-	if p, src := c.fish.completion(r.sh, cmd); src != nil {
+	p, src := r.findFile(cmd)
+	c.mu.Lock()
+	if p == "" {
+		c.loaded[cmd] = loadState{} // nothing to source, in any shell
+	} else {
+		c.loaded[cmd] = loadState{file: p, run: r.id}
+	}
+	c.mu.Unlock()
+	if p != "" {
 		r.source(p, src)
-		return
+	}
+}
+
+// findFile returns the completion file for cmd and its contents, or "".
+func (r *compRun) findFile(cmd string) (string, []byte) {
+	if p := r.findCompletion(cmd); p != "" {
+		if b, err := os.ReadFile(p); err == nil {
+			if cobraScript(b) {
+				if cp, cs := r.cobraSpec(cmd); cp != "" {
+					return cp, cs
+				}
+			}
+			return p, b
+		}
+		return "", nil
+	}
+	if p, src := r.c.fish.completion(r.sh, cmd); src != nil {
+		return p, src
 	}
 	for _, d := range r.generatedDirs() {
 		if p := findCompletionIn(d, cmd); p != "" {
 			if b, err := os.ReadFile(p); err == nil {
-				r.source(p, b)
+				return p, b
 			}
-			return
+			return "", nil
 		}
 	}
-	r.loadCobra(cmd)
+	return r.cobraSpec(cmd)
 }
 
 // completionDirs returns the directories searched before fish's own
@@ -148,6 +174,16 @@ func (r *compRun) source(file string, b []byte) {
 			walkCommand(st.Cmd, r.preloadFunc)
 		}
 	}
+	// specs defined now belong to the file (see dropSpecs)
+	c := r.c
+	c.mu.Lock()
+	c.loading = append(c.loading, file)
+	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		c.loading = c.loading[:len(c.loading)-1]
+		c.mu.Unlock()
+	}()
 	saved := sh.scope
 	sh.scope = newScope(sh.global, scopeBlock)
 	sh.srcStack = append(sh.srcStack, file)
