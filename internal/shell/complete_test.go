@@ -189,6 +189,15 @@ func TestCompleteGlob(t *testing.T) {
 	if n, got := count("cat d1/*"); n != 20 || got[0] != "d1/f00.txt" {
 		t.Errorf("cat d1/*: %q", got)
 	}
+	// a wildcard in a directory name
+	for _, line := range []string{"cat *1/f0", "cat d1*/f0", "cat ?1/f0"} {
+		if n, got := count(line); n != 10 || got[0] != "d1/f00.txt" {
+			t.Errorf("%s: %q", line, got)
+		}
+	}
+	if n, got := count("cat s*/"); n != 1 || got[0] != `sub\ dir/y.txt` {
+		t.Errorf("cat s*/: %q", got)
+	}
 	// a wildcard over a big tree gives up rather than keep the line
 	// editor waiting
 	defer func(v int) { globMaxVisits = v }(globMaxVisits)

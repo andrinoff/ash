@@ -112,6 +112,11 @@ func (r *compRun) completeFiles(col *collector, ft fileTok, mode fileMode) {
 		r.completeUsersIn(col, ft)
 		return
 	}
+	if ft.globLast >= 0 {
+		// a wildcard, in the name or in a directory
+		r.completeGlob(col, ft)
+		return
+	}
 	dirRaw, baseRaw := "", ft.raw
 	needle := ft.value
 	baseQuote := ft.startQuote
@@ -127,10 +132,6 @@ func (r *compRun) completeFiles(col *collector, ft fileTok, mode fileMode) {
 		dirVal = v
 	}
 	baseStart := max(ft.slash, 0)
-	if ft.globLast >= baseStart {
-		r.completeGlob(col, ft)
-		return
-	}
 	if ft.expEnd > baseStart {
 		// an expansion in the name itself ($x.txt): expand it
 		v, ok := r.expandRaw(opener(baseQuote)+baseRaw, l.quote)
