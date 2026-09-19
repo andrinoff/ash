@@ -627,8 +627,15 @@ type dirCache struct {
 type dirListing struct {
 	mod  time.Time
 	size int64
+	read time.Time // when it was read
 	ents []dirEnt
 }
+
+// dirTimeSlack is how long after its last change a directory must have
+// been read for the listing to be reused while its time stays the same.
+// Before that, another change could keep the same time: timestamps tick
+// every second on HFS+ and every two seconds on FAT.
+const dirTimeSlack = 2 * time.Second
 
 type dirEnt struct {
 	name string
@@ -644,11 +651,12 @@ func (d *dirCache) list(dir string) ([]dirEnt, bool) {
 		return nil, false
 	}
 	d.mu.Lock()
-	if l := d.m[dir]; l != nil && l.mod.Equal(st.ModTime()) && l.size == st.Size() && time.Since(l.mod) > time.Second {
+	if l := d.m[dir]; l != nil && l.mod.Equal(st.ModTime()) && l.size == st.Size() && l.read.Sub(l.mod) > dirTimeSlack {
 		d.mu.Unlock()
 		return l.ents, true
 	}
 	d.mu.Unlock()
+	read := time.Now()
 	f, err := os.Open(dir)
 	if err != nil {
 		return nil, false
@@ -676,7 +684,7 @@ func (d *dirCache) list(dir string) ([]dirEnt, bool) {
 			d.keys = d.keys[1:]
 		}
 	}
-	d.m[dir] = &dirListing{mod: st.ModTime(), size: st.Size(), ents: ents}
+	d.m[dir] = &dirListing{mod: st.ModTime(), size: st.Size(), read: read, ents: ents}
 	d.mu.Unlock()
 	return ents, true
 }

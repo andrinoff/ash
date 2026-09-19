@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/andrinoff/ash/internal/editor"
 )
@@ -201,6 +202,56 @@ func TestCompleteGlob(t *testing.T) {
 	sh.ClearInterrupt()
 	if n != 0 {
 		t.Errorf("cat **.txt, interrupted: %d items", n)
+	}
+}
+
+func TestDirCache(t *testing.T) {
+	dir := t.TempDir()
+	touch(t, dir, "a")
+	var d dirCache
+	names := func() []string {
+		ents, ok := d.list(dir)
+		if !ok {
+			t.Fatal("not listed")
+		}
+		var out []string
+		for _, e := range ents {
+			out = append(out, e.name)
+		}
+		slices.Sort(out)
+		return out
+	}
+	rename := func(from, to string, mod time.Time) {
+		if err := os.Rename(filepath.Join(dir, from), filepath.Join(dir, to)); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(dir, mod, mod); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Read shortly after a change, a listing can't be trusted later: the
+	// directory may change again within the same tick of its timestamp
+	// (a second on HFS+, two on FAT), which leaves its time as it was.
+	mod := time.Now().Add(-1200 * time.Millisecond)
+	if err := os.Chtimes(dir, mod, mod); err != nil {
+		t.Fatal(err)
+	}
+	if got := names(); !slices.Equal(got, []string{"a"}) {
+		t.Fatalf("got %q", got)
+	}
+	rename("a", "b", mod)
+	if got := names(); !slices.Equal(got, []string{"b"}) {
+		t.Errorf("after a change in the same tick: got %q, want [b]", got)
+	}
+	// A directory left alone for long is read once.
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(dir, old, old); err != nil {
+		t.Fatal(err)
+	}
+	names()
+	rename("b", "c", old) // (can't happen: shows the listing is reused)
+	if got := names(); !slices.Equal(got, []string{"b"}) {
+		t.Errorf("listing not cached: got %q", got)
 	}
 }
 
