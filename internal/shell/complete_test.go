@@ -1,9 +1,11 @@
 package shell
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -161,6 +163,44 @@ func TestCompleteFiles(t *testing.T) {
 	c = sh.Complete(line, strings.Index(line, `f"`)+1)
 	if got := texts(c); !reflect.DeepEqual(got, []string{`"my file.txt"`, `"my folder/"`}) || c.End != strings.Index(line, `f"`)+2 {
 		t.Errorf("before closing quote: got %q, End %d", got, c.End)
+	}
+}
+
+func TestCompleteGlob(t *testing.T) {
+	sh, dir := newCompShell(t)
+	for i := 0; i < 10; i++ {
+		for j := 0; j < 20; j++ {
+			touch(t, dir, fmt.Sprintf("d%d/f%02d.txt", i, j))
+		}
+	}
+	touch(t, dir, "top.txt", ".hid/x.txt", "sub dir/y.txt")
+	count := func(line string) (int, []string) {
+		c := sh.Complete(line, len(line))
+		return len(c.Items), texts(c)
+	}
+	// "**" alone is the directories below, not the current one as "/"
+	if n, got := count("cat **"); n != 11 || slices.Contains(got, "/") {
+		t.Errorf("cat **: %q", got)
+	}
+	if n, got := count("cat **.txt"); n != 202 || !slices.Contains(got, `sub\ dir/y.txt`) || slices.Contains(got, ".hid/x.txt") {
+		t.Errorf("cat **.txt: %d items", n)
+	}
+	if n, got := count("cat d1/*"); n != 20 || got[0] != "d1/f00.txt" {
+		t.Errorf("cat d1/*: %q", got)
+	}
+	// a wildcard over a big tree gives up rather than keep the line
+	// editor waiting
+	defer func(v int) { globMaxVisits = v }(globMaxVisits)
+	globMaxVisits = 50
+	if n, _ := count("cat **.txt"); n == 0 || n >= 202 {
+		t.Errorf("cat **.txt, limited: %d items", n)
+	}
+	globMaxVisits = 1 << 20
+	sh.Interrupt()
+	n, _ := count("cat **.txt")
+	sh.ClearInterrupt()
+	if n != 0 {
+		t.Errorf("cat **.txt, interrupted: %d items", n)
 	}
 }
 

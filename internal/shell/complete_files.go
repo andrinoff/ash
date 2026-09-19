@@ -409,11 +409,7 @@ func (r *compRun) completeGlob(col *collector, ft fileTok) {
 	if !strings.HasSuffix(pat, "*") {
 		pat += "*"
 	}
-	matches := r.sh.glob(pat)
-	if len(matches) > 4096 {
-		matches = matches[:4096]
-	}
-	for _, mtc := range matches {
+	for _, mtc := range r.globMatches(pat) {
 		val := mtc
 		isDir := false
 		p := mtc
@@ -436,6 +432,122 @@ func (r *compRun) completeGlob(col *collector, ft fileTok) {
 		}
 		col.add(tierPrefixFold, val, editor.Candidate{Text: text, Display: val, NoSpace: isDir, Kind: kind}, false)
 	}
+}
+
+// Limits on expanding a wildcard for completion, which the line editor
+// waits for: "**" in a big tree would otherwise take minutes.
+var (
+	globMaxVisits  = 100000 // directory entries looked at
+	globMaxMatches = 4096
+	globMaxTime    = 500 * time.Millisecond
+)
+
+// globMatches expands the pattern like sh.glob, but stops at the limits
+// above or when the shell is interrupted, and leaves out the empty match
+// ("**" matching no directory at all).
+func (r *compRun) globMatches(pat string) []string {
+	sh := r.sh
+	var segs []string
+	for _, s := range strings.Split(strings.TrimPrefix(pat, "/"), "/") {
+		if s != "**" && strings.Contains(s, "**") {
+			// fish-style "**.go" means "**/*.go"
+			segs = append(segs, "**", strings.ReplaceAll(s, "**", "*"))
+			continue
+		}
+		segs = append(segs, s)
+	}
+	base, prefix := sh.dir, ""
+	if strings.HasPrefix(pat, "/") {
+		base, prefix = "/", "/"
+	}
+	deadline := time.Now().Add(globMaxTime)
+	visits, stopped := 0, false
+	var out []string
+	seen := map[string]bool{}
+	readDir := func(dir string) []os.DirEntry {
+		if stopped || visits >= globMaxVisits || len(out) >= globMaxMatches || sh.interrupted() || time.Now().After(deadline) {
+			stopped = true
+			return nil
+		}
+		ents, _ := os.ReadDir(dir)
+		visits += len(ents)
+		return ents
+	}
+	add := func(m string) {
+		if m != "" && !seen[m] && len(out) < globMaxMatches {
+			seen[m] = true
+			out = append(out, m)
+		}
+	}
+	var walk func(dir, rel string, i int)
+	walk = func(dir, rel string, i int) {
+		if stopped {
+			return
+		}
+		if i == len(segs) {
+			add(rel)
+			return
+		}
+		join := func(name string) (string, string) {
+			if rel == "" {
+				return filepath.Join(dir, name), prefix + name
+			}
+			return filepath.Join(dir, name), rel + "/" + name
+		}
+		switch seg := segs[i]; {
+		case seg == "":
+			// trailing slash or "//"
+			if i < len(segs)-1 {
+				walk(dir, rel, i+1)
+			} else if rel != "" {
+				add(rel + "/")
+			}
+		case seg == "**":
+			walk(dir, rel, i+1) // no directory at all
+			var rec func(d, rl string, depth int)
+			rec = func(d, rl string, depth int) {
+				if depth > 64 {
+					return
+				}
+				for _, e := range readDir(d) {
+					// (hidden and symlinked directories are not entered)
+					if name := e.Name(); name[0] != '.' && e.IsDir() && !stopped {
+						nd, nr := filepath.Join(d, name), prefix+name
+						if rl != "" {
+							nr = rl + "/" + name
+						}
+						walk(nd, nr, i+1)
+						rec(nd, nr, depth+1)
+					}
+				}
+			}
+			rec(dir, rel, 0)
+		case !hasMeta(seg):
+			d, rl := join(unescapePattern(seg))
+			if i < len(segs)-1 {
+				walk(d, rl, i+1)
+			} else if _, err := os.Lstat(d); err == nil {
+				add(rl)
+			}
+		default:
+			dotOK := strings.HasPrefix(seg, ".") || strings.HasPrefix(seg, `\.`)
+			for _, e := range readDir(dir) {
+				name := e.Name()
+				if stopped || name[0] == '.' && !dotOK || !matchPattern(seg, name) {
+					continue
+				}
+				d, rl := join(name)
+				if i < len(segs)-1 && !e.IsDir() {
+					if st, err := os.Stat(d); err != nil || !st.IsDir() {
+						continue
+					}
+				}
+				walk(d, rl, i+1)
+			}
+		}
+	}
+	walk(base, "", 0)
+	return out
 }
 
 // userHome is a user name and home directory.
