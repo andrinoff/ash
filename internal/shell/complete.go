@@ -629,8 +629,8 @@ func (r *compRun) loadFunc(name string) *Function {
 			// doesn't try a name twice: load it again here.
 			sh.shared.autoload.forget(name)
 			fn = sh.lookupFunc(name)
-		} else if strings.HasPrefix(name, "__fish_") {
-			// a helper from fish's function library
+		} else if strings.HasPrefix(name, "_") {
+			// maybe a helper from fish's function library
 			r.c.fish.ensureFunctions(sh)
 			fn = sh.lookupFunc(name)
 		}

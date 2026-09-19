@@ -217,9 +217,10 @@ func (f *fishLib) ensureFunctions(sh *Shell) {
 	f.functions(sh.fishEnv(), sh.AddFunctionPath)
 }
 
-// functions extracts fish's helper functions (__fish_*), once per fish
-// version, and passes their directory to register (for the autoloader),
-// the first time only. Only the __fish_ helpers are used: fish's other
+// functions extracts fish's helper functions (__fish_*, and the few
+// others whose names start with _, like ssh's __ssh_history_completions),
+// once per fish version, and passes their directory to register (for the
+// autoloader), the first time only. Only helpers are used: fish's other
 // functions (ls, cd, history...) would shadow ash's own commands.
 func (f *fishLib) functions(env fishEnv, register func(dir string)) {
 	f.mu.Lock()
@@ -229,7 +230,8 @@ func (f *fishLib) functions(env fishEnv, register func(dir string)) {
 	}
 	f.funcsDone = true
 	dir := filepath.Join(f.root, "functions")
-	marker := filepath.Join(dir, ".complete")
+	// (renamed when what is extracted changes, so older caches are redone)
+	marker := filepath.Join(dir, ".complete-2")
 	if _, err := os.Stat(marker); err == nil {
 		register(dir)
 		return
@@ -242,7 +244,7 @@ func (f *fishLib) functions(env fishEnv, register func(dir string)) {
 			continue
 		}
 		base := path.Base(string(rec[:nl]))
-		if !strings.HasPrefix(base, "__fish_") || !strings.HasSuffix(base, ".fish") || strings.ContainsAny(base, "/\x00") {
+		if !strings.HasPrefix(base, "_") || !strings.HasSuffix(base, ".fish") || strings.ContainsAny(base, "/\x00") {
 			continue
 		}
 		if writeFileAtomic(filepath.Join(dir, base), rec[nl+1:]) == nil {

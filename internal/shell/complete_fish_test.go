@@ -52,6 +52,10 @@ func TestFishLibrary(t *testing.T) {
 	if !strings.HasPrefix(fn.File, filepath.Join(sh.CacheDir(), "fish-")) {
 		t.Errorf("loaded from %s", fn.File)
 	}
+	// other helpers named with a leading _ (ssh.fish uses this one)
+	if sh.Function("__ssh_history_completions") == nil {
+		t.Error("__ssh_history_completions is not autoloadable")
+	}
 	// fish's other functions would shadow ash's own commands
 	for _, name := range []string{"ls", "cd", "history", "fish_prompt"} {
 		if fn := sh.Function(name); fn != nil {
