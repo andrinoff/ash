@@ -105,6 +105,34 @@ func TestScanCompLine(t *testing.T) {
 	}
 }
 
+// FuzzComplete checks that unfinished and odd command lines, with the
+// cursor anywhere, neither crash completion nor give a bad range.
+func FuzzComplete(f *testing.F) {
+	for _, s := range []string{
+		"", "$", "${", "${#", "$((1+(2", "$'\\", `"$(echo "a`, "<(", "a<(b", "`", "(((", ")))",
+		"cat 'a'\\''b", "x=$((", "cmd 2>&", "cmd <<EOF\nx", "echo \\\n", "# c", "a#b", "~", "~/",
+		"cat **", "ls d*/x", "--opt='a b", "-abc", "echo $a[1", "é'\"$\\", "cmd >|f", "a\x00b",
+	} {
+		f.Add(s, len(s))
+		f.Add(s, len(s)/2)
+	}
+	sh, _ := newCompShell(f)
+	f.Fuzz(func(t *testing.T, s string, cur int) {
+		if cur < 0 || cur > len(s) {
+			cur = len(s)
+		}
+		l := scanCompLine(s, cur)
+		if l.tok.start < 0 || l.tok.start > l.tok.end || l.tok.end > cur {
+			t.Fatalf("%q at %d: token %d..%d", s, cur, l.tok.start, l.tok.end)
+		}
+		c := sh.Complete(s, cur)
+		if c.Start < 0 || c.Start > c.End || c.End > len(s) {
+			t.Fatalf("%q at %d: range %d..%d", s, cur, c.Start, c.End)
+		}
+		unescapeToken(s)
+	})
+}
+
 func TestScanCompLineCursor(t *testing.T) {
 	// only the text before the cursor counts
 	line := "git checkout main --force"

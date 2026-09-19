@@ -17,7 +17,7 @@ import (
 // directories and $PATH are temporary (so fish is not found and nothing
 // of the user's is read), and it works in an empty directory, which is
 // returned.
-func newCompShell(t *testing.T) (*Shell, string) {
+func newCompShell(t testing.TB) (*Shell, string) {
 	t.Helper()
 	tmp := t.TempDir()
 	sh := New()
