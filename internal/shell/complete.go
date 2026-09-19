@@ -29,7 +29,6 @@ type completions struct {
 
 	dirs       dirCache
 	fish       fishLib
-	walked     sync.Map // *Function -> struct{}: bodies already scanned for autoloads
 	autoloaded sync.Map // function name -> struct{}: autoloaded for completion code
 	users      struct {
 		once sync.Once
@@ -598,6 +597,8 @@ func (r *compRun) preload(stmts []*syntax.Stmt) {
 }
 
 // preloadFunc loads the function name, if there is one, and what it calls.
+// Each name is looked at once per completion; its body is scanned every
+// time, as what it calls may be missing in this shell.
 func (r *compRun) preloadFunc(name string) {
 	if r.seen[name] {
 		return
@@ -605,9 +606,6 @@ func (r *compRun) preloadFunc(name string) {
 	r.seen[name] = true
 	fn := r.loadFunc(name)
 	if fn == nil {
-		return
-	}
-	if _, done := r.c.walked.LoadOrStore(fn, struct{}{}); done {
 		return
 	}
 	r.preload(fn.Body)

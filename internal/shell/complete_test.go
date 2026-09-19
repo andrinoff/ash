@@ -707,6 +707,21 @@ complete -c ashtestsub -s q -d Quiet
 	if out := run(t, sh, "complete -c ashtestsub"); strings.Count(out, "\n") != 2 {
 		t.Errorf("specs:\n%s", out)
 	}
+
+	// a function of the shell's that calls one that is autoloaded
+	if err := os.WriteFile(filepath.Join(fdir, "__ashtestsub_deep.fish"), []byte("function __ashtestsub_deep\n    echo deep\nend\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(t, sh, `
+function __ashtestsub_mid
+    __ashtestsub_deep
+end
+complete -c ashtestsub2 -f -a '(__ashtestsub_mid)'
+`)
+	if out := run(t, sh, `set -l x (complete -C 'ashtestsub2 '); echo $x`); out != "deep\n" {
+		t.Errorf("complete -C in a subshell: %q", out)
+	}
+	checkCompletions(t, sh, []compCase{{"ashtestsub2 ", []string{"deep"}}})
 }
 
 func TestCompletePanic(t *testing.T) {
