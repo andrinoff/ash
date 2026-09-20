@@ -419,7 +419,7 @@ func (p *Parser) arithCmd() Command {
 }
 
 // matchArith returns the index just past the "))" matching an arithmetic
-// expression whose body starts at i, or -1.
+// expression whose body starts at i, or -1. The expression may span lines.
 func (p *Parser) matchArith(i int) int {
 	depth := 0
 	for i < len(p.src) {
@@ -434,7 +434,7 @@ func (p *Parser) matchArith(i int) int {
 				return -1
 			}
 			depth--
-		case '\n', ';':
+		case ';':
 			if depth == 0 {
 				return -1
 			}

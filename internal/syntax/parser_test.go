@@ -151,6 +151,28 @@ func TestFishIndexHeuristic(t *testing.T) {
 	}
 }
 
+func TestParseMultilineArith(t *testing.T) {
+	f, err := Parse("x=$((\n  1 +\n  2\n))\n((\n  x++\n))")
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := f.Stmts[0].Cmd.(*CallExpr)
+	if _, ok := call.Assigns[0].Value.Parts[0].(*ArithExp); !ok {
+		t.Errorf("$(( spanning lines: got %T, want *ArithExp", call.Assigns[0].Value.Parts[0])
+	}
+	if _, ok := f.Stmts[1].Cmd.(*ArithCmd); !ok {
+		t.Errorf("(( spanning lines: got %T, want *ArithCmd", f.Stmts[1].Cmd)
+	}
+	// A subshell inside $( ) still isn't arithmetic.
+	f, err = Parse("x=$((cd /tmp\n  ls) | cat)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := f.Stmts[0].Cmd.(*CallExpr).Assigns[0].Value.Parts[0].(*CmdSubst); !ok {
+		t.Errorf("$((cd ...) | cat): want *CmdSubst")
+	}
+}
+
 // The user's real fish configuration should parse.
 func TestParseFishConfigs(t *testing.T) {
 	home, _ := os.UserHomeDir()
