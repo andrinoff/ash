@@ -67,8 +67,14 @@ func bHistory(sh *Shell, io *IO, args []string) int {
 			return 1
 		}
 		return 0
-	case "merge", "save":
+	case "merge":
+		// pick up what other running shells have added
+		if m, ok := sh.History.(interface{ Merge() }); ok {
+			m.Merge()
+		}
 		return 0
+	case "save":
+		return 0 // every command is written as it runs
 	case "import":
 		kind := "fish"
 		if len(terms) > 0 {

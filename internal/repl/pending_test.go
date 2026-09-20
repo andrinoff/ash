@@ -40,3 +40,23 @@ func TestHistoryDetailsForTheBrowser(t *testing.T) {
 		t.Errorf("didn't stop when asked: %d calls", n)
 	}
 }
+
+func TestHistoryMergeBuiltin(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history")
+	mine := &storeHistory{history.Open(path)}
+	other := history.Open(path)
+	mine.Wait()
+	other.Wait()
+	sh := shell.New()
+	sh.Init()
+	sh.History = mine
+
+	other.Add(history.Entry{Cmd: "from another shell"})
+	if got := mine.Recent(1); len(got) > 0 && got[0] == "from another shell" {
+		t.Fatal("seen before merging")
+	}
+	sh.RunString("history merge", "", sh.StdIO())
+	if got := mine.Recent(1); len(got) == 0 || got[0] != "from another shell" {
+		t.Fatalf("after history merge: %q", got)
+	}
+}
