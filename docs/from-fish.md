@@ -56,8 +56,8 @@ Your history comes along: the first time ash starts it imports
 
 ## Things that are the same, on purpose
 
-The key bindings, the autosuggestions, the way the up arrow searches
-history, `alt-←`/`alt-→` for directory history, `prevd`/`nextd`/`cdh`,
+The key bindings (two of them do a little more, see below), the
+autosuggestions, the way the up arrow searches history, `alt-←`/`alt-→` for directory history, `prevd`/`nextd`/`cdh`,
 abbreviations, `--on-variable` and `--on-event` handlers, `$argv`,
 `$status` and `$pipestatus`, `$CMD_DURATION`, the `fish_greeting`,
 `fish_prompt` and `fish_title` functions, and the `fish_color_*` and
@@ -69,3 +69,17 @@ Everything sh: `&&`, `||`, `$(( ))`, `[[ ]]`, `${var:-default}` and the
 rest of parameter expansion, here-documents, `<(...)`, `case`, `name() {
 }`, `local`, `export X=1`, `trap`, `getopts`, arrays with `${arr[@]}`.
 So the one-liner from a README works without translation.
+
+And a few things fish doesn't have:
+
+- `alt-w` explains the command line, option by option, instead of only
+  showing `whatis` for the command.
+- `ctrl-z` on an empty line brings back the job you just stopped. With
+  text on the line it's still undo.
+- Programs built with cobra (gh, kubectl, helm) complete without a
+  completion script, and quitting yazi or lazygit leaves you where they
+  were (`integrate yazi lazygit`).
+- `history browse` shows where and when each command ran and whether it
+  failed, and `cdh` opens a picker.
+- `clip` copies a pipe to the clipboard, through the terminal when you're
+  on SSH.
