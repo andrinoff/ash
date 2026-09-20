@@ -115,11 +115,37 @@ func (s *Store) load() {
 		return
 	}
 	recs, n := parseRecords(data)
+	total := len(recs)
 	st := buildState(recs)
 	s.mu.Lock()
 	s.setState(st)
 	s.fi, s.off = fi, int64(n)
 	s.mu.Unlock()
+	if needsCompaction(total, len(st.items)) {
+		go s.compactFile()
+	}
+}
+
+// The history file only ever grows: every command is appended, even one
+// that's already in it. Once at least half of a big file is older copies,
+// a shell that reads it writes it again without them, so the file stays
+// within about twice the size of the history itself.
+var compactMin = 2000 // records; benchmarks raise it
+
+func needsCompaction(records, unique int) bool {
+	return records >= compactMin && records-unique >= unique
+}
+
+// compactFile rewrites the history file keeping only the newest copy of
+// each command. Other shells see the new file on their next Merge.
+func (s *Store) compactFile() error {
+	s.wmu.Lock()
+	defer s.wmu.Unlock()
+	return s.rewrite(true, func(recs []item) ([]item, bool) {
+		n := len(recs)
+		st := buildState(recs)
+		return st.items, len(st.items) < n
+	})
 }
 
 // readAll reads the rest of f, which is about size bytes long, into a

@@ -536,3 +536,42 @@ func TestConcurrentUse(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestFileCompaction(t *testing.T) {
+	if needsCompaction(compactMin-1, 10) || needsCompaction(3000, 2000) || !needsCompaction(3000, 1500) {
+		t.Fatal("needsCompaction decides wrongly")
+	}
+	path := filepath.Join(t.TempDir(), "history")
+	s := Open(path)
+	s.Wait()
+	// 2500 records of 50 commands, each run 50 times
+	for i := 0; i < 2500; i++ {
+		s.Add(Entry{Cmd: fmt.Sprintf("cmd %d", i%50), When: time.Unix(int64(1_700_000_000+i), 0), Dir: "/d", Status: i % 3})
+	}
+	before, _ := os.Stat(path)
+
+	s2 := Open(path)
+	s2.Wait()
+	if err := s2.compactFile(); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.Stat(path)
+	if after.Size()*10 > before.Size() {
+		t.Errorf("file went from %d to %d bytes", before.Size(), after.Size())
+	}
+	// A fresh read sees the same history, newest copies kept.
+	s3 := Open(path)
+	es := s3.Entries()
+	if len(es) != 50 {
+		t.Fatalf("%d entries after compaction", len(es))
+	}
+	if es[0].Cmd != "cmd 49" || es[0].When.Unix() != 1_700_000_000+2499 || es[0].Status != 2499%3 {
+		t.Errorf("newest entry %+v", es[0])
+	}
+	// The stores that were open still work, and take the rewrite in.
+	s.Add(Entry{Cmd: "after"})
+	s3.Merge()
+	if got := s3.Recent(1); len(got) != 1 || got[0] != "after" {
+		t.Errorf("after compaction: %q", got)
+	}
+}

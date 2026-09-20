@@ -2,6 +2,7 @@ package history
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -61,6 +62,9 @@ func loaded(tb testing.TB, n, unique int) *Store {
 
 // BenchmarkOpen measures reading a history file of 100k entries.
 func BenchmarkOpen(b *testing.B) {
+	// keep the file as it is, duplicates and all
+	defer func(n int) { compactMin = n }(compactMin)
+	compactMin = math.MaxInt
 	for _, bc := range []struct {
 		name      string
 		n, unique int
