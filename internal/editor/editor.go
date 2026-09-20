@@ -65,6 +65,10 @@ type Config struct {
 	OnKeymap      func(name string)
 	// Explain describes each word of a command line (alt-w).
 	Explain func(buf string) string
+	// ResumeJob returns the command that brings back the newest stopped
+	// job ("fg %2"), or "" if there is none; ctrl-z runs it on an empty
+	// line.
+	ResumeJob func() string
 }
 
 // ReadOpts configures one ReadLine call.

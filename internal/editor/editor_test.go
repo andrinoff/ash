@@ -431,3 +431,21 @@ func TestExplainLine(t *testing.T) {
 		t.Errorf("alt-w is bound to %q", got)
 	}
 }
+
+func TestCtrlZUndoesUnlessTheLineIsEmpty(t *testing.T) {
+	e := newTestEditor(80)
+	asked := 0
+	e.cfg.ResumeJob = func() string { asked++; return "fg %1" }
+	e.insert([]rune("vim notes.md"))
+	e.call(emacsKeys["ctrl-z"], Key{})
+	if string(e.buf) != "" || asked != 0 {
+		t.Fatalf("with text, ctrl-z should undo: %q (asked %d)", string(e.buf), asked)
+	}
+	// An empty line with no stopped jobs: nothing to resume, nothing to undo.
+	e2 := newTestEditor(80)
+	e2.cfg.ResumeJob = func() string { return "" }
+	e2.call(emacsKeys["ctrl-z"], Key{})
+	if string(e2.buf) != "" {
+		t.Fatalf("empty line: %q", string(e2.buf))
+	}
+}

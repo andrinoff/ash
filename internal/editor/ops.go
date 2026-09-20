@@ -47,6 +47,7 @@ func init() {
 		"capitalize-word":                func(e *Editor, k Key) { e.mapWord(capitalize) },
 		"togglecase-char":                fnToggleCaseChar,
 		"undo":                           fnUndo,
+		"resume-job-or-undo":             fnResumeJobOrUndo,
 		"redo":                           fnRedo,
 		"up-or-search":                   fnUpOrSearch,
 		"down-or-search":                 fnDownOrSearch,
@@ -822,6 +823,19 @@ func fnWhatis(e *Editor, k Key) {
 		lines = lines[:5]
 	}
 	e.message = strings.Join(lines, "\n")
+}
+
+// fnResumeJobOrUndo brings back the last stopped job when the line is
+// empty, so ctrl-z goes back and forth between an editor and the shell.
+// Otherwise it undoes.
+func fnResumeJobOrUndo(e *Editor, k Key) {
+	if len(e.buf) == 0 && e.cfg.ResumeJob != nil {
+		if cmd := e.cfg.ResumeJob(); cmd != "" {
+			e.runShell(cmd)
+			return
+		}
+	}
+	fnUndo(e, k)
 }
 
 // fnExplainLine shows what the command and each of its options does,

@@ -64,7 +64,7 @@ var emacsKeys = map[string]string{
 	"alt-u":           "upcase-word",
 	"alt-c":           "capitalize-word",
 	"ctrl-_":          "undo",
-	"ctrl-z":          "undo",
+	"ctrl-z":          "resume-job-or-undo",
 	"alt-/":           "redo",
 	"ctrl-shift-z":    "redo",
 	"up":              "up-or-search",

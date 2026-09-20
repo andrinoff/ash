@@ -89,7 +89,13 @@ func (r *REPL) editorConfig() editor.Config {
 		},
 		EditCommand: r.editCommand,
 		Explain:     func(buf string) string { return sh.FormatExplain(sh.Explain(buf), true) },
-		Style:       func(role string) string { return sh.Style(role).SGR() },
+		ResumeJob: func() string {
+			if id := sh.LastStoppedJob(); id > 0 {
+				return "fg %" + strconv.Itoa(id)
+			}
+			return ""
+		},
+		Style: func(role string) string { return sh.Style(role).SGR() },
 	}
 }
 

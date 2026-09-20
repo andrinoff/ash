@@ -113,7 +113,7 @@ doesn't exist when a close one does.
 | `ctrl-y` / `alt-y` | paste what was deleted / cycle through older deletions |
 | `ctrl-t` / `alt-t` | swap characters / words |
 | `alt-u` / `alt-c` | uppercase / capitalize the word |
-| `ctrl-z`, `ctrl-_` / `alt-/` | undo / redo |
+| `ctrl-z`, `ctrl-_` / `alt-/` | undo / redo (`ctrl-z` on an empty line brings back the job you last stopped, so it flips between vim and the shell) |
 | `alt-enter` | insert a newline |
 | `ctrl-x` / `ctrl-v` | copy the line to the clipboard / paste from it (over SSH the copy goes through the terminal, OSC 52, so it lands on your local clipboard; `clip` does the same for a pipe: `git diff \| clip`) |
 | `alt-s` | add or remove `sudo` at the front (on an empty line, the last command with sudo) |
