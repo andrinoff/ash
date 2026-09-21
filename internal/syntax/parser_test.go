@@ -104,6 +104,13 @@ func TestParseIncomplete(t *testing.T) {
 		"switch x",
 		"begin",
 		"echo ${x",
+		"sleep 1 & \\",
+		"{ echo a; } \\",
+		"(echo a) \\",
+		"if true; then echo; fi \\",
+		"for i in a; do echo; done \\",
+		"[[ a \\",
+		"echo a; \\",
 	}
 	for _, src := range cases {
 		_, err := Parse(src)
@@ -113,6 +120,45 @@ func TestParseIncomplete(t *testing.T) {
 		}
 		if !IsIncomplete(err) {
 			t.Errorf("Parse(%q): expected incomplete, got %v", src, err)
+		}
+	}
+}
+
+// Every line of a valid program that ends before the program does must
+// read as complete or incomplete, never as an error: that is what the line
+// editor looks at when Enter is pressed at the end of it.
+func TestParseLinePrefixes(t *testing.T) {
+	progs := []string{
+		"if true\nthen\n  echo a\nelif false\nthen\n  :\nelse\n  echo b\nfi",
+		"for i in a b \\\n  c\ndo\n  echo $i\ndone",
+		"case x in\n  (a)\n    echo a\n    ;;\n  b|c) echo bc;;\n  *)\n    echo other\nesac",
+		"switch x\n  case a \\\n    b\n    echo ab\n  case '*'\n    echo other\nend",
+		"f() {\n  echo a\n}",
+		"function f\n  echo a\nend",
+		"x=$(\n  echo a\n)",
+		"x=$((\n  1 + 2\n))",
+		"arr=(\n  a\n  b\n)",
+		"echo a &&\n  echo b ||\n  echo c |\n  cat",
+		"cat <<EOF\nbody\nEOF",
+		"echo 'a\nb' \"c\nd\"",
+		"sleep 1 & \\\n  echo b",
+		"{ echo a; } \\\n  > /dev/null",
+		"[[ a == a &&\n  b == b ]]",
+		"while true\ndo\n  break\ndone",
+		"begin\n  echo a\nend",
+	}
+	for _, prog := range progs {
+		if _, err := Parse(prog); err != nil {
+			t.Errorf("Parse(%q): %v", prog, err)
+			continue
+		}
+		for i := range prog {
+			if prog[i] != '\n' {
+				continue
+			}
+			if _, err := Parse(prog[:i]); err != nil && !IsIncomplete(err) {
+				t.Errorf("Parse(%q): %v (a prefix of %q)", prog[:i], err, prog)
+			}
 		}
 	}
 }

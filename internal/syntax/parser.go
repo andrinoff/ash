@@ -147,6 +147,10 @@ func (p *Parser) skipBlanks() {
 				}
 				continue
 			}
+			if p.pos+1 == len(p.src) {
+				// the line goes on: `cmd & \`, `{ ...; } \`
+				p.fail(p.pos, true, "trailing backslash")
+			}
 			return
 		default:
 			return
