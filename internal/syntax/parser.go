@@ -422,6 +422,8 @@ func (p *Parser) stmtList(stop func() bool) []*Stmt {
 			return list
 		case p.peek() == ';':
 			p.pos++
+		case st.Background:
+			// `a & b`: the & ends the statement
 		default:
 			if stop != nil && stop() {
 				return list

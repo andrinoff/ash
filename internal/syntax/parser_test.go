@@ -56,6 +56,10 @@ func TestParseOK(t *testing.T) {
 		"! true",
 		"not true; and echo x",
 		"sleep 1 &",
+		"sleep 1 & echo b",
+		"a & b &! c & wait",
+		"{ sleep 1 & }",
+		"case x in x) a & b;; esac",
 		"time ls",
 		"echo a |& cat",
 		"echo a &| cat",
@@ -162,6 +166,16 @@ func TestParseNestedErrors(t *testing.T) {
 		if line != c.line || col != c.col {
 			t.Errorf("Parse(%q): %v at %d:%d, want %d:%d", c.src, err, line, col, c.line, c.col)
 		}
+	}
+}
+
+func TestParseBackgroundSeparates(t *testing.T) {
+	f, err := Parse("server & sleep 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Stmts) != 2 || !f.Stmts[0].Background || f.Stmts[1].Background {
+		t.Fatalf("got %d statements, want `server &` and `sleep 1`", len(f.Stmts))
 	}
 }
 
