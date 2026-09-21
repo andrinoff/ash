@@ -451,22 +451,13 @@ func (p *Parser) backquote() WordPart {
 	}
 	sub := &Parser{src: b.String(), depth: p.depth, fish: p.fish}
 	var stmts []*Stmt
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				if e, ok := r.(*Error); ok {
-					e.Pos = start
-					panic(e)
-				}
-				panic(r)
-			}
-		}()
+	p.nested(func(int) int { return start }, func() {
 		stmts = sub.stmtList(nil)
 		sub.skipSeparators()
 		if !sub.eof() {
 			sub.fail(sub.pos, false, "unexpected %s in backquotes", sub.describe())
 		}
-	}()
+	})
 	return &CmdSubst{Stmts: stmts}
 }
 

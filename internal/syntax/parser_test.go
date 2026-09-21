@@ -133,6 +133,38 @@ func TestParseErrors(t *testing.T) {
 	}
 }
 
+// An error inside a heredoc body, backquotes or a subscript can't be fixed
+// by typing more lines once the construct is closed, and its position is in
+// the source rather than in the cut out text.
+func TestParseNestedErrors(t *testing.T) {
+	cases := []struct {
+		src       string
+		line, col int
+	}{
+		{"echo a\ncat <<EOF\nx\n${y\nEOF\necho after", 4, 4},
+		{"cat <<EOF\ncost: $(\nEOF", 2, 7},
+		{"cat <<-EOF\n\t\t$(\n\tEOF", 2, 3},
+		{"echo `echo $(`", 1, 6},
+		{"echo `echo 'a`", 1, 6},
+		{"x[$(]=1", 1, 3},
+		{"echo ${a[`]}", 1, 10},
+	}
+	for _, c := range cases {
+		_, err := Parse(c.src)
+		if err == nil {
+			t.Errorf("Parse(%q): expected an error", c.src)
+			continue
+		}
+		if IsIncomplete(err) {
+			t.Errorf("Parse(%q): %v: reported as incomplete", c.src, err)
+		}
+		line, col := LineCol(c.src, err.(*Error).Pos)
+		if line != c.line || col != c.col {
+			t.Errorf("Parse(%q): %v at %d:%d, want %d:%d", c.src, err, line, col, c.line, c.col)
+		}
+	}
+}
+
 func TestFishIndexHeuristic(t *testing.T) {
 	f, err := Parse(`echo "$x[0-9]" $y[1] $z[abc]`)
 	if err != nil {

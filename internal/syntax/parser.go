@@ -223,6 +223,7 @@ func (p *Parser) newline() {
 
 func (p *Parser) readHeredoc(h *pendingHeredoc) {
 	var body strings.Builder
+	var starts []int // offset of each body line in the body, then in p.src
 	for {
 		if p.eof() {
 			if !p.lenient {
@@ -231,6 +232,7 @@ func (p *Parser) readHeredoc(h *pendingHeredoc) {
 			}
 			break
 		}
+		start := p.pos
 		end := strings.IndexByte(p.src[p.pos:], '\n')
 		var line string
 		if end < 0 {
@@ -241,11 +243,14 @@ func (p *Parser) readHeredoc(h *pendingHeredoc) {
 			p.pos += end + 1
 		}
 		if h.strip {
-			line = strings.TrimLeft(line, "\t")
+			trimmed := strings.TrimLeft(line, "\t")
+			start += len(line) - len(trimmed)
+			line = trimmed
 		}
 		if line == h.delim {
 			break
 		}
+		starts = append(starts, body.Len(), start)
 		body.WriteString(line)
 		body.WriteByte('\n')
 	}
@@ -255,7 +260,34 @@ func (p *Parser) readHeredoc(h *pendingHeredoc) {
 		return
 	}
 	sub := &Parser{src: text, lenient: true}
-	h.r.Heredoc = sub.heredocBody()
+	srcPos := func(pos int) int {
+		if len(starts) == 0 {
+			return 0
+		}
+		i := 0
+		for i+2 < len(starts) && starts[i+2] <= pos {
+			i += 2
+		}
+		return starts[i+1] + pos - starts[i]
+	}
+	p.nested(srcPos, func() { h.r.Heredoc = sub.heredocBody() })
+}
+
+// nested runs parse, which parses text cut out of the source: a heredoc
+// body, the inside of `...` or of a subscript. That text has already been
+// read to its end, so an error in it can't be fixed by reading more input.
+// srcPos maps a position in the text to one in the source.
+func (p *Parser) nested(srcPos func(int) int, parse func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			if e, ok := r.(*Error); ok {
+				e.Pos = min(max(srcPos(e.Pos), 0), len(p.src))
+				e.Incomplete = false
+			}
+			panic(r)
+		}
+	}()
+	parse()
 }
 
 func (p *Parser) heredocBody() *Word {
@@ -824,7 +856,9 @@ func (p *Parser) assign() *Assign {
 	a := &Assign{Pos: p.pos, Name: name, Append: app}
 	if idxStart >= 0 {
 		sub := &Parser{src: p.src[idxStart:idxEnd]}
-		a.Index = sub.arithWord(func(int) bool { return false })
+		p.nested(func(pos int) int { return idxStart + pos }, func() {
+			a.Index = sub.arithWord(func(int) bool { return false })
+		})
 	}
 	p.pos = i + 1
 	if p.peek() == '(' {

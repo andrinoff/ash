@@ -308,7 +308,10 @@ func (p *Parser) bracedParam() WordPart {
 			idx.All, idx.Star = true, true
 		default:
 			sub := &Parser{src: inner}
-			idx.Expr = sub.arithWord(func(int) bool { return false })
+			off := p.pos + 1
+			p.nested(func(pos int) int { return off + pos }, func() {
+				idx.Expr = sub.arithWord(func(int) bool { return false })
+			})
 		}
 		pe.Index = idx
 		p.pos = end + 1
