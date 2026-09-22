@@ -349,9 +349,11 @@ func (p *Parser) ansiCQuoted() WordPart {
 				p.pos += k
 			}
 		case 'c':
-			if p.pos < len(p.src) {
+			if p.pos < len(p.src) && p.src[p.pos] != '\'' {
 				b.WriteByte(p.src[p.pos] & 0x1f)
 				p.pos++
+			} else {
+				b.WriteString(`\c`) // not the closing quote
 			}
 		case '0', '1', '2', '3', '4', '5', '6', '7':
 			v := int(n - '0')

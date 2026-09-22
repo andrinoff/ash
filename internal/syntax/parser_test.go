@@ -287,6 +287,22 @@ func TestParseDeclArgs(t *testing.T) {
 	}
 }
 
+func TestParseANSICControl(t *testing.T) {
+	f, err := Parse(`echo $'a\cAb' $'\c' x`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := f.Stmts[0].Cmd.(*CallExpr).Args
+	if len(args) != 4 {
+		t.Fatalf("got %d args, want 4", len(args))
+	}
+	for i, want := range []string{"a\x01b", `\c`} {
+		if s, _ := args[i+1].LitString(); s != want {
+			t.Errorf("arg %d: got %q, want %q", i+1, s, want)
+		}
+	}
+}
+
 func TestParseBackgroundSeparates(t *testing.T) {
 	f, err := Parse("server & sleep 1")
 	if err != nil {
