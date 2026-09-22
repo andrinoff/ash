@@ -3,6 +3,7 @@ package syntax
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -114,6 +115,10 @@ func TestParseIncomplete(t *testing.T) {
 		"for i in a; do echo; done \\",
 		"[[ a \\",
 		"echo a; \\",
+		"if",
+		"while true; do echo; done; until",
+		"true; and \\",
+		"case x in (a) echo",
 	}
 	for _, src := range cases {
 		_, err := Parse(src)
@@ -123,6 +128,15 @@ func TestParseIncomplete(t *testing.T) {
 		}
 		if !IsIncomplete(err) {
 			t.Errorf("Parse(%q): expected incomplete, got %v", src, err)
+		}
+		// Enter inserts a newline, which must not make it an error. (A
+		// trailing backslash joins the lines instead, and ${ is read on to
+		// the } like bash does.)
+		if strings.HasSuffix(src, "\\") || strings.Contains(src, "${") {
+			continue
+		}
+		if _, err := Parse(src + "\n"); err != nil && !IsIncomplete(err) {
+			t.Errorf("Parse(%q): %v, but without the newline it was incomplete", src+"\n", err)
 		}
 	}
 }
@@ -173,6 +187,23 @@ func TestParseErrors(t *testing.T) {
 		"echo a )",
 		"if true; then echo; end",
 		";;",
+		// what is missing has to be on the same line, so Enter shouldn't
+		// wait for another one
+		"ls >",
+		"cat <<",
+		"function",
+		"for",
+		"case",
+		"switch",
+		"case x in (",
+		"case x in a|",
+		"case x in a",
+		"!",
+		"not",
+		"not !",
+		"true; and",
+		"false; or # comment",
+		"[[ a ==",
 	}
 	for _, src := range cases {
 		_, err := Parse(src)

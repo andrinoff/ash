@@ -48,7 +48,7 @@ func (p *Parser) funcDecl() Command {
 	p.pos += len("function")
 	p.skipBlanks()
 	if p.atCommandEnd() {
-		p.fail(p.pos, p.eof(), "expected a function name")
+		p.fail(p.pos, false, "expected a function name")
 	}
 	name := p.word(ctxNormal)
 	if name == nil {
@@ -227,7 +227,7 @@ func (p *Parser) forClause() Command {
 		i++
 	}
 	if i == p.pos {
-		p.fail(p.pos, p.eof(), "expected a variable name after 'for'")
+		p.fail(p.pos, false, "expected a variable name after 'for'")
 	}
 	fc := &ForClause{Var: p.src[p.pos:i]}
 	p.pos = i
@@ -314,7 +314,7 @@ func (p *Parser) caseClause() Command {
 	p.skipBlanks()
 	w := p.word(ctxNormal)
 	if w == nil {
-		p.fail(p.pos, p.eof(), "expected a word after 'case'")
+		p.fail(p.pos, false, "expected a word after 'case'")
 	}
 	cc := &CaseClause{Word: w}
 	p.skipSpace()
@@ -340,7 +340,7 @@ func (p *Parser) caseClause() Command {
 			p.skipBlanks()
 			pw := p.word(ctxNormal)
 			if pw == nil {
-				p.fail(p.pos, p.eof(), "expected a pattern, found %s", p.describe())
+				p.fail(p.pos, false, "expected a pattern, found %s", p.describe())
 			}
 			item.Patterns = append(item.Patterns, pw)
 			p.skipBlanks()
@@ -352,7 +352,7 @@ func (p *Parser) caseClause() Command {
 				p.pos++
 				break
 			}
-			p.fail(p.pos, p.eof(), "expected ')' after case pattern, found %s", p.describe())
+			p.fail(p.pos, false, "expected ')' after case pattern, found %s", p.describe())
 		}
 		item.Body = p.stmtList(func() bool { return p.isKeyword("esac") })
 		p.skipSpace()
@@ -375,7 +375,7 @@ func (p *Parser) switchClause() Command {
 	p.skipBlanks()
 	w := p.word(ctxNormal)
 	if w == nil {
-		p.fail(p.pos, p.eof(), "expected a word after 'switch'")
+		p.fail(p.pos, false, "expected a word after 'switch'")
 	}
 	cc := &CaseClause{Word: w, Fish: true}
 	for {
@@ -564,7 +564,7 @@ func (p *Parser) testPrimary() TestExpr {
 			rhs = p.word(ctxTest)
 		}
 		if rhs == nil {
-			p.fail(p.pos, p.eof(), "expected an argument after %s", op)
+			p.fail(p.pos, false, "expected an argument after %s", op)
 		}
 		return &TestBinary{Op: op, X: &TestWord{W: w}, Y: &TestWord{W: rhs, Regex: op == "=~"}}
 	}

@@ -8,7 +8,9 @@ import (
 
 // Error is a parse error. Incomplete errors mean the input ended too early
 // (an open quote, block or heredoc), which the line editor uses to decide
-// whether Enter should run the command or start a new line.
+// whether Enter should run the command or start a new line. Running out of
+// input where the next line couldn't help either, as in `ls >` or `case`,
+// is not Incomplete.
 type Error struct {
 	Pos        int
 	Msg        string
@@ -439,13 +441,17 @@ func (p *Parser) stmtList(stop func() bool) []*Stmt {
 
 func (p *Parser) stmt() *Stmt {
 	st := &Stmt{Pos: p.pos}
-	switch p.peekKeyword() {
-	case "and":
-		p.pos += 3
+	switch kw := p.peekKeyword(); kw {
+	case "and", "or":
+		p.pos += len(kw)
 		st.Cond = CondAnd
-	case "or":
-		p.pos += 2
-		st.Cond = CondOr
+		if kw == "or" {
+			st.Cond = CondOr
+		}
+		p.skipBlanks()
+		if p.eof() || p.peek() == '\n' || p.peek() == ';' || p.peek() == '#' {
+			p.fail(p.pos, false, "expected a command after '%s'", kw)
+		}
 	}
 	p.skipBlanks()
 	st.Cmd = p.andOr()
@@ -487,17 +493,17 @@ func (p *Parser) andOr() Command {
 
 func (p *Parser) pipeline() Command {
 	pos := p.pos
-	negate, timed := false, false
+	negate, timed, bang := false, false, false
 	for {
 		switch p.peekKeyword() {
 		case "!":
 			p.pos++
-			negate = !negate
+			negate, bang = !negate, true
 			p.skipBlanks()
 			continue
 		case "not":
 			p.pos += 3
-			negate = !negate
+			negate, bang = !negate, true
 			p.skipBlanks()
 			continue
 		case "time":
@@ -513,12 +519,12 @@ func (p *Parser) pipeline() Command {
 		break
 	}
 	if p.eof() || p.peek() == '\n' || p.peek() == ';' {
-		if negate || timed {
-			if timed && !negate {
+		if bang || timed {
+			if timed && !bang {
 				// bare `time` is valid in bash; treat it as `time true`
 				return &Pipeline{Pos: pos, Time: true, Cmds: []Command{&CallExpr{Pos: pos, Args: []*Word{{Parts: []WordPart{&Lit{Value: "true"}}}}}}, PipeErr: []bool{false}}
 			}
-			p.fail(p.pos, p.eof(), "expected a command")
+			p.fail(p.pos, false, "expected a command")
 		}
 	}
 	first := p.command()
@@ -780,11 +786,11 @@ func (p *Parser) redirect() *Redirect {
 	p.skipBlanks()
 	r := &Redirect{Pos: start, Fd: fd, Op: op}
 	if p.atCommandEnd() || p.peek() == '<' || p.peek() == '>' {
-		p.fail(p.pos, p.eof(), "expected a file name after '%s'", op)
+		p.fail(p.pos, false, "expected a file name after '%s'", op)
 	}
 	w := p.word(ctxNormal)
 	if w == nil {
-		p.fail(p.pos, p.eof(), "expected a file name after '%s'", op)
+		p.fail(p.pos, false, "expected a file name after '%s'", op)
 	}
 	if op == RedirHeredoc || op == RedirHeredocTabs {
 		delim, quoted := heredocDelim(w)
