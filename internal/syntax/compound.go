@@ -99,6 +99,7 @@ func (p *Parser) funcDecl() Command {
 // whether sh style was used, and leaves the parser before the closing
 // keyword.
 func (p *Parser) condBody(posixKw string, posixStop, fishStop []string) (cond, body []*Stmt, posix bool) {
+	p.skipSpace() // sh allows `if` and `while` on a line of their own
 	cond = []*Stmt{p.stmt()}
 	for {
 		p.skipBlanks()
