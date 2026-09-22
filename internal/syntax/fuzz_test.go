@@ -116,7 +116,17 @@ func findNil(v reflect.Value, path string) string {
 			}
 		}
 		for i := 0; i < v.NumField(); i++ {
-			if p := findNil(v.Field(i), path+"."+v.Type().Field(i).Name); p != "" {
+			name := v.Type().Field(i).Name
+			if name == "DeclArgs" {
+				// nil for the arguments that aren't assignments
+				for j := 0; j < v.Field(i).Len(); j++ {
+					if p := findNil(v.Field(i).Index(j), fmt.Sprintf("%s.DeclArgs[%d]", path, j)); p != "" {
+						return p
+					}
+				}
+				continue
+			}
+			if p := findNil(v.Field(i), path+"."+name); p != "" {
 				return p
 			}
 		}

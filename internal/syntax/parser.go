@@ -688,6 +688,7 @@ func (p *Parser) fishPipe() (int, int) {
 
 func (p *Parser) simpleCommand() Command {
 	call := &CallExpr{Pos: p.pos}
+	decl := ""
 	for {
 		p.skipBlanks()
 		if r := p.redirect(); r != nil {
@@ -709,17 +710,81 @@ func (p *Parser) simpleCommand() Command {
 				}
 			}
 		}
+		if decl != "" {
+			start := p.pos
+			if a := p.declAssign(decl); a != nil {
+				for len(call.DeclArgs) < len(call.Args) {
+					call.DeclArgs = append(call.DeclArgs, nil)
+				}
+				call.DeclArgs = append(call.DeclArgs, a)
+				op := "="
+				if a.Append {
+					op = "+="
+				}
+				w := &Word{Pos: start, End: p.pos, Parts: []WordPart{&Lit{Value: a.Name + op}}}
+				if !a.IsArray {
+					w.Parts = append(w.Parts, a.Value.Parts...)
+				}
+				call.Args = append(call.Args, w)
+				continue
+			}
+		}
 		w := p.word(ctxNormal)
 		if w == nil {
 			p.fail(p.pos, false, "unexpected %s", p.describe())
 		}
 		call.Args = append(call.Args, w)
+		if len(call.Args) == 1 {
+			decl = declBuiltin(w, p.fish)
+		}
 	}
 	if len(call.Args) == 0 && len(call.Assigns) == 0 && len(call.Redirs) == 0 {
 		p.fail(p.pos, p.eof(), "expected a command, found %s", p.describe())
 	}
+	for call.DeclArgs != nil && len(call.DeclArgs) < len(call.Args) {
+		call.DeclArgs = append(call.DeclArgs, nil)
+	}
 	call.End = p.pos
 	return call
+}
+
+// declBuiltin returns w if it names a builtin whose name=value arguments
+// are assignments, as in bash, and "" otherwise.
+func declBuiltin(w *Word, fish bool) string {
+	switch name, _ := w.IsUnquotedLit(); name {
+	case "local", "declare", "typeset", "readonly":
+		return name
+	case "export":
+		if !fish { // fish's export takes ordinary words
+			return name
+		}
+	}
+	return ""
+}
+
+// declAssign parses an argument of a declaration builtin that is an
+// assignment (local x=~/a, declare -a arr=(1 2)), or returns nil. For
+// export, X=(cmd) keeps its fish meaning, a command substitution.
+func (p *Parser) declAssign(builtin string) *Assign {
+	i := p.pos
+	if i >= len(p.src) || !isNameStart(p.src[i]) {
+		return nil
+	}
+	for i < len(p.src) && isNameChar(p.src[i]) {
+		i++
+	}
+	switch {
+	case strings.HasPrefix(p.src[i:], "+="):
+		i += 2
+	case strings.HasPrefix(p.src[i:], "="):
+		i++
+	default:
+		return nil
+	}
+	if builtin == "export" && i < len(p.src) && p.src[i] == '(' {
+		return nil
+	}
+	return p.assign()
 }
 
 func litWord(s string) *Word { return &Word{Parts: []WordPart{&Lit{Value: s}}} }

@@ -76,6 +76,11 @@ type CallExpr struct {
 	Assigns  []*Assign
 	Args     []*Word
 	Redirs   []*Redirect
+	// DeclArgs is set for local, declare, typeset, readonly and export:
+	// DeclArgs[i] is Args[i] parsed as an assignment, as in local x=~/a or
+	// declare -a arr=(1 2), or nil. Such arguments expand the way
+	// assignments do, without word splitting or globbing.
+	DeclArgs []*Assign
 }
 
 type Assign struct {

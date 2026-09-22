@@ -20,7 +20,7 @@ func (sh *Shell) execCall(c *syntax.CallExpr, io *IO) int {
 	}
 	sh.lineno = c.Pos
 	substBefore := sh.substCount
-	args, err := sh.expandFields(c.Args, io, 0)
+	args, arrays, err := sh.expandCallArgs(c, io)
 	procFds := sh.takeProcFds()
 	defer closeAll(procFds)
 	if err != nil {
@@ -85,6 +85,9 @@ func (sh *Shell) execCall(c *syntax.CallExpr, io *IO) int {
 	aliasOK := false
 	if len(c.Args) > 0 {
 		_, aliasOK = c.Args[0].IsUnquotedLit()
+	}
+	if len(arrays) > 0 {
+		return sh.declareArrays(args, arrays, rio, tmp, aliasOK, procFds)
 	}
 	return sh.dispatch(args, rio, tmp, aliasOK, procFds)
 }

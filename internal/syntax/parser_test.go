@@ -249,6 +249,42 @@ func TestParseNestedErrors(t *testing.T) {
 	}
 }
 
+func TestParseDeclArgs(t *testing.T) {
+	f, err := Parse("local -r x=~/a arr+=(1 '2 3') y")
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := f.Stmts[0].Cmd.(*CallExpr)
+	d := call.DeclArgs
+	if len(call.Args) != 5 || len(d) != 5 || d[0] != nil || d[1] != nil || d[4] != nil {
+		t.Fatalf("got %d args, DeclArgs %v", len(call.Args), d)
+	}
+	if d[2].Name != "x" || len(d[2].Value.Parts) == 0 {
+		t.Errorf("x=~/a: got %+v", d[2])
+	} else if _, ok := d[2].Value.Parts[0].(*Tilde); !ok {
+		t.Errorf("x=~/a: got %T, want *Tilde", d[2].Value.Parts[0])
+	}
+	if d[3].Name != "arr" || !d[3].IsArray || !d[3].Append || len(d[3].Array) != 2 {
+		t.Errorf("arr+=(1 '2 3'): got %+v", d[3])
+	}
+	for _, src := range []string{"echo x=(pwd)", "export X=(tty)"} {
+		f, err := Parse(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if call := f.Stmts[0].Cmd.(*CallExpr); call.DeclArgs != nil {
+			t.Errorf("%s: want no DeclArgs", src)
+		}
+	}
+	f, err = ParseOpts("export X=~/a", Options{Fish: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if call := f.Stmts[0].Cmd.(*CallExpr); call.DeclArgs != nil {
+		t.Errorf("fish export X=~/a: want no DeclArgs")
+	}
+}
+
 func TestParseBackgroundSeparates(t *testing.T) {
 	f, err := Parse("server & sleep 1")
 	if err != nil {
