@@ -287,6 +287,22 @@ func TestParseDeclArgs(t *testing.T) {
 	}
 }
 
+// bash doesn't brace-expand assignment values, but expands what is
+// inside the braces.
+func TestParseAssignBraces(t *testing.T) {
+	f, err := Parse("x={$HOME,b}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := f.Stmts[0].Cmd.(*CallExpr).Assigns[0].Value.Parts
+	if len(parts) != 3 {
+		t.Fatalf("got %d parts, want {, $HOME and ,b}", len(parts))
+	}
+	if pe, ok := parts[1].(*ParamExp); !ok || pe.Name != "HOME" {
+		t.Errorf("got %T, want $HOME", parts[1])
+	}
+}
+
 func TestParseANSICControl(t *testing.T) {
 	f, err := Parse(`echo $'a\cAb' $'\c' x`)
 	if err != nil {

@@ -124,7 +124,9 @@ func (p *Parser) wordParts(ctx wordCtx) []WordPart {
 				p.pos++
 			}
 		case '{':
-			if ctx == ctxParamArg || ctx == ctxParamPat {
+			// no brace expansion in x={a,b}: the braces are plain text,
+			// though what is inside them still expands
+			if ctx == ctxParamArg || ctx == ctxParamPat || ctx == ctxAssign {
 				lit.WriteByte(c)
 				p.pos++
 				continue
