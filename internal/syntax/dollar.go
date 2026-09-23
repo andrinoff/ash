@@ -53,6 +53,12 @@ func (p *Parser) dollar(inDQ bool) WordPart {
 			}
 		}
 		return pe
+	case p.fish && len(rest) > 1 && rest[0] == '$' && isNameStart(rest[1]):
+		// fish: $$name expands the variable that $name names
+		p.pos++
+		pe := p.dollar(inDQ).(*ParamExp)
+		pe.Indirect = true
+		return pe
 	case len(rest) > 0 && strings.IndexByte("?$!#@*-0123456789", rest[0]) >= 0:
 		p.pos += 2
 		return &ParamExp{Name: rest[:1], Short: true}

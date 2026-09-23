@@ -11,6 +11,22 @@ import (
 
 func (sh *Shell) expandParam(pe *syntax.ParamExp, io *IO, quoted bool) ([]string, valKind, error) {
 	name := pe.Name
+	if pe.Indirect && pe.Short {
+		// fish's $$name[i]: the variables named by $name[i], one after another
+		refs, _ := sh.getVar(name)
+		if pe.Index != nil {
+			var err error
+			if refs, err = sh.applyFishIndex(refs, pe.Index, io); err != nil {
+				return nil, kindScalar, err
+			}
+		}
+		var out []string
+		for _, r := range refs {
+			vals, _ := sh.getVar(r)
+			out = append(out, vals...)
+		}
+		return out, kindList, nil
+	}
 	if pe.Indirect {
 		ref := sh.Get(name)
 		if ref == "" {

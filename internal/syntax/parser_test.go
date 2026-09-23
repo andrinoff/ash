@@ -328,6 +328,25 @@ func TestParseFishVarBraces(t *testing.T) {
 	}
 }
 
+func TestParseFishIndirect(t *testing.T) {
+	f, err := ParseOpts(`echo $$a[1]`, Options{Fish: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pe, ok := f.Stmts[0].Cmd.(*CallExpr).Args[1].Parts[0].(*ParamExp)
+	if !ok || pe.Name != "a" || !pe.Indirect || pe.Index == nil {
+		t.Errorf("fish $$a[1]: got %+v", f.Stmts[0].Cmd.(*CallExpr).Args[1].Parts[0])
+	}
+	// in sh, $$ is the shell's pid
+	f, err = Parse(`echo $$a`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pe, ok := f.Stmts[0].Cmd.(*CallExpr).Args[1].Parts[0].(*ParamExp); !ok || pe.Name != "$" {
+		t.Errorf("sh $$a: want $$ then a")
+	}
+}
+
 func TestParseANSICControl(t *testing.T) {
 	f, err := Parse(`echo $'a\cAb' $'\c' x`)
 	if err != nil {
