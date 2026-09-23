@@ -17,7 +17,11 @@ func (p *Parser) braceExp() WordPart {
 			p.pos = end + 1
 			return &BraceExp{Seq: seq}
 		}
-		return nil
+		// fish drops the braces of {$var}, which sets a variable off
+		// from text ({$x}s), but keeps those of {a}
+		if !p.fish || !hasVariable(inner) {
+			return nil
+		}
 	}
 	p.pos++
 	be := &BraceExp{}
@@ -34,6 +38,34 @@ func (p *Parser) braceExp() WordPart {
 		p.pos++ // '}'
 		return be
 	}
+}
+
+// hasVariable reports whether s expands a variable outside single quotes
+// and command substitutions.
+func hasVariable(s string) bool {
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			i++
+		case '\'':
+			k := strings.IndexByte(s[i+1:], '\'')
+			if k < 0 {
+				return false
+			}
+			i += k + 1
+		case '(':
+			k := matchParen(s, i)
+			if k < 0 {
+				return false
+			}
+			i = k
+		case '$':
+			if i+1 < len(s) && isNameStart(s[i+1]) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // scanBrace finds the '}' matching the '{' at i. It reports whether the

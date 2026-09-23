@@ -303,6 +303,31 @@ func TestParseAssignBraces(t *testing.T) {
 	}
 }
 
+// fish drops the braces around {$var}, but not around {a}. sh keeps both.
+func TestParseFishVarBraces(t *testing.T) {
+	isBrace := func(w *Word) bool {
+		_, ok := w.Parts[0].(*BraceExp)
+		return ok
+	}
+	f, err := ParseOpts(`echo {$x}s {"$x"} {a} {'$x'} {(echo $x)}`, Options{Fish: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := f.Stmts[0].Cmd.(*CallExpr).Args
+	for i, want := range []bool{true, true, false, false, false} {
+		if got := isBrace(args[i+1]); got != want {
+			t.Errorf("fish arg %d: brace expansion %v, want %v", i+1, got, want)
+		}
+	}
+	f, err = Parse(`echo {$x}s`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if isBrace(f.Stmts[0].Cmd.(*CallExpr).Args[1]) {
+		t.Errorf("sh: {$x}s should keep its braces")
+	}
+}
+
 func TestParseANSICControl(t *testing.T) {
 	f, err := Parse(`echo $'a\cAb' $'\c' x`)
 	if err != nil {
