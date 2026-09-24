@@ -172,7 +172,8 @@ func (p *Parser) tilde(ctx wordCtx) WordPart {
 	}
 	if i < len(p.src) {
 		c := p.src[i]
-		ok := c == '/' || isMeta(c) || (ctx == ctxAssign && c == ':') || (ctx == ctxBraceAlt && (c == ',' || c == '}'))
+		ok := c == '/' || isMeta(c) || (ctx == ctxAssign && c == ':') || (ctx == ctxBraceAlt && (c == ',' || c == '}')) ||
+			(ctx == ctxParamArg && c == '}')
 		if !ok {
 			return nil
 		}

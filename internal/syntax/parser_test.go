@@ -347,6 +347,19 @@ func TestParseFishIndirect(t *testing.T) {
 	}
 }
 
+func TestParseTildeInParamDefault(t *testing.T) {
+	f, err := Parse("cd ${1:-~} ${x:=~root}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range f.Stmts[0].Cmd.(*CallExpr).Args[1:] {
+		pe := w.Parts[0].(*ParamExp)
+		if _, ok := pe.Arg.Parts[0].(*Tilde); !ok {
+			t.Errorf("${%s...}: got %T, want *Tilde", pe.Name, pe.Arg.Parts[0])
+		}
+	}
+}
+
 func TestParseANSICControl(t *testing.T) {
 	f, err := Parse(`echo $'a\cAb' $'\c' x`)
 	if err != nil {
