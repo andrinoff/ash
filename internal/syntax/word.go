@@ -39,6 +39,7 @@ func (p *Parser) wordParts(ctx wordCtx) []WordPart {
 			lit.Reset()
 		}
 	}
+	inBracket := 0 // end of the [...] expression the cursor is in (ctxTest)
 	for !p.eof() {
 		c := p.src[p.pos]
 		switch ctx {
@@ -63,7 +64,11 @@ func (p *Parser) wordParts(ctx wordCtx) []WordPart {
 				return parts
 			}
 		case ctxTest:
-			if p.has("]]") && (p.pos+2 >= len(p.src) || isMeta(p.src[p.pos+2])) {
+			if c == '[' && p.pos >= inBracket {
+				// the ]] in *[[:digit:]] doesn't end the test
+				inBracket = bracketEnd(p.src, p.pos)
+			}
+			if p.has("]]") && p.pos >= inBracket && (p.pos+2 >= len(p.src) || isMeta(p.src[p.pos+2])) {
 				flush()
 				return parts
 			}

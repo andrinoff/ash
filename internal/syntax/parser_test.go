@@ -416,6 +416,24 @@ func TestParseRegexBrackets(t *testing.T) {
 	}
 }
 
+func TestParseTestPatternBrackets(t *testing.T) {
+	for src, want := range map[string]string{
+		`[[ $x == *[[:digit:]] ]]`: "*[[:digit:]]",
+		`[[ $x == [[:alpha:]] ]]`:  "[[:alpha:]]",
+		`[[ $x == [ab] ]]`:         "[ab]",
+	} {
+		f, err := Parse(src)
+		if err != nil {
+			t.Errorf("Parse(%q): %v", src, err)
+			continue
+		}
+		pat := f.Stmts[0].Cmd.(*TestClause).Expr.(*TestBinary).Y.(*TestWord).W
+		if got, _ := pat.LitString(); got != want {
+			t.Errorf("Parse(%q): pattern %q, want %q", src, got, want)
+		}
+	}
+}
+
 func TestParseANSICControl(t *testing.T) {
 	f, err := Parse(`echo $'a\cAb' $'\c' x`)
 	if err != nil {
