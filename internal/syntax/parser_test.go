@@ -360,6 +360,21 @@ func TestParseTildeInParamDefault(t *testing.T) {
 	}
 }
 
+func TestParseRedirectFromProcSubst(t *testing.T) {
+	f, err := Parse("while read l; do echo $l; done < <(ls)\ncat >(cat) 2> >(cat)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := f.Stmts[0].Cmd.(*WhileClause).Redirs[0]
+	if ps, ok := r.Target.Parts[0].(*ProcSubst); !ok || ps.Out {
+		t.Errorf("< <(ls): got target %T", r.Target.Parts[0])
+	}
+	r = f.Stmts[1].Cmd.(*CallExpr).Redirs[0]
+	if ps, ok := r.Target.Parts[0].(*ProcSubst); !ok || !ps.Out {
+		t.Errorf("2> >(cat): got target %T", r.Target.Parts[0])
+	}
+}
+
 func TestParseANSICControl(t *testing.T) {
 	f, err := Parse(`echo $'a\cAb' $'\c' x`)
 	if err != nil {

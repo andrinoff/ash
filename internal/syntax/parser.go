@@ -850,7 +850,8 @@ func (p *Parser) redirect() *Redirect {
 	p.pos = i + n
 	p.skipBlanks()
 	r := &Redirect{Pos: start, Fd: fd, Op: op}
-	if p.atCommandEnd() || p.peek() == '<' || p.peek() == '>' {
+	// the file can be a process substitution: done < <(cmd)
+	if p.atCommandEnd() || (p.peek() == '<' || p.peek() == '>') && p.peekAt(1) != '(' {
 		p.fail(p.pos, false, "expected a file name after '%s'", op)
 	}
 	w := p.word(ctxNormal)

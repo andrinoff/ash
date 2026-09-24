@@ -9,6 +9,13 @@ func TestProcSubst(t *testing.T) {
 	}
 }
 
+func TestRedirectFromProcSubst(t *testing.T) {
+	out, errOut, st := runScript(t, `n=0; while read l; do n=$((n+1)); echo "got $l"; done < <(echo a; echo b); echo $n`)
+	if out != "got a\ngot b\n2\n" || st != 0 {
+		t.Fatalf("got %q %q %d", out, errOut, st)
+	}
+}
+
 func TestPathListParamOps(t *testing.T) {
 	out, _, _ := runScript(t, `PATH=/a/bin:/b/bin:/c/bin; echo ${PATH%%:*} ${PATH#*:} ${PATH//bin/x}`)
 	if out != "/a/bin /b/bin:/c/bin /a/x:/b/x:/c/x\n" {
