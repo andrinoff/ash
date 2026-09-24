@@ -50,6 +50,12 @@ func (p *Parser) funcDecl() Command {
 	if p.atCommandEnd() {
 		p.fail(p.pos, false, "expected a function name")
 	}
+	// bash: function name() { ... } (in a word, "(" would start a command
+	// substitution)
+	if fd, ok := p.shFuncDef().(*FuncDecl); ok {
+		fd.Pos, fd.Src = start, p.src[start:fd.End]
+		return fd
+	}
 	name := p.word(ctxNormal)
 	if name == nil {
 		p.fail(p.pos, false, "expected a function name, found %s", p.describe())

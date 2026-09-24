@@ -375,6 +375,27 @@ func TestParseRedirectFromProcSubst(t *testing.T) {
 	}
 }
 
+func TestParseFunctionKeywordParens(t *testing.T) {
+	for _, src := range []string{
+		"function f() { echo; }",
+		"function f(){\n  echo\n}",
+		"function f ( )\n{ echo; }",
+	} {
+		f, err := Parse(src)
+		if err != nil {
+			t.Errorf("Parse(%q): %v", src, err)
+			continue
+		}
+		fd := f.Stmts[0].Cmd.(*FuncDecl)
+		if name, ok := fd.Name.IsUnquotedLit(); !ok || name != "f" || fd.Src != src {
+			t.Errorf("Parse(%q): name %+v, src %q", src, fd.Name.Parts, fd.Src)
+		}
+		if _, ok := fd.BodyCmd.(*Block); !ok {
+			t.Errorf("Parse(%q): body %T", src, fd.BodyCmd)
+		}
+	}
+}
+
 func TestParseANSICControl(t *testing.T) {
 	f, err := Parse(`echo $'a\cAb' $'\c' x`)
 	if err != nil {
