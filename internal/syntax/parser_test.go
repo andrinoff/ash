@@ -396,6 +396,26 @@ func TestParseFunctionKeywordParens(t *testing.T) {
 	}
 }
 
+// The ]] of a bracket expression in a regex doesn't end the [[ test.
+func TestParseRegexBrackets(t *testing.T) {
+	for src, want := range map[string]string{
+		`[[ $x =~ ^[[:digit:]]+$ ]]`:                "^[[:digit:]]+$",
+		`[[ $x =~ [^[:space:]](.*[^[:space:]])? ]]`: "[^[:space:]](.*[^[:space:]])?",
+		`[[ $x =~ a[]b] ]]`:                         "a[]b]",
+		`[[ $x =~ a[ ]]`:                            "a[",
+	} {
+		f, err := Parse(src)
+		if err != nil {
+			t.Errorf("Parse(%q): %v", src, err)
+			continue
+		}
+		rx := f.Stmts[0].Cmd.(*TestClause).Expr.(*TestBinary).Y.(*TestWord).W
+		if got, _ := rx.LitString(); got != want {
+			t.Errorf("Parse(%q): regex %q, want %q", src, got, want)
+		}
+	}
+}
+
 func TestParseANSICControl(t *testing.T) {
 	f, err := Parse(`echo $'a\cAb' $'\c' x`)
 	if err != nil {

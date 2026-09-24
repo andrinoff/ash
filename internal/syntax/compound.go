@@ -591,6 +591,7 @@ func (p *Parser) regexWord() *Word {
 	w := &Word{Pos: p.pos}
 	var lit strings.Builder
 	depth := 0
+	inBracket := 0 // end of the bracket expression the cursor is in
 	flush := func() {
 		if lit.Len() > 0 {
 			w.Parts = append(w.Parts, &Lit{Value: lit.String()})
@@ -600,6 +601,10 @@ func (p *Parser) regexWord() *Word {
 loop:
 	for !p.eof() {
 		c := p.peek()
+		if c == '[' && p.pos >= inBracket {
+			// the ]] in [[:space:]] doesn't end the test
+			inBracket = bracketEnd(p.src, p.pos)
+		}
 		switch c {
 		case ' ', '\t', '\n':
 			if depth == 0 {
@@ -642,7 +647,7 @@ loop:
 				p.pos++
 			}
 		default:
-			if p.has("]]") && depth == 0 {
+			if p.has("]]") && depth == 0 && p.pos >= inBracket {
 				break loop
 			}
 			lit.WriteByte(c)
@@ -655,4 +660,33 @@ loop:
 	}
 	w.End = p.pos
 	return w
+}
+
+// bracketEnd returns the index just past the bracket expression, such as
+// [^[:space:]], that starts at s[i], or -1.
+func bracketEnd(s string, i int) int {
+	j := i + 1
+	if j < len(s) && s[j] == '^' {
+		j++
+	}
+	if j < len(s) && s[j] == ']' {
+		j++ // a ] right after [ or [^ is literal
+	}
+	for j < len(s) {
+		switch c := s[j]; {
+		case c == ']':
+			return j + 1
+		case c == '[' && j+1 < len(s) && (s[j+1] == ':' || s[j+1] == '=' || s[j+1] == '.'):
+			k := strings.Index(s[j+2:], string(s[j+1])+"]")
+			if k < 0 {
+				return -1
+			}
+			j += 2 + k + 2
+		case c == ' ' || c == '\t' || c == '\n':
+			return -1
+		default:
+			j++
+		}
+	}
+	return -1
 }
