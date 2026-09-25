@@ -748,8 +748,9 @@ func (p *Parser) simpleCommand() Command {
 	return call
 }
 
-// declBuiltin returns w if it names a builtin whose name=value arguments
-// are assignments, as in bash, and "" otherwise.
+// declBuiltin returns the name of the builtin that w names if that
+// builtin's name=value arguments are assignments, as in bash, and ""
+// otherwise.
 func declBuiltin(w *Word, fish bool) string {
 	switch name, _ := w.IsUnquotedLit(); name {
 	case "local", "declare", "typeset", "readonly":
