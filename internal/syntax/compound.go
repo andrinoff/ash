@@ -85,14 +85,13 @@ func (p *Parser) funcDecl() Command {
 		}
 		fd.Opts = append(fd.Opts, w)
 	}
-	// a bash-style body on the next line
-	save := p.pos
+	// a bash-style body on the next line (no going back once past the
+	// newline: that read any heredoc bodies)
 	p.skipSeparators()
 	if p.isKeyword("{") && len(fd.Opts) == 0 {
 		body := p.command()
 		return &FuncDecl{Pos: start, End: p.pos, Name: name, BodyCmd: body, Src: p.src[start:p.pos]}
 	}
-	p.pos = save
 	fd.Body = p.stmtList(func() bool { return p.isKeyword("end") })
 	p.expectKeyword("end", "'function'")
 	fd.End = p.pos

@@ -453,6 +453,26 @@ func TestParseBadParamDeferred(t *testing.T) {
 	}
 }
 
+// The body of a heredoc started on the line of a fish function header must
+// not be read again as commands.
+func TestParseHeredocBeforeFunction(t *testing.T) {
+	f, err := Parse("cat <<EOF; function f\nrm -rf data\nEOF\n  echo in f\nend")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Stmts) != 2 {
+		t.Fatalf("got %d statements, want 2", len(f.Stmts))
+	}
+	body := f.Stmts[0].Cmd.(*CallExpr).Redirs[0].Heredoc
+	if s, _ := body.LitString(); s != "rm -rf data\n" {
+		t.Errorf("heredoc: got %q", s)
+	}
+	fd := f.Stmts[1].Cmd.(*FuncDecl)
+	if len(fd.Body) != 1 {
+		t.Errorf("function body: got %d statements, want 1", len(fd.Body))
+	}
+}
+
 func TestParseANSICControl(t *testing.T) {
 	f, err := Parse(`echo $'a\cAb' $'\c' x`)
 	if err != nil {
