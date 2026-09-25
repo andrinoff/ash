@@ -237,13 +237,8 @@ func (p *Parser) forClause() Command {
 	fc := &ForClause{Var: p.src[p.pos:i]}
 	p.pos = i
 	p.skipBlanks()
-	if !p.isKeyword("in") && len(p.heredocs) == 0 {
-		// sh allows `for x` and `in ...` on separate lines
-		save := p.pos
-		p.skipSpace()
-		if !p.isKeyword("in") {
-			p.pos = save
-		}
+	if !p.isKeyword("in") {
+		p.skipSpace() // sh allows `for x` and `in ...` on separate lines
 	}
 	if p.isKeyword("in") {
 		p.pos += 2

@@ -33,6 +33,7 @@ func TestParseOK(t *testing.T) {
 		"for i; do echo $i; done",
 		"for i\ndo echo $i; done",
 		"for i # comment\nin 1 2\ndo echo $i; done",
+		"cat <<EOF; for i\nbody\nEOF\nin 1 2\ndo echo $i; done",
 		"for ((i=0; i<10; i++)); do echo $i; done",
 		"case $x in a|b) echo ab;; *) echo other;; esac",
 		"case $x in\n  (a) echo a ;;\n  *.go) echo go\nesac",
