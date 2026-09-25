@@ -522,7 +522,10 @@ func (sh *Shell) expandPart(p syntax.WordPart, io *IO, quoted bool) ([]string, v
 			}
 			return lines, kindList, nil
 		}
-		return []string{out}, kindIFS, nil
+		// Trailing newlines go before splitting, as in sh: with IFS=:
+		// they would otherwise end up in the last field, and in a
+		// pattern (case $(...), ${x#$(...)}) they would have to match.
+		return []string{strings.TrimRight(out, "\n")}, kindIFS, nil
 	case *syntax.ArithExp:
 		s, err := sh.expandString(p.Expr, io)
 		if err != nil {
