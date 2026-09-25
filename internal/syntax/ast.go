@@ -355,6 +355,7 @@ const (
 	OpTransform              // @Q @U @L @E @A
 	OpPrefixNames            // ${!prefix*}
 	OpIndices                // ${!arr[@]}
+	OpBad                    // ${(f)x} and the like: an error when expanded; Arg is the text
 )
 
 // CmdSubst is $(...), `...` or fish's (...).

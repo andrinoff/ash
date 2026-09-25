@@ -10,6 +10,10 @@ import (
 )
 
 func (sh *Shell) expandParam(pe *syntax.ParamExp, io *IO, quoted bool) ([]string, valKind, error) {
+	if pe.Op == syntax.OpBad {
+		text, _ := pe.Arg.LitString()
+		return nil, kindScalar, errorf("%s: bad substitution", text)
+	}
 	name := pe.Name
 	if pe.Indirect && pe.Short {
 		// fish's $$name[i]: the variables named by $name[i], one after another

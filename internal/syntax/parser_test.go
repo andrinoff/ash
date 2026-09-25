@@ -132,9 +132,8 @@ func TestParseIncomplete(t *testing.T) {
 			t.Errorf("Parse(%q): expected incomplete, got %v", src, err)
 		}
 		// Enter inserts a newline, which must not make it an error. (A
-		// trailing backslash joins the lines instead, and ${ is read on to
-		// the } like bash does.)
-		if strings.HasSuffix(src, "\\") || strings.Contains(src, "${") {
+		// trailing backslash joins the lines instead.)
+		if strings.HasSuffix(src, "\\") {
 			continue
 		}
 		if _, err := Parse(src + "\n"); err != nil && !IsIncomplete(err) {
@@ -227,7 +226,7 @@ func TestParseNestedErrors(t *testing.T) {
 		src       string
 		line, col int
 	}{
-		{"echo a\ncat <<EOF\nx\n${y\nEOF\necho after", 4, 4},
+		{"echo a\ncat <<EOF\nx\n${y\nEOF\necho after", 4, 1},
 		{"cat <<EOF\ncost: $(\nEOF", 2, 7},
 		{"cat <<-EOF\n\t\t$(\n\tEOF", 2, 3},
 		{"echo `echo $(`", 1, 6},
@@ -430,6 +429,26 @@ func TestParseTestPatternBrackets(t *testing.T) {
 		pat := f.Stmts[0].Cmd.(*TestClause).Expr.(*TestBinary).Y.(*TestWord).W
 		if got, _ := pat.LitString(); got != want {
 			t.Errorf("Parse(%q): pattern %q, want %q", src, got, want)
+		}
+	}
+}
+
+// Like bash, ash only complains about a ${...} it can't make sense of, such
+// as zsh's ${(f)x}, when it expands it, so a script can keep one in a branch
+// that only runs under zsh.
+func TestParseBadParamDeferred(t *testing.T) {
+	src := "if [ -n \"$ZSH_VERSION\" ]; then\n  r=(${(f)\"$(cmd \"$x\")\"})\n  unset ${(M)${(k)parameters[@]}:#_x_*}\nfi\necho \"${x b}\""
+	f, err := Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pe := f.Stmts[1].Cmd.(*CallExpr).Args[1].Parts[0].(*DblQuoted).Parts[0].(*ParamExp)
+	if text, _ := pe.Arg.LitString(); pe.Op != OpBad || text != "${x b}" {
+		t.Errorf("got %+v", pe)
+	}
+	for _, src := range []string{"echo ${(f)x", "echo ${x b", "echo ${\n"} {
+		if _, err := Parse(src); !IsIncomplete(err) {
+			t.Errorf("Parse(%q): %v, want incomplete", src, err)
 		}
 	}
 }

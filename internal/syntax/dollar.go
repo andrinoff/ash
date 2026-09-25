@@ -293,10 +293,7 @@ func (p *Parser) bracedParam() WordPart {
 	case i < len(p.src) && strings.IndexByte("?$!#@*-", p.src[i]) >= 0:
 		i++
 	default:
-		if p.eof() {
-			p.fail(start, true, "unterminated ${")
-		}
-		p.fail(p.pos, false, "bad substitution")
+		return p.badParam(start)
 	}
 	pe.Name = p.src[p.pos:i]
 	p.pos = i
@@ -436,16 +433,54 @@ func (p *Parser) bracedParam() WordPart {
 		pe.Arg = litWord(string(p.peek()))
 		p.pos++
 	default:
-		p.fail(p.pos, false, "bad substitution")
+		return p.badParam(start)
 	}
 	if p.eof() {
 		p.fail(start, true, "unterminated ${")
 	}
 	if p.peek() != '}' {
-		p.fail(p.pos, false, "bad substitution: expected '}'")
+		return p.badParam(start)
 	}
 	p.pos++
 	return pe
+}
+
+// badParam reads the ${...} at start, which isn't an expansion ash knows,
+// such as zsh's ${(f)x}. Like bash, which only complains about it when it
+// expands it, ash accepts it so that a script can keep it in code that only
+// runs under zsh.
+func (p *Parser) badParam(start int) WordPart {
+	depth := 0
+	for i := start + 1; i < len(p.src); i++ {
+		switch p.src[i] {
+		case '\\':
+			i++
+		case '\'', '"', '`':
+			k := strings.IndexByte(p.src[i+1:], p.src[i])
+			if k < 0 {
+				i = len(p.src)
+				break
+			}
+			i += k + 1
+		case '(':
+			k := matchParen(p.src, i)
+			if k < 0 {
+				i = len(p.src)
+				break
+			}
+			i = k
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				p.pos = i + 1
+				return &ParamExp{Op: OpBad, Arg: litWord(p.src[start:p.pos])}
+			}
+		}
+	}
+	p.fail(start, true, "unterminated ${")
+	return nil
 }
 
 // arithWord reads arithmetic text up to stop(depth). Only $ and `
