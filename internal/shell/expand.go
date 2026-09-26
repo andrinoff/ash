@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/andrinoff/ash/internal/syntax"
 )
@@ -439,6 +440,18 @@ func lookupUser(name string) (string, error) {
 		return "", err
 	}
 	return u.HomeDir, nil
+}
+
+// ifsFirst returns the first character of $IFS, which joins "$*" and
+// "${arr[*]}": a space when IFS is unset, nothing when it is empty.
+func (sh *Shell) ifsFirst() string {
+	v, ok := sh.getVar("IFS")
+	if !ok {
+		return " "
+	}
+	s := strings.Join(v, "")
+	_, n := utf8.DecodeRuneInString(s)
+	return s[:n]
 }
 
 // ifsSplit splits s on $IFS the way sh does for unquoted $(...).

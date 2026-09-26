@@ -42,6 +42,9 @@ func (sh *Shell) expandParam(pe *syntax.ParamExp, io *IO, quoted bool) ([]string
 			sub := ref[i+1 : len(ref)-1]
 			name = ref[:i]
 			vals, _ := sh.getVar(name)
+			if sub == "*" && quoted {
+				return []string{strings.Join(vals, sh.ifsFirst())}, kindScalar, nil
+			}
 			if sub == "@" || sub == "*" {
 				return vals, kindSplit, nil
 			}
@@ -70,28 +73,29 @@ func (sh *Shell) expandParam(pe *syntax.ParamExp, io *IO, quoted bool) ([]string
 		for i := range vals {
 			out[i] = strconv.Itoa(i)
 		}
+		if pe.Index.Star && quoted {
+			return []string{strings.Join(out, sh.ifsFirst())}, kindScalar, nil
+		}
 		return out, kindSplit, nil
 	}
 
 	vals, isSet := sh.getVar(name)
 	kind := kindList
+	// star marks "$*" and "${arr[*]}": the elements are joined with the
+	// first character of IFS, after the operator (if any) has been
+	// applied to each of them.
+	star := false
 	if name == "@" || name == "*" {
 		kind = kindSplit
-		if name == "*" && quoted {
-			kind = kindScalar
-			ifs := " "
-			if v, ok := sh.getVar("IFS"); ok {
-				j := strings.Join(v, "")
-				if j == "" {
-					ifs = ""
-				} else {
-					ifs = j[:1]
-				}
-			}
-			vals = []string{strings.Join(vals, ifs)}
-		}
+		star = name == "*" && quoted
 	} else if v, _ := sh.lookupVar(name); v != nil && v.Path {
 		kind = kindPathList
+	}
+	result := func(vals []string, kind valKind) ([]string, valKind, error) {
+		if star {
+			return []string{strings.Join(vals, sh.ifsFirst())}, kindScalar, nil
+		}
+		return vals, kind, nil
 	}
 
 	if pe.Index != nil {
@@ -105,12 +109,8 @@ func (sh *Shell) expandParam(pe *syntax.ParamExp, io *IO, quoted bool) ([]string
 				kind = kindList
 			}
 		} else if pe.Index.All {
-			if pe.Index.Star && quoted {
-				kind = kindScalar
-				vals = []string{strings.Join(vals, " ")}
-			} else {
-				kind = kindSplit
-			}
+			kind = kindSplit
+			star = pe.Index.Star && quoted
 		} else {
 			s, err := sh.expandString(pe.Index.Expr, io)
 			if err != nil {
@@ -148,6 +148,9 @@ func (sh *Shell) expandParam(pe *syntax.ParamExp, io *IO, quoted bool) ([]string
 		if !isSet || len(vals) == 0 {
 			return true
 		}
+		if star {
+			return strings.Join(vals, sh.ifsFirst()) == ""
+		}
 		return len(vals) == 1 && vals[0] == ""
 	}
 
@@ -156,13 +159,13 @@ func (sh *Shell) expandParam(pe *syntax.ParamExp, io *IO, quoted bool) ([]string
 		if !isSet && sh.opts.nounset && name != "@" && name != "*" {
 			return nil, kindScalar, errorf("%s: unbound variable", name)
 		}
-		return vals, kind, nil
+		return result(vals, kind)
 	case syntax.OpDefault, syntax.OpDefaultUnset:
 		if !isSet || pe.Op == syntax.OpDefault && isNull() {
 			s, err := sh.expandString(pe.Arg, io)
 			return []string{s}, kindScalar, err
 		}
-		return vals, kind, nil
+		return result(vals, kind)
 	case syntax.OpAssign, syntax.OpAssignUnset:
 		if !isSet || pe.Op == syntax.OpAssign && isNull() {
 			s, err := sh.expandString(pe.Arg, io)
@@ -174,7 +177,7 @@ func (sh *Shell) expandParam(pe *syntax.ParamExp, io *IO, quoted bool) ([]string
 			}
 			return []string{s}, kindScalar, nil
 		}
-		return vals, kind, nil
+		return result(vals, kind)
 	case syntax.OpError, syntax.OpErrorUnset:
 		if !isSet || pe.Op == syntax.OpError && isNull() {
 			msg, _ := sh.expandString(pe.Arg, io)
@@ -183,7 +186,7 @@ func (sh *Shell) expandParam(pe *syntax.ParamExp, io *IO, quoted bool) ([]string
 			}
 			return nil, kindScalar, errorf("%s: %s", name, msg)
 		}
-		return vals, kind, nil
+		return result(vals, kind)
 	case syntax.OpAlt, syntax.OpAltUnset:
 		if !isSet || pe.Op == syntax.OpAlt && isNull() {
 			return nil, kindScalar, nil
@@ -209,7 +212,7 @@ func (sh *Shell) expandParam(pe *syntax.ParamExp, io *IO, quoted bool) ([]string
 				out[i] = trimSuffixPattern(v, pat, true)
 			}
 		}
-		return out, scalarIfOne(kind, out), nil
+		return result(out, scalarIfOne(kind, out))
 	case syntax.OpReplace, syntax.OpReplaceAll, syntax.OpReplacePrefix, syntax.OpReplaceSuffix:
 		vals, kind = joinPathList(vals, kind)
 		pat, err := sh.expandPattern(pe.Arg, io, false)
@@ -227,7 +230,7 @@ func (sh *Shell) expandParam(pe *syntax.ParamExp, io *IO, quoted bool) ([]string
 		for i, v := range vals {
 			out[i] = replacePattern(v, pat, rep, pe.Op)
 		}
-		return out, scalarIfOne(kind, out), nil
+		return result(out, scalarIfOne(kind, out))
 	case syntax.OpSubstr:
 		offS, err := sh.expandString(pe.Arg, io)
 		if err != nil {
@@ -251,7 +254,7 @@ func (sh *Shell) expandParam(pe *syntax.ParamExp, io *IO, quoted bool) ([]string
 			hasLen = true
 		}
 		if kind == kindSplit {
-			return sliceList(vals, off, length, hasLen, name == "@"), kindSplit, nil
+			return result(sliceList(vals, off, length, hasLen, name == "@" || name == "*"), kindSplit)
 		}
 		return []string{substr(strings.Join(vals, " "), off, length, hasLen)}, kindScalar, nil
 	case syntax.OpUpperFirst, syntax.OpUpperAll, syntax.OpLowerFirst, syntax.OpLowerAll:
@@ -260,7 +263,7 @@ func (sh *Shell) expandParam(pe *syntax.ParamExp, io *IO, quoted bool) ([]string
 		for i, v := range vals {
 			out[i] = caseConvert(v, pe.Op)
 		}
-		return out, scalarIfOne(kind, out), nil
+		return result(out, scalarIfOne(kind, out))
 	case syntax.OpTransform:
 		op, _ := pe.Arg.LitString()
 		out := make([]string, len(vals))
@@ -282,9 +285,9 @@ func (sh *Shell) expandParam(pe *syntax.ParamExp, io *IO, quoted bool) ([]string
 				out[i] = v
 			}
 		}
-		return out, scalarIfOne(kind, out), nil
+		return result(out, scalarIfOne(kind, out))
 	}
-	return vals, kind, nil
+	return result(vals, kind)
 }
 
 // joinPathList makes ${PATH%%:*} and friends see the ':'-joined string,
