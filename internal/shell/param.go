@@ -482,6 +482,48 @@ func replacePattern(s, pat, rep string, op syntax.ParamOp) string {
 	return b.String()
 }
 
+// fishRange resolves the fish slice start..end over a list of n elements.
+// It returns the 1-based positions to visit, from and to inclusive, and
+// the direction; step 0 means the slice selects nothing. Negative indices
+// count from the end. As in fish, when exactly one end is negative the
+// signs fix the direction: 2..-1 only runs forward and -1..2 only
+// backward, so $argv[2..-1] is empty when there is just one argument
+// instead of reversing into the first one.
+func fishRange(start, end, n int) (from, to, step int) {
+	i, j := start, end
+	if i < 0 {
+		i += n + 1
+	}
+	if j < 0 {
+		j += n + 1
+	}
+	if (start < 0) != (end < 0) {
+		if start >= 0 && i > j || start < 0 && i < j {
+			return 0, 0, 0
+		}
+	}
+	step = 1
+	lo, hi := i, j
+	if j < i {
+		step = -1
+		lo, hi = j, i
+	}
+	// Positions outside 1..n select nothing; clamp to what exists.
+	if lo < 1 {
+		lo = 1
+	}
+	if hi > n {
+		hi = n
+	}
+	if lo > hi {
+		return 0, 0, 0
+	}
+	if step < 0 {
+		return hi, lo, step
+	}
+	return lo, hi, step
+}
+
 // applyFishIndex selects elements with fish's 1-based indices and ranges.
 func (sh *Shell) applyFishIndex(vals []string, idx *syntax.Index, io *IO) ([]string, error) {
 	var out []string
@@ -495,7 +537,8 @@ func (sh *Shell) applyFishIndex(vals []string, idx *syntax.Index, io *IO) ([]str
 			for _, one := range strings.Fields(spec) {
 				if i := strings.Index(one, ".."); i >= 0 {
 					a, b := one[:i], one[i+2:]
-					start, end := 1, n
+					// A missing start is 1, a missing end is -1 (the last).
+					start, end := 1, -1
 					if a != "" {
 						v, err := strconv.Atoi(a)
 						if err != nil {
@@ -510,34 +553,11 @@ func (sh *Shell) applyFishIndex(vals []string, idx *syntax.Index, io *IO) ([]str
 						}
 						end = v
 					}
-					if start < 0 {
-						start += n + 1
-					}
-					if end < 0 {
-						end += n + 1
-					}
-					if n == 0 {
-						continue
-					}
-					if start <= end {
-						if start < 1 {
-							start = 1
-						}
-						if end > n {
-							end = n
-						}
-						for k := start; k <= end; k++ {
-							out = append(out, vals[k-1])
-						}
-					} else {
-						if start > n {
-							start = n
-						}
-						if end < 1 {
-							end = 1
-						}
-						for k := start; k >= end; k-- {
-							out = append(out, vals[k-1])
+					from, to, step := fishRange(start, end, n)
+					for k := from; step != 0; k += step {
+						out = append(out, vals[k-1])
+						if k == to {
+							break
 						}
 					}
 					continue
