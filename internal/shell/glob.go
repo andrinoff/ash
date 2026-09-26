@@ -272,8 +272,13 @@ func (sh *Shell) glob(pat string) []string {
 			return
 		}
 		if seg == "**" {
-			// zero directories
-			walk(dir, rel, i+1)
+			// A final ** matches everything below dir (like fish and
+			// bash's globstar); otherwise it stands for zero or more
+			// directories.
+			last := i == len(segs)-1
+			if !last {
+				walk(dir, rel, i+1)
+			}
 			var rec func(d, r string, depth int)
 			rec = func(d, r string, depth int) {
 				if depth > 64 {
@@ -288,16 +293,6 @@ func (sh *Shell) glob(pat string) []string {
 					if name[0] == '.' {
 						continue
 					}
-					isDir := e.IsDir()
-					if !isDir && e.Type()&os.ModeSymlink != 0 {
-						if st, err := os.Stat(filepath.Join(d, name)); err == nil && st.IsDir() {
-							// don't follow symlinked dirs for recursion
-							isDir = false
-						}
-					}
-					if !isDir {
-						continue
-					}
 					nd := filepath.Join(d, name)
 					nr := name
 					if r != "" {
@@ -305,7 +300,17 @@ func (sh *Shell) glob(pat string) []string {
 					} else if prefix != "" {
 						nr = prefix + name
 					}
-					walk(nd, nr, i+1)
+					if last {
+						results = append(results, nr)
+					}
+					// Symlinked directories are not followed (e.IsDir
+					// is false for them), which also avoids loops.
+					if !e.IsDir() {
+						continue
+					}
+					if !last {
+						walk(nd, nr, i+1)
+					}
 					rec(nd, nr, depth+1)
 				}
 			}
