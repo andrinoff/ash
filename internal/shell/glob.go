@@ -222,6 +222,31 @@ func unescapePattern(p string) string {
 	return b.String()
 }
 
+// collapseStars reports whether a pattern segment has "**" made of
+// unescaped stars (so c\** from c'*'* is not one), and returns the
+// segment with each such run of stars reduced to one.
+func collapseStars(seg string) (string, bool) {
+	var b strings.Builder
+	found := false
+	for i := 0; i < len(seg); i++ {
+		c := seg[i]
+		if c == '\\' && i+1 < len(seg) {
+			b.WriteByte(c)
+			b.WriteByte(seg[i+1])
+			i++
+			continue
+		}
+		if c == '*' {
+			for i+1 < len(seg) && seg[i+1] == '*' {
+				found = true
+				i++
+			}
+		}
+		b.WriteByte(c)
+	}
+	return b.String(), found
+}
+
 // glob expands a pattern against the file system. Results are relative
 // if the pattern is relative.
 func (sh *Shell) glob(pat string) []string {
@@ -233,9 +258,11 @@ func (sh *Shell) glob(pat string) []string {
 	// fish-style "**.go" means "**/*.go"
 	var expanded []string
 	for _, s := range segs {
-		if s != "**" && strings.Contains(s, "**") {
-			expanded = append(expanded, "**", strings.ReplaceAll(s, "**", "*"))
-			continue
+		if s != "**" {
+			if c, ok := collapseStars(s); ok {
+				expanded = append(expanded, "**", c)
+				continue
+			}
 		}
 		expanded = append(expanded, s)
 	}

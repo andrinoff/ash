@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/andrinoff/ash/internal/syntax"
 )
 
 // globTree makes a small directory tree for glob tests.
@@ -27,6 +29,40 @@ func globIn(dir, pat string) []string {
 	sh := New()
 	sh.dir = dir
 	return sh.glob(pat)
+}
+
+// expandIn expands the arguments of the command src with dir as the
+// current directory.
+func expandIn(t *testing.T, dir, src string) []string {
+	t.Helper()
+	sh := New()
+	sh.dir = dir
+	f, err := syntax.Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args, err := sh.expandFields(f.Stmts[0].Cmd.(*syntax.CallExpr).Args, sh.StdIO(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return args
+}
+
+func TestGlobEscapedStarIsNotDoubleStar(t *testing.T) {
+	dir := globTree(t, "c*d", "cxd", "sub/c*e")
+	for _, c := range []struct {
+		src  string
+		want []string
+	}{
+		{`echo c'*'*`, []string{"echo", "c*d"}},
+		{`echo c\**`, []string{"echo", "c*d"}},
+		{`echo "c*"*`, []string{"echo", "c*d"}},
+		{`echo c**`, []string{"echo", "c*d", "cxd", "sub/c*e"}},
+	} {
+		if got := expandIn(t, dir, c.src); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s: got %q, want %q", c.src, got, c.want)
+		}
+	}
 }
 
 func TestGlobTrailingDoubleStar(t *testing.T) {
