@@ -65,6 +65,16 @@ func TestGlobEscapedStarIsNotDoubleStar(t *testing.T) {
 	}
 }
 
+// The expected order is fish 4.8's for the same file names.
+func TestNaturalSortIgnoresCase(t *testing.T) {
+	got := []string{"file10", "File3", "file2", "file01", "file1", "file001", "FILE1", "Apricot", "apple", "aZ", "ab", "a-b", "a_b", "10", "9", "_x", "é", "z"}
+	want := []string{"9", "10", "_x", "a-b", "a_b", "ab", "apple", "Apricot", "aZ", "FILE1", "file001", "file01", "file1", "file2", "File3", "file10", "z", "é"}
+	NaturalSort(got)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got  %q\nwant %q", got, want)
+	}
+}
+
 func TestGlobTrailingDoubleStar(t *testing.T) {
 	dir := globTree(t, "a.txt", "sub/s.txt", "sub/deep/d.txt", "sub/.dot", ".hid/h.txt")
 	if err := os.Symlink("sub", filepath.Join(dir, "link")); err != nil {

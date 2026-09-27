@@ -397,12 +397,14 @@ func (sh *Shell) glob(pat string) []string {
 	return results
 }
 
-// naturalLess compares strings so that "file2" < "file10".
+// naturalLess compares strings the way fish sorts glob results: letter
+// case is ignored and runs of digits compare by value, so "file2" <
+// "File3" < "file10". Case and leading zeros only break ties between
+// names that are otherwise equal.
 func naturalLess(a, b string) bool {
 	i, j := 0, 0
 	for i < len(a) && j < len(b) {
-		ca, cb := a[i], b[j]
-		if isDigitByte(ca) && isDigitByte(cb) {
+		if isDigitByte(a[i]) && isDigitByte(b[j]) {
 			si := i
 			for i < len(a) && isDigitByte(a[i]) {
 				i++
@@ -421,17 +423,19 @@ func naturalLess(a, b string) bool {
 			}
 			continue
 		}
-		la, lb := unicode.ToLower(rune(ca)), unicode.ToLower(rune(cb))
-		if la != lb {
+		ra, sa := utf8.DecodeRuneInString(a[i:])
+		rb, sb := utf8.DecodeRuneInString(b[j:])
+		if la, lb := unicode.ToLower(ra), unicode.ToLower(rb); la != lb {
 			return la < lb
 		}
-		if ca != cb {
-			return ca < cb
-		}
-		i++
-		j++
+		i += sa
+		j += sb
 	}
-	return len(a)-i < len(b)-j
+	if i < len(a) || j < len(b) {
+		// One is a prefix of the other.
+		return i == len(a)
+	}
+	return a < b
 }
 
 func isDigitByte(c byte) bool { return c >= '0' && c <= '9' }
