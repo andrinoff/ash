@@ -80,26 +80,38 @@ var assignOps = []string{"<<=", ">>=", "**=", "*=", "/=", "%=", "+=", "-=", "&="
 func (p *arithParser) assign() int64 {
 	p.skip()
 	save := p.pos
-	if name, idx, ok := p.lvalue(); ok {
+	// Look for "name[sub] op=" without side effects first, so that the
+	// subscript in a[i++] is evaluated once whether or not this turns
+	// out to be an assignment.
+	p.noEval++
+	op := ""
+	if _, _, ok := p.lvalue(); ok {
 		p.skip()
-		for _, op := range assignOps {
-			if strings.HasPrefix(p.s[p.pos:], op) && !(op == "=" && strings.HasPrefix(p.s[p.pos:], "==")) {
-				p.pos += len(op)
-				rhs := p.assign()
-				var v int64
-				if op == "=" {
-					v = rhs
-				} else {
-					cur := p.getVar(name, idx)
-					v = p.binop(op[:len(op)-1], cur, rhs)
-				}
-				p.setVar(name, idx, v)
-				return v
+		for _, o := range assignOps {
+			if strings.HasPrefix(p.s[p.pos:], o) && !(o == "=" && strings.HasPrefix(p.s[p.pos:], "==")) {
+				op = o
+				break
 			}
 		}
 	}
+	p.noEval--
 	p.pos = save
-	return p.ternary()
+	if op == "" {
+		return p.ternary()
+	}
+	name, idx, _ := p.lvalue()
+	p.skip()
+	p.pos += len(op)
+	rhs := p.assign()
+	var v int64
+	if op == "=" {
+		v = rhs
+	} else {
+		cur := p.getVar(name, idx)
+		v = p.binop(op[:len(op)-1], cur, rhs)
+	}
+	p.setVar(name, idx, v)
+	return v
 }
 
 // lvalue parses name or name[expr].
