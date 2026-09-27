@@ -28,6 +28,41 @@ func TestArithSubscriptEvaluatedOnce(t *testing.T) {
 	}
 }
 
+// Expected values are bash's.
+func TestArithConstants(t *testing.T) {
+	sh := New()
+	for _, c := range []struct {
+		expr string
+		want int64
+	}{
+		{"0x1F + 010 + 2#1010", 31 + 8 + 10},
+		{"16#ff + 16#FF", 510},
+		{"36#z + 36#Z", 70},
+		{"64#a", 10},
+		{"64#A", 36},
+		{"64#@", 62},
+		{"64#_", 63},
+		{"64#10", 64},
+		{"0xffffffffffffffff", -1},
+		{"9223372036854775807 + 1", -9223372036854775807 - 1},
+		{"9223372036854775808", -9223372036854775807 - 1},
+		{"18446744073709551616", 0},
+	} {
+		if got := arithEval(t, sh, c.expr); got != c.want {
+			t.Errorf("%s = %d, want %d", c.expr, got, c.want)
+		}
+	}
+	for _, bad := range []string{"08", "2#2", "65#1", "1#1", "0xg", "1e3"} {
+		if v, err := sh.arith(bad); err == nil {
+			t.Errorf("%s = %d, want an error", bad, v)
+		}
+	}
+	out, errOut, _ := runScript(t, `x=$(( -9223372036854775807 - 1 )); echo $x $(( x + 1 )) $(( x / -1 ))`)
+	if want := "-9223372036854775808 -9223372036854775807 -9223372036854775808\n"; out != want {
+		t.Errorf("got %q (stderr %q), want %q", out, errOut, want)
+	}
+}
+
 func TestArithPowerLargeExponent(t *testing.T) {
 	sh := New()
 	for _, c := range []struct {

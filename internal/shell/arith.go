@@ -445,7 +445,9 @@ func (p *arithParser) primary() int64 {
 		return v
 	}
 	start := p.pos
-	for p.pos < len(p.s) && (isNameByte(p.s[p.pos]) || p.s[p.pos] == '#') {
+	hash := false
+	for p.pos < len(p.s) && (isNameByte(p.s[p.pos]) || p.s[p.pos] == '#' || hash && p.s[p.pos] == '@') {
+		hash = hash || p.s[p.pos] == '#'
 		p.pos++
 	}
 	tok := p.s[start:p.pos]
@@ -459,7 +461,11 @@ func (p *arithParser) primary() int64 {
 	return n
 }
 
-// parseArithNumber parses 42, 0x2a, 052, 2#101010 and 36#z.
+// parseArithNumber parses 42, 0x2a, 052, 2#101010, 36#z and 64#_ the
+// way bash does: digits above 9 are letters (lower case before upper
+// case in bases above 36, then @ and _), and a constant too big for 64
+// bits wraps around instead of failing, so 0xffffffffffffffff is -1 and
+// -9223372036854775808 (which $(( -2**63 )) prints) reads back.
 func parseArithNumber(s string) (int64, bool) {
 	neg := false
 	if strings.HasPrefix(s, "-") {
@@ -471,28 +477,54 @@ func parseArithNumber(s string) (int64, bool) {
 	if s == "" {
 		return 0, false
 	}
-	var n int64
-	var err error
+	base := uint64(10)
 	switch {
 	case strings.Contains(s, "#"):
 		i := strings.IndexByte(s, '#')
-		base, e := strconv.Atoi(s[:i])
-		if e != nil || base < 2 || base > 64 {
+		b, err := strconv.Atoi(s[:i])
+		if err != nil || b < 2 || b > 64 {
 			return 0, false
 		}
-		n, err = strconv.ParseInt(s[i+1:], base, 64)
+		base = uint64(b)
+		s = s[i+1:]
 	case strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X"):
-		n, err = strconv.ParseInt(s[2:], 16, 64)
+		base = 16
+		s = s[2:]
 	case len(s) > 1 && s[0] == '0':
-		n, err = strconv.ParseInt(s[1:], 8, 64)
-	default:
-		n, err = strconv.ParseInt(s, 10, 64)
+		base = 8
+		s = s[1:]
 	}
-	if err != nil {
+	if s == "" {
 		return 0, false
 	}
-	if neg {
-		n = -n
+	var n uint64
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		var d uint64
+		switch {
+		case c >= '0' && c <= '9':
+			d = uint64(c - '0')
+		case c >= 'a' && c <= 'z':
+			d = uint64(c-'a') + 10
+		case c >= 'A' && c <= 'Z' && base <= 36:
+			d = uint64(c-'A') + 10
+		case c >= 'A' && c <= 'Z':
+			d = uint64(c-'A') + 36
+		case c == '@':
+			d = 62
+		case c == '_':
+			d = 63
+		default:
+			return 0, false
+		}
+		if d >= base {
+			return 0, false
+		}
+		n = n*base + d
 	}
-	return n, true
+	v := int64(n)
+	if neg {
+		v = -v
+	}
+	return v, true
 }
