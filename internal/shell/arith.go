@@ -311,9 +311,13 @@ func (p *arithParser) binop(op string, x, y int64) int64 {
 		if y < 0 {
 			p.fail("exponent less than 0")
 		}
+		// Square and multiply: a loop of y steps hangs on 2**1e18.
 		r := int64(1)
-		for i := int64(0); i < y; i++ {
-			r *= x
+		for ; y > 0; y >>= 1 {
+			if y&1 != 0 {
+				r *= x
+			}
+			x *= x
 		}
 		return r
 	case "<<":
