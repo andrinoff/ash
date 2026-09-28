@@ -157,7 +157,7 @@ func (sh *Shell) expandParam(pe *syntax.ParamExp, io *IO, quoted bool) ([]string
 	switch pe.Op {
 	case syntax.OpNone:
 		if !isSet && sh.opts.nounset && name != "@" && name != "*" {
-			return nil, kindScalar, errorf("%s: unbound variable", name)
+			return nil, kindScalar, sh.fatalExpansion(errorf("%s: unbound variable", name))
 		}
 		return result(vals, kind)
 	case syntax.OpDefault, syntax.OpDefaultUnset:
@@ -184,7 +184,7 @@ func (sh *Shell) expandParam(pe *syntax.ParamExp, io *IO, quoted bool) ([]string
 			if msg == "" {
 				msg = "parameter null or not set"
 			}
-			return nil, kindScalar, errorf("%s: %s", name, msg)
+			return nil, kindScalar, sh.fatalExpansion(errorf("%s: %s", name, msg))
 		}
 		return result(vals, kind)
 	case syntax.OpAlt, syntax.OpAltUnset:
@@ -290,6 +290,18 @@ func (sh *Shell) expandParam(pe *syntax.ParamExp, io *IO, quoted bool) ([]string
 		return result(out, scalarIfOne(kind, out))
 	}
 	return result(vals, kind)
+}
+
+// fatalExpansion returns err for ${x:?msg} and set -u failures, which
+// end a non-interactive shell (or subshell) the way POSIX requires,
+// whatever command or assignment the expansion was part of: a script
+// guarded with : "${VAR:?}" must not go on without VAR.
+func (sh *Shell) fatalExpansion(err error) error {
+	if !sh.Interactive {
+		sh.ctrl = ctrlExit
+		sh.exitStatus = 1
+	}
+	return err
 }
 
 // joinPathList makes ${PATH%%:*} and friends see the ':'-joined string,

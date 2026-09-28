@@ -20,6 +20,25 @@ func TestFishSliceDirection(t *testing.T) {
 	}
 }
 
+func TestFatalExpansionExitsScript(t *testing.T) {
+	for _, c := range []struct{ src, want string }{
+		{`unset x; : ${x:?oops}; echo after`, ""},
+		{`x=; y=${x:?}; echo after`, ""},
+		{`unset x; for i in ${x?oops}; do :; done; echo after`, ""},
+		{`unset x; f() { : ${x:?oops}; echo inner; }; f; echo after`, ""},
+		{`set -u; x=$undefined; echo after`, ""},
+		{`set -u; case $undefined in *) ;; esac; echo after`, ""},
+		{`unset x; (: ${x:?oops}; echo inner); echo after $?`, "after 1\n"},
+		{`unset x; y=$(: ${x:?oops}); echo after $?`, "after 1\n"},
+		{`x=1; : ${x:?oops}; set -u; echo ${undefined:-ok} after`, "ok after\n"},
+	} {
+		out, errOut, st := runScript(t, c.src)
+		if out != c.want || c.want == "" && st != 1 {
+			t.Errorf("%s: got %q status %d (stderr %q), want %q", c.src, out, st, errOut, c.want)
+		}
+	}
+}
+
 func TestPathListSubstringAndQuote(t *testing.T) {
 	for _, c := range []struct{ src, want string }{
 		{`MYPATH=/usr/bin:/bin; echo ${MYPATH:0:12}`, "/usr/bin:/bi\n"},
