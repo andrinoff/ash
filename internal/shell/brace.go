@@ -32,6 +32,14 @@ func braceText(be *syntax.BraceExp) string {
 	return "{" + strings.Join(alts, ",") + "}"
 }
 
+// isLetterSeq reports whether seq is a letter range like {a..e}.
+func isLetterSeq(seq *syntax.BraceSeq) bool {
+	isLetter := func(s string) bool {
+		return len(s) == 1 && (s[0] >= 'a' && s[0] <= 'z' || s[0] >= 'A' && s[0] <= 'Z')
+	}
+	return isLetter(seq.Start) && isLetter(seq.End)
+}
+
 // braceExpand performs brace expansion, returning one part list per
 // alternative.
 func braceExpand(parts []syntax.WordPart) [][]syntax.WordPart {
@@ -85,6 +93,11 @@ func expandSeq(seq *syntax.BraceSeq) []string {
 	a, errA := strconv.Atoi(seq.Start)
 	b, errB := strconv.Atoi(seq.End)
 	var out []string
+	if (errA != nil || errB != nil) && !isLetterSeq(seq) {
+		// A number that doesn't fit in 64 bits: leave the text alone
+		// rather than reading {1..99999999999999999999} as {1..9}.
+		return []string{braceText(&syntax.BraceExp{Seq: seq})}
+	}
 	if errA == nil && errB == nil {
 		width := 0
 		if (len(seq.Start) > 1 && strings.TrimLeft(seq.Start, "-")[0] == '0') || (len(seq.End) > 1 && strings.TrimLeft(seq.End, "-")[0] == '0') {
@@ -99,13 +112,22 @@ func expandSeq(seq *syntax.BraceSeq) []string {
 			}
 			return strconv.Itoa(n)
 		}
+		// Stop before i += step can overflow: {9223372036854775806..
+		// 9223372036854775807} wrapped around and produced junk. The
+		// distance to the end is exact as a uint64.
 		if a <= b {
-			for i := a; i <= b && len(out) < 100000; i += step {
+			for i := a; len(out) < 100000; i += step {
 				out = append(out, format(i))
+				if uint64(b-i) < uint64(step) {
+					break
+				}
 			}
 		} else {
-			for i := a; i >= b && len(out) < 100000; i -= step {
+			for i := a; len(out) < 100000; i -= step {
 				out = append(out, format(i))
+				if uint64(i-b) < uint64(step) {
+					break
+				}
 			}
 		}
 		return out
