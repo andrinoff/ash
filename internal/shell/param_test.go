@@ -20,6 +20,20 @@ func TestFishSliceDirection(t *testing.T) {
 	}
 }
 
+func TestPathListSubstringAndQuote(t *testing.T) {
+	for _, c := range []struct{ src, want string }{
+		{`MYPATH=/usr/bin:/bin; echo ${MYPATH:0:12}`, "/usr/bin:/bi\n"},
+		{`MYPATH=/usr/bin:/bin; echo "${MYPATH:4}" ${MYPATH: -4}`, "/bin:/bin /bin\n"},
+		{`MYPATH="/a b:/c"; eval x=${MYPATH@Q}; echo "$x"`, "/a b:/c\n"},
+		{`MYPATH=/a:/b; args "${MYPATH[@]:1}" $MYPATH`, "</b></a></b>\n"},
+	} {
+		out, errOut, _ := runScript(t, argsFn+c.src)
+		if out != c.want {
+			t.Errorf("%s: got %q (stderr %q), want %q", c.src, out, errOut, c.want)
+		}
+	}
+}
+
 func TestStarJoinsAfterOperator(t *testing.T) {
 	for _, c := range []struct{ src, want string }{
 		{`set -- a 'b c'; args "$*" "$@"`, "<a b c><a><b c>\n"},

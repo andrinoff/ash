@@ -232,6 +232,7 @@ func (sh *Shell) expandParam(pe *syntax.ParamExp, io *IO, quoted bool) ([]string
 		}
 		return result(out, scalarIfOne(kind, out))
 	case syntax.OpSubstr:
+		vals, kind = joinPathList(vals, kind)
 		offS, err := sh.expandString(pe.Arg, io)
 		if err != nil {
 			return nil, kindScalar, err
@@ -265,6 +266,7 @@ func (sh *Shell) expandParam(pe *syntax.ParamExp, io *IO, quoted bool) ([]string
 		}
 		return result(out, scalarIfOne(kind, out))
 	case syntax.OpTransform:
+		vals, kind = joinPathList(vals, kind)
 		op, _ := pe.Arg.LitString()
 		out := make([]string, len(vals))
 		for i, v := range vals {
