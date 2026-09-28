@@ -325,6 +325,10 @@ func (sh *Shell) clone() *Shell {
 	c.aliasOwn = false
 	sh.aliasOwn = false
 	c.dirStack = append([]string(nil), sh.dirStack...)
+	// cd appends to dirPrev: a shared backing array would let the
+	// subshell overwrite the parent's history.
+	c.dirPrev = append([]string(nil), sh.dirPrev...)
+	c.dirNext = append([]string(nil), sh.dirNext...)
 	c.callStack = append([]frame(nil), sh.callStack...)
 	c.aliasStack = append([]string(nil), sh.aliasStack...)
 	c.srcStack = append([]string(nil), sh.srcStack...)
