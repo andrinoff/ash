@@ -1,6 +1,12 @@
 package shell
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/andrinoff/ash/internal/syntax"
+)
 
 // Expected values come from fish 4.8.
 func TestFishSliceDirection(t *testing.T) {
@@ -31,6 +37,42 @@ func TestPatternOpsKeepMultibyteCharacters(t *testing.T) {
 		if out != c.want {
 			t.Errorf("%s: got %q (stderr %q), want %q", c.src, out, errOut, c.want)
 		}
+	}
+}
+
+// These took seconds on 50 KB (every substring went through the
+// matcher); they should be close to instant.
+func TestPatternOpsOnLongStrings(t *testing.T) {
+	long := strings.Repeat("a", 50000)
+	start := time.Now()
+	for _, c := range []struct {
+		got  string
+		want int
+	}{
+		{replacePattern(long, "a", "b", syntax.OpReplaceAll), 50000},
+		{replacePattern(long, "b", "c", syntax.OpReplace), 50000},
+		{replacePattern(long, "[a]", "", syntax.OpReplaceAll), 0},
+		{trimPrefixPattern(long, "*b", false), 50000},
+		{trimPrefixPattern(long, "*b", true), 50000},
+		{trimSuffixPattern(long, "b*", false), 50000},
+		{trimSuffixPattern(long, "a*", true), 0},
+		{trimSuffixPattern(long, "?", false), 49999},
+	} {
+		if len(c.got) != c.want {
+			t.Errorf("got length %d, want %d", len(c.got), c.want)
+		}
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Errorf("took %v", d)
+	}
+	if got := replacePattern("a/b/c", "/", "_", syntax.OpReplaceAll); got != "a_b_c" {
+		t.Errorf("got %q", got)
+	}
+	if got := trimPrefixPattern("/usr/local/bin", "*/", true); got != "bin" {
+		t.Errorf("got %q", got)
+	}
+	if got := trimSuffixPattern("/usr/local/bin", "/*", false); got != "/usr/local" {
+		t.Errorf("got %q", got)
 	}
 }
 

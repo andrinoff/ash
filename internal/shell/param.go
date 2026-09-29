@@ -427,57 +427,171 @@ func charBounds(s string) []int {
 	return append(b, len(s))
 }
 
-func trimPrefixPattern(s, pat string, long bool) string {
-	b := charBounds(s)
+// wholeMatcher matches a pattern against whole strings. It first rules
+// out candidates that can't match, so that the trim and replace
+// operators, which try many substrings, stay linear for the usual
+// patterns (${x//a/b}, ${x##*/}, ${x%?}) rather than running the
+// matcher on every one.
+type wholeMatcher struct {
+	pat            string
+	prefix, suffix string // literal text every match starts and ends with
+	minLen         int    // fewest bytes in a match
+	chars          int    // characters in every match, or -1 if pat has a *
+}
+
+func newWholeMatcher(pat string) *wholeMatcher {
+	m := &wholeMatcher{pat: pat}
+	// Split pat into one token per character it matches, as match()
+	// reads it: kind '*', '?' (any one character) or 'l' (literal).
+	type token struct {
+		kind byte
+		lit  string
+	}
+	var toks []token
+	for i := 0; i < len(pat); {
+		switch c := pat[i]; {
+		case c == '*':
+			toks = append(toks, token{kind: '*'})
+			i++
+			continue
+		case c == '?':
+			toks = append(toks, token{kind: '?'})
+			i++
+			continue
+		case c == '[':
+			if _, n := matchClass(pat[i:], 0, false); n > 0 {
+				toks = append(toks, token{kind: '?'})
+				i += n
+				continue
+			}
+		case c == '\\' && i+1 < len(pat):
+			i++
+		}
+		r, n := utf8.DecodeRuneInString(pat[i:])
+		if r == utf8.RuneError {
+			// match() takes any invalid byte for any other.
+			toks = append(toks, token{kind: '?'})
+		} else {
+			toks = append(toks, token{kind: 'l', lit: pat[i : i+n]})
+		}
+		i += n
+	}
+	for _, t := range toks {
+		switch t.kind {
+		case '*':
+			m.chars = -1
+		case '?':
+			m.minLen++
+		default:
+			m.minLen += len(t.lit)
+		}
+		if t.kind != '*' && m.chars >= 0 {
+			m.chars++
+		}
+	}
+	var b strings.Builder
+	for _, t := range toks {
+		if t.kind != 'l' {
+			break
+		}
+		b.WriteString(t.lit)
+	}
+	m.prefix = b.String()
+	k := len(toks)
+	for k > 0 && toks[k-1].kind == 'l' {
+		k--
+	}
+	b.Reset()
+	for _, t := range toks[k:] {
+		b.WriteString(t.lit)
+	}
+	m.suffix = b.String()
+	return m
+}
+
+func (m *wholeMatcher) match(t string) bool {
+	return len(t) >= m.minLen && strings.HasPrefix(t, m.prefix) && strings.HasSuffix(t, m.suffix) && matchPattern(m.pat, t)
+}
+
+// prefixLen returns how many characters of s (with character offsets
+// b) the shortest or longest matching prefix has, or -1.
+func (m *wholeMatcher) prefixLen(s string, b []int, long bool) int {
+	if m.chars >= 0 {
+		// Every match is m.chars characters long.
+		if m.chars < len(b) && m.match(s[:b[m.chars]]) {
+			return m.chars
+		}
+		return -1
+	}
 	if long {
 		for k := len(b) - 1; k >= 0; k-- {
-			if matchPattern(pat, s[:b[k]]) {
-				return s[b[k]:]
+			if m.match(s[:b[k]]) {
+				return k
 			}
 		}
-		return s
+		return -1
 	}
-	for _, i := range b {
-		if matchPattern(pat, s[:i]) {
-			return s[i:]
+	for k := range b {
+		if m.match(s[:b[k]]) {
+			return k
 		}
+	}
+	return -1
+}
+
+// suffixStart returns the index in b where the shortest or longest
+// matching suffix of s starts, or -1.
+func (m *wholeMatcher) suffixStart(s string, b []int, long bool) int {
+	if m.chars >= 0 {
+		if k := len(b) - 1 - m.chars; k >= 0 && m.match(s[b[k]:]) {
+			return k
+		}
+		return -1
+	}
+	if long {
+		for k := range b {
+			if m.match(s[b[k]:]) {
+				return k
+			}
+		}
+		return -1
+	}
+	for k := len(b) - 1; k >= 0; k-- {
+		if m.match(s[b[k]:]) {
+			return k
+		}
+	}
+	return -1
+}
+
+func trimPrefixPattern(s, pat string, long bool) string {
+	b := charBounds(s)
+	if k := newWholeMatcher(pat).prefixLen(s, b, long); k >= 0 {
+		return s[b[k]:]
 	}
 	return s
 }
 
 func trimSuffixPattern(s, pat string, long bool) string {
 	b := charBounds(s)
-	if long {
-		for _, i := range b {
-			if matchPattern(pat, s[i:]) {
-				return s[:i]
-			}
-		}
-		return s
-	}
-	for k := len(b) - 1; k >= 0; k-- {
-		if matchPattern(pat, s[b[k]:]) {
-			return s[:b[k]]
-		}
+	if k := newWholeMatcher(pat).suffixStart(s, b, long); k >= 0 {
+		return s[:b[k]]
 	}
 	return s
 }
 
 func replacePattern(s, pat, rep string, op syntax.ParamOp) string {
 	b := charBounds(s)
+	m := newWholeMatcher(pat)
 	switch op {
 	case syntax.OpReplacePrefix:
-		for k := len(b) - 1; k >= 0; k-- {
-			if matchPattern(pat, s[:b[k]]) {
-				return rep + s[b[k]:]
-			}
+		if k := m.prefixLen(s, b, true); k >= 0 {
+			return rep + s[b[k]:]
 		}
 		return s
 	case syntax.OpReplaceSuffix:
-		for _, i := range b {
-			if matchPattern(pat, s[i:]) {
-				return s[:i] + rep
-			}
+		if k := m.suffixStart(s, b, true); k >= 0 {
+			return s[:b[k]] + rep
 		}
 		return s
 	}
@@ -489,12 +603,19 @@ func replacePattern(s, pat, rep string, op syntax.ParamOp) string {
 			out.WriteString(s[i:])
 			return out.String()
 		}
-		// longest match starting at i
+		// longest non-empty match starting at i
 		found := -1
-		for m := len(b) - 1; m > k; m-- {
-			if matchPattern(pat, s[i:b[m]]) {
-				found = m
-				break
+		switch {
+		case m.chars >= 0:
+			if e := k + m.chars; m.chars > 0 && e < len(b) && m.match(s[i:b[e]]) {
+				found = e
+			}
+		case strings.HasPrefix(s[i:], m.prefix):
+			for e := len(b) - 1; e > k; e-- {
+				if m.match(s[i:b[e]]) {
+					found = e
+					break
+				}
 			}
 		}
 		if found > 0 {
