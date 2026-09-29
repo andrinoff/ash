@@ -23,8 +23,7 @@ func (f *field) add(s string, quoted bool) {
 	f.text = append(f.text, s...)
 	if quoted {
 		for i := 0; i < len(s); i++ {
-			switch s[i] {
-			case '*', '?', '[', ']', '\\':
+			if isPatternByte(s[i]) {
 				f.pat = append(f.pat, '\\')
 			}
 			f.pat = append(f.pat, s[i])
@@ -320,14 +319,25 @@ func (sh *Shell) expandRegex(w *syntax.Word, io *IO) (string, error) {
 	return b.String(), err
 }
 
+// isPatternByte reports whether c means something in a glob pattern,
+// so that quoted text has to escape it. ! ^ and - only matter inside
+// brackets, but [\!a] and [a"-"z] must not turn into a negation or a
+// range.
+func isPatternByte(c byte) bool {
+	switch c {
+	case '*', '?', '[', ']', '\\', '!', '^', '-':
+		return true
+	}
+	return false
+}
+
 func escapeGlob(s string) string {
-	if !strings.ContainsAny(s, "*?[]\\") {
+	if !strings.ContainsAny(s, "*?[]\\!^-") {
 		return s
 	}
 	var b strings.Builder
 	for i := 0; i < len(s); i++ {
-		switch s[i] {
-		case '*', '?', '[', ']', '\\':
+		if isPatternByte(s[i]) {
 			b.WriteByte('\\')
 		}
 		b.WriteByte(s[i])

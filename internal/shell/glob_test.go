@@ -65,6 +65,25 @@ func TestGlobEscapedStarIsNotDoubleStar(t *testing.T) {
 	}
 }
 
+// Quoted ! ^ and - inside brackets are literal, as in bash.
+func TestQuotedBracketSpecials(t *testing.T) {
+	src := `for s in a b '!' '^' - z m; do
+		case $s in [\!a]) r1=y;; *) r1=n;; esac
+		case $s in [\^a]) r2=y;; *) r2=n;; esac
+		case $s in [a\-z]) r3=y;; *) r3=n;; esac
+		case $s in ["!"a]) r4=y;; *) r4=n;; esac
+		case $s in [a"-"z]) r5=y;; *) r5=n;; esac
+		p='!'; case $s in ["$p"a]) r6=y;; *) r6=n;; esac
+		[[ $s == [\!a] ]] && r7=y || r7=n
+		x=$s; y=${x#[\!a]}; [ -z "$y" ] && r8=y || r8=n
+		echo "$s $r1 $r2 $r3 $r4 $r5 $r6 $r7 $r8"
+	done`
+	want := "a y y y y y y y y\nb n n n n n n n n\n! y n n y n y y y\n^ n y n n n n n n\n- n n y n y n n n\nz n n y n y n n n\nm n n n n n n n n\n"
+	if out, errOut, _ := runScript(t, src); out != want {
+		t.Errorf("got\n%s(stderr %q), want\n%s", out, errOut, want)
+	}
+}
+
 // The expected order is fish 4.8's for the same file names.
 func TestNaturalSortIgnoresCase(t *testing.T) {
 	got := []string{"file10", "File3", "file2", "file01", "file1", "file001", "FILE1", "Apricot", "apple", "aZ", "ab", "a-b", "a_b", "10", "9", "_x", "é", "z"}
