@@ -413,16 +413,31 @@ func caseConvert(s string, op syntax.ParamOp) string {
 	return string(unicode.ToLower(r)) + s[size:]
 }
 
+// charBounds returns the offsets where the characters of s start, and
+// len(s). The trim and replace operators only cut s there: ${x%?} must
+// remove the last character, not the last byte of a multibyte one. An
+// invalid byte counts as one character, as in the matcher.
+func charBounds(s string) []int {
+	b := make([]int, 0, len(s)+1)
+	for i := 0; i < len(s); {
+		b = append(b, i)
+		_, n := utf8.DecodeRuneInString(s[i:])
+		i += n
+	}
+	return append(b, len(s))
+}
+
 func trimPrefixPattern(s, pat string, long bool) string {
+	b := charBounds(s)
 	if long {
-		for i := len(s); i >= 0; i-- {
-			if matchPattern(pat, s[:i]) {
-				return s[i:]
+		for k := len(b) - 1; k >= 0; k-- {
+			if matchPattern(pat, s[:b[k]]) {
+				return s[b[k]:]
 			}
 		}
 		return s
 	}
-	for i := 0; i <= len(s); i++ {
+	for _, i := range b {
 		if matchPattern(pat, s[:i]) {
 			return s[i:]
 		}
@@ -431,69 +446,70 @@ func trimPrefixPattern(s, pat string, long bool) string {
 }
 
 func trimSuffixPattern(s, pat string, long bool) string {
+	b := charBounds(s)
 	if long {
-		for i := 0; i <= len(s); i++ {
+		for _, i := range b {
 			if matchPattern(pat, s[i:]) {
 				return s[:i]
 			}
 		}
 		return s
 	}
-	for i := len(s); i >= 0; i-- {
-		if matchPattern(pat, s[i:]) {
-			return s[:i]
+	for k := len(b) - 1; k >= 0; k-- {
+		if matchPattern(pat, s[b[k]:]) {
+			return s[:b[k]]
 		}
 	}
 	return s
 }
 
 func replacePattern(s, pat, rep string, op syntax.ParamOp) string {
+	b := charBounds(s)
 	switch op {
 	case syntax.OpReplacePrefix:
-		for i := len(s); i >= 0; i-- {
-			if matchPattern(pat, s[:i]) {
-				return rep + s[i:]
+		for k := len(b) - 1; k >= 0; k-- {
+			if matchPattern(pat, s[:b[k]]) {
+				return rep + s[b[k]:]
 			}
 		}
 		return s
 	case syntax.OpReplaceSuffix:
-		for i := 0; i <= len(s); i++ {
+		for _, i := range b {
 			if matchPattern(pat, s[i:]) {
 				return s[:i] + rep
 			}
 		}
 		return s
 	}
-	var b strings.Builder
-	i := 0
+	var out strings.Builder
 	replaced := false
-	for i <= len(s) {
+	for k := 0; k < len(b); {
+		i := b[k]
 		if replaced && op != syntax.OpReplaceAll {
-			b.WriteString(s[i:])
-			return b.String()
+			out.WriteString(s[i:])
+			return out.String()
 		}
 		// longest match starting at i
 		found := -1
-		for j := len(s); j > i; j-- {
-			if matchPattern(pat, s[i:j]) {
-				found = j
+		for m := len(b) - 1; m > k; m-- {
+			if matchPattern(pat, s[i:b[m]]) {
+				found = m
 				break
 			}
 		}
 		if found > 0 {
-			b.WriteString(rep)
-			i = found
+			out.WriteString(rep)
+			k = found
 			replaced = true
 			continue
 		}
-		if i == len(s) {
+		if k == len(b)-1 {
 			break
 		}
-		_, size := utf8.DecodeRuneInString(s[i:])
-		b.WriteString(s[i : i+size])
-		i += size
+		out.WriteString(s[i:b[k+1]])
+		k++
 	}
-	return b.String()
+	return out.String()
 }
 
 // fishRange resolves the fish slice start..end over a list of n elements.

@@ -20,6 +20,20 @@ func TestFishSliceDirection(t *testing.T) {
 	}
 }
 
+func TestPatternOpsKeepMultibyteCharacters(t *testing.T) {
+	for _, c := range []struct{ src, want string }{
+		{`x=héé; echo "${x%?}" "${x#?}" "${x#h?}" "${x%?é}"`, "hé éé é h\n"},
+		{`x=éa; echo "${x#?}" "${x/?/X}" "${x//?/X}"`, "a Xa XX\n"},
+		{`x=aé; echo "${x%%?}" "${x/%?/X}" "${x/#?/X}"`, "a aX Xé\n"},
+		{`x=日本語; echo "${x%?}" "${x#?}" "${x/本/-}"`, "日本 本語 日-語\n"},
+	} {
+		out, errOut, _ := runScript(t, c.src)
+		if out != c.want {
+			t.Errorf("%s: got %q (stderr %q), want %q", c.src, out, errOut, c.want)
+		}
+	}
+}
+
 func TestFatalExpansionExitsScript(t *testing.T) {
 	for _, c := range []struct{ src, want string }{
 		{`unset x; : ${x:?oops}; echo after`, ""},
