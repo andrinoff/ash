@@ -58,6 +58,10 @@ type Shell struct {
 
 	global *scope
 	scope  *scope
+	// foreignEnv holds inherited environment entries whose names can't
+	// be shell variables (A-B=1, x.y=2). Like bash and fish, the shell
+	// passes them on to the commands it runs.
+	foreignEnv []string
 
 	funcs    map[string]*Function
 	funcsOwn bool

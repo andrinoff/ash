@@ -462,7 +462,7 @@ func (sh *Shell) Environ() []string {
 			}
 		}
 	}
-	return env
+	return append(env, sh.foreignEnv...)
 }
 
 // VarNames lists visible variable names, sorted.
@@ -495,6 +495,7 @@ func (sh *Shell) importEnv(environ []string) {
 		}
 		name, val := kv[:i], kv[i+1:]
 		if !validVarName(name) {
+			sh.foreignEnv = append(sh.foreignEnv, kv)
 			continue
 		}
 		v := &Var{Vals: []string{val}, Export: true}
