@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"math/rand"
 	"os"
 	"sort"
 	"strconv"
@@ -275,6 +276,18 @@ func (sh *Shell) SetVar(name string, vals []string, o setOpts) error {
 	if isReadOnlySpecial(name) {
 		return errorf("%s: read-only variable", name)
 	}
+	switch name {
+	case "SECONDS", "RANDOM":
+		// As in bash, SECONDS=n restarts the count from n (the timing
+		// idiom SECONDS=0) and RANDOM=n seeds the generator.
+		n, _ := strconv.ParseInt(strings.TrimSpace(strings.Join(vals, "")), 10, 64)
+		if name == "SECONDS" {
+			sh.startTime = time.Now().Add(-time.Duration(n) * time.Second)
+		} else {
+			sh.rand = rand.New(rand.NewSource(n))
+		}
+		return nil
+	}
 	existing, where := sh.lookupVar(name)
 	var target *scope
 	switch o.scope {
@@ -428,7 +441,7 @@ func validVarName(s string) bool {
 
 func isReadOnlySpecial(name string) bool {
 	switch name {
-	case "status", "pipestatus", "PIPESTATUS", "fish_pid", "ash_pid", "history", "last_pid", "SECONDS", "EPOCHSECONDS", "EPOCHREALTIME", "CMD_DURATION":
+	case "status", "pipestatus", "PIPESTATUS", "fish_pid", "ash_pid", "history", "last_pid", "EPOCHSECONDS", "EPOCHREALTIME", "CMD_DURATION":
 		return true
 	}
 	return false
