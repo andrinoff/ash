@@ -218,7 +218,12 @@ func (sh *Shell) expandToString(b *strings.Builder, parts []syntax.WordPart, io 
 			}
 		case *syntax.BraceExp:
 			// No brace expansion in string context: rebuild the text.
-			b.WriteString(braceText(p))
+			err := braceString(b, p, func(alt []syntax.WordPart) error {
+				return sh.expandToString(b, alt, io, inDQ)
+			})
+			if err != nil {
+				return err
+			}
 		default:
 			vals, kind, err := sh.expandPart(p, io, true)
 			if err != nil {
@@ -231,6 +236,34 @@ func (sh *Shell) expandToString(b *strings.Builder, parts []syntax.WordPart, io 
 			b.WriteString(strings.Join(vals, sep))
 		}
 	}
+	return nil
+}
+
+// braceString writes a brace group where braces don't expand (an
+// assignment, a case pattern, [[ ]]). The alternatives still expand like
+// the rest of the word, so x={a,$y} is "{a,Z}" when y is Z, as in bash.
+// alt writes one alternative.
+func braceString(b *strings.Builder, be *syntax.BraceExp, alt func([]syntax.WordPart) error) error {
+	if be.Seq != nil {
+		b.WriteString(braceText(be))
+		return nil
+	}
+	b.WriteByte('{')
+	for i, parts := range be.Alts {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		if len(parts) > 0 {
+			// Not at the start of the word: {a,~} keeps its ~.
+			if t, ok := parts[0].(*syntax.Tilde); ok {
+				parts = append([]syntax.WordPart{&syntax.Lit{Value: "~" + t.User}}, parts[1:]...)
+			}
+		}
+		if err := alt(parts); err != nil {
+			return err
+		}
+	}
+	b.WriteByte('}')
 	return nil
 }
 
@@ -262,7 +295,16 @@ func (sh *Shell) patternParts(b *strings.Builder, parts []syntax.WordPart, io *I
 				return err
 			}
 		case *syntax.BraceExp:
-			b.WriteString(escapeGlob(braceText(p)))
+			if p.Seq != nil {
+				b.WriteString(escapeGlob(braceText(p)))
+				continue
+			}
+			err := braceString(b, p, func(alt []syntax.WordPart) error {
+				return sh.patternParts(b, alt, io, quoted, fish)
+			})
+			if err != nil {
+				return err
+			}
 		default:
 			vals, kind, err := sh.expandPart(p, io, quoted)
 			if err != nil {
@@ -299,6 +341,13 @@ func (sh *Shell) expandRegex(w *syntax.Word, io *IO) (string, error) {
 				b.WriteString(regexp.QuoteMeta(p.Value))
 			case *syntax.DblQuoted:
 				if err := walk(p.Parts, true); err != nil {
+					return err
+				}
+			case *syntax.BraceExp:
+				err := braceString(&b, p, func(alt []syntax.WordPart) error {
+					return walk(alt, quoted)
+				})
+				if err != nil {
 					return err
 				}
 			default:
@@ -578,7 +627,11 @@ func (sh *Shell) expandPart(p syntax.WordPart, io *IO, quoted bool) ([]string, v
 		}
 		return []string{b.String()}, kindScalar, nil
 	case *syntax.BraceExp:
-		return []string{braceText(p)}, kindScalar, nil
+		var b strings.Builder
+		if err := sh.expandToString(&b, []syntax.WordPart{p}, io, quoted); err != nil {
+			return nil, kindScalar, err
+		}
+		return []string{b.String()}, kindScalar, nil
 	}
 	return nil, kindScalar, fmt.Errorf("unsupported expansion")
 }

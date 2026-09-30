@@ -5,6 +5,28 @@ import "testing"
 // args prints each argument in brackets, so tests can see word splitting.
 const argsFn = "args() { for a in \"$@\"; do echo -n \"<$a>\"; done; echo; }; "
 
+// Braces don't expand in assignments, case patterns or [[ ]], but what
+// is inside them still does. Expected values are bash's.
+func TestUnexpandedBracesKeepTheirContents(t *testing.T) {
+	for _, c := range []struct{ src, want string }{
+		{`y=Z; x={a,$y}; echo "$x"`, "{a,Z}\n"},
+		{`x={a,"b"}; echo "$x"`, "{a,b}\n"},
+		{`v=1; x={"a":"$v","b":2}; echo "$x"`, "{a:1,b:2}\n"},
+		{`x={a,$(echo q)}; echo "$x"`, "{a,q}\n"},
+		{`y=Z; x={a,{b,$y}}; echo "$x"`, "{a,{b,Z}}\n"},
+		{`x={a,~}; echo "$x"`, "{a,~}\n"},
+		{`x={1..3}; echo "$x"`, "{1..3}\n"},
+		{`y=Z; case "{a,Z}" in {a,$y}) echo match;; *) echo no;; esac`, "match\n"},
+		{`y=Z; [[ "{a,Z}" == {a,$y} ]] && echo match || echo no`, "match\n"},
+		{`case "{a,b}" in {a,"*"}) echo match;; *) echo no;; esac`, "no\n"},
+	} {
+		out, errOut, _ := runScript(t, c.src)
+		if out != c.want {
+			t.Errorf("%s: got %q (stderr %q), want %q", c.src, out, errOut, c.want)
+		}
+	}
+}
+
 // Expected values are fish 4.8's.
 func TestFishCmdSubstEmptyLines(t *testing.T) {
 	for _, c := range []struct{ src, want string }{
