@@ -1,9 +1,22 @@
 package shell
 
 import (
+	"fmt"
+	"os"
 	"strings"
 	"testing"
 )
+
+func TestPpidUidEuid(t *testing.T) {
+	want := fmt.Sprintf("%d %d %d\n", os.Getppid(), os.Getuid(), os.Geteuid())
+	out, errOut, _ := runScript(t, `echo $PPID $UID $EUID`)
+	if out != want {
+		t.Errorf("got %q (stderr %q), want %q", out, errOut, want)
+	}
+	if _, errOut, st := runScript(t, `EUID=0`); st == 0 || errOut == "" {
+		t.Errorf("EUID=0 succeeded")
+	}
+}
 
 func TestAssignSecondsAndRandom(t *testing.T) {
 	for _, c := range []struct{ src, want string }{
