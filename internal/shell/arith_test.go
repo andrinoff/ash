@@ -1,6 +1,9 @@
 package shell
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func arithEval(t *testing.T, sh *Shell, expr string) int64 {
 	t.Helper()
@@ -60,6 +63,39 @@ func TestArithConstants(t *testing.T) {
 	out, errOut, _ := runScript(t, `x=$(( -9223372036854775807 - 1 )); echo $x $(( x + 1 )) $(( x / -1 ))`)
 	if want := "-9223372036854775808 -9223372036854775807 -9223372036854775808\n"; out != want {
 		t.Errorf("got %q (stderr %q), want %q", out, errOut, want)
+	}
+}
+
+// Deep nesting used to overflow the Go stack, a fatal error that took
+// the whole shell down. It must be an ordinary error instead.
+func TestArithDeepNestingIsAnError(t *testing.T) {
+	sh := New()
+	const n = 200000
+	for _, expr := range []string{
+		strings.Repeat("(", n) + "1" + strings.Repeat(")", n),
+		strings.Repeat("- ", n) + "1",
+		strings.Repeat("!", n) + "1",
+		strings.Repeat("2**", n) + "1",
+		strings.Repeat("x=", n) + "1",
+		strings.Repeat("0?0:", n) + "1",
+		strings.Repeat("a[", n) + "0" + strings.Repeat("]", n),
+	} {
+		if _, err := sh.arith(expr); err == nil || !strings.Contains(err.Error(), "nested too deeply") {
+			t.Errorf("%.20s...: got %v", expr, err)
+		}
+	}
+	// The limit holds across variables whose values are expressions.
+	sh.SetVar("inner", []string{strings.Repeat("(", 3000) + "1" + strings.Repeat(")", 3000)}, setOpts{})
+	sh.SetVar("outer", []string{strings.Repeat("(", 3000) + "inner" + strings.Repeat(")", 3000)}, setOpts{})
+	if v, err := sh.arith("inner"); err != nil || v != 1 {
+		t.Errorf("inner: %d %v", v, err)
+	}
+	if _, err := sh.arith("outer"); err == nil {
+		t.Errorf("outer: no error")
+	}
+	// Ordinary nesting still works.
+	if v, err := sh.arith(strings.Repeat("(", 500) + "1" + strings.Repeat(")", 500)); err != nil || v != 1 {
+		t.Errorf("500 parentheses: %d %v", v, err)
 	}
 }
 

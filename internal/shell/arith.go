@@ -24,6 +24,7 @@ type arithParser struct {
 	pos    int
 	noEval int
 	depth  int
+	nested int // recursion depth, see nest
 }
 
 type arithErr struct{ msg string }
@@ -31,6 +32,22 @@ type arithErr struct{ msg string }
 func (p *arithParser) fail(format string, args ...any) {
 	panic(&arithErr{msg: errorf(format, args...).Error()})
 }
+
+// maxArithNesting bounds the parser's recursion: deeply nested input
+// such as 300000 parentheses overflowed the Go stack, which is fatal for
+// the whole shell. bash also gives up on deep nesting.
+const maxArithNesting = 4096
+
+// nest and unnest go around every recursive call of the parser
+// (parentheses, subscripts, prefix operators, **, assignments and ?:).
+func (p *arithParser) nest() {
+	p.nested++
+	if p.nested > maxArithNesting {
+		p.fail("expression nested too deeply")
+	}
+}
+
+func (p *arithParser) unnest() { p.nested-- }
 
 func (p *arithParser) parse() (v int64, err error) {
 	defer func() {
@@ -102,7 +119,9 @@ func (p *arithParser) assign() int64 {
 	name, idx, _ := p.lvalue()
 	p.skip()
 	p.pos += len(op)
+	p.nest()
 	rhs := p.assign()
+	p.unnest()
 	var v int64
 	if op == "=" {
 		v = rhs
@@ -127,7 +146,9 @@ func (p *arithParser) lvalue() (string, *int64, bool) {
 	name := p.s[start:p.pos]
 	if p.pos < len(p.s) && p.s[p.pos] == '[' {
 		p.pos++
+		p.nest()
 		i := p.comma()
+		p.unnest()
 		p.skip()
 		if p.pos >= len(p.s) || p.s[p.pos] != ']' {
 			p.fail("expected ']'")
@@ -161,7 +182,7 @@ func (p *arithParser) getVar(name string, idx *int64) int64 {
 	if p.depth > 32 {
 		p.fail("expression recursion level exceeded")
 	}
-	sub := &arithParser{sh: p.sh, s: s, depth: p.depth + 1, noEval: p.noEval}
+	sub := &arithParser{sh: p.sh, s: s, depth: p.depth + 1, noEval: p.noEval, nested: p.nested}
 	v := sub.comma()
 	return v
 }
@@ -199,6 +220,8 @@ func (p *arithParser) ternary() int64 {
 		return c
 	}
 	p.pos++
+	p.nest()
+	defer p.unnest()
 	if c == 0 {
 		p.noEval++
 	}
@@ -363,7 +386,9 @@ func (p *arithParser) power() int64 {
 	x := p.unary()
 	if p.peekOp("**") != "" && !strings.HasPrefix(p.s[p.pos+2:], "=") {
 		p.pos += 2
+		p.nest()
 		y := p.power() // right associative
+		p.unnest()
 		return p.binop("**", x, y)
 	}
 	return x
@@ -391,19 +416,21 @@ func (p *arithParser) unary() int64 {
 		p.setVar(name, idx, v)
 		return v
 	}
-	switch p.s[p.pos] {
-	case '!':
+	switch c := p.s[p.pos]; c {
+	case '!', '~', '-', '+':
 		p.pos++
-		return b2i(p.unary() == 0)
-	case '~':
-		p.pos++
-		return ^p.unary()
-	case '-':
-		p.pos++
-		return -p.unary()
-	case '+':
-		p.pos++
-		return p.unary()
+		p.nest()
+		v := p.unary()
+		p.unnest()
+		switch c {
+		case '!':
+			return b2i(v == 0)
+		case '~':
+			return ^v
+		case '-':
+			return -v
+		}
+		return v
 	}
 	return p.postfix()
 }
@@ -436,7 +463,9 @@ func (p *arithParser) primary() int64 {
 	}
 	if p.s[p.pos] == '(' {
 		p.pos++
+		p.nest()
 		v := p.comma()
+		p.unnest()
 		p.skip()
 		if p.pos >= len(p.s) || p.s[p.pos] != ')' {
 			p.fail("expected ')'")
