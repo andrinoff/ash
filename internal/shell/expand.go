@@ -413,14 +413,24 @@ func (e *expander) parts(parts []syntax.WordPart, inDQ bool) error {
 		case *syntax.Quoted:
 			e.appendAll(p.Value, true)
 		case *syntax.DblQuoted:
-			// "$@" with no arguments produces no word at all.
+			// "$@" with no arguments produces no word at all, and so
+			// do "${@:2}", "${arr[@]/x/y}" and the like when they come
+			// out empty. Anything else in quotes makes a word.
 			if len(p.Parts) == 1 {
-				if pe, ok := p.Parts[0].(*syntax.ParamExp); ok && isSplitParam(pe) {
-					vals, _, err := sh.expandPart(pe, e.io, true)
+				if pe, ok := p.Parts[0].(*syntax.ParamExp); ok {
+					vals, kind, err := sh.expandPart(pe, e.io, true)
 					if err != nil {
 						return err
 					}
-					e.split(vals)
+					if kind == kindSplit {
+						e.split(vals)
+						continue
+					}
+					sep := " "
+					if kind == kindPathList {
+						sep = ":"
+					}
+					e.appendAll(strings.Join(vals, sep), true)
 					continue
 				}
 			}
@@ -463,16 +473,6 @@ func (e *expander) parts(parts []syntax.WordPart, inDQ bool) error {
 		}
 	}
 	return nil
-}
-
-func isSplitParam(pe *syntax.ParamExp) bool {
-	if pe.Op != syntax.OpNone || pe.Length {
-		return false
-	}
-	if pe.Name == "@" {
-		return true
-	}
-	return pe.Index != nil && pe.Index.All && !pe.Index.Star
 }
 
 func (sh *Shell) expandTilde(user string) string {

@@ -109,6 +109,25 @@ func TestPathListSubstringAndQuote(t *testing.T) {
 	}
 }
 
+// An empty "$@"-style expansion alone in quotes makes no word, also
+// with an operator. Expected counts are bash's.
+func TestQuotedEmptyListOperatorMakesNoWord(t *testing.T) {
+	for _, c := range []struct{ src, want string }{
+		{`set -- a; n "${@:2}"`, "0\n"},
+		{`set -- a b; n "${@:3}" "${@:2}"`, "1\n"},
+		{`set --; n "${@#x}" "${@/a/b}" "${@^^}" "${@@Q}"`, "0\n"},
+		{`a=(); n "${a[@]/x/y}" "${a[@]:1}" "${!a[@]}"`, "0\n"},
+		{`a=(q); n "${a[@]:1}"`, "0\n"},
+		{`set --; n "${@:-}" "x${@:2}" "$*"`, "3\n"},
+		{`unset u; n "$u" "${u[@]}"`, "1\n"},
+	} {
+		out, errOut, _ := runScript(t, `n() { echo $#; }; `+c.src)
+		if out != c.want {
+			t.Errorf("%s: got %q (stderr %q), want %q", c.src, out, errOut, c.want)
+		}
+	}
+}
+
 func TestStarJoinsAfterOperator(t *testing.T) {
 	for _, c := range []struct{ src, want string }{
 		{`set -- a 'b c'; args "$*" "$@"`, "<a b c><a><b c>\n"},
