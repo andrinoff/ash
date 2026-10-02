@@ -109,6 +109,23 @@ func TestPathListSubstringAndQuote(t *testing.T) {
 	}
 }
 
+// As in fish, index 0 is an error rather than an empty or shifted slice.
+func TestFishIndexZeroIsAnError(t *testing.T) {
+	for _, src := range []string{
+		`set x a b c; echo $x[0]`,
+		`set x a b c; echo $x[1..0]`,
+		`set x a b c; echo $x[0..2]`,
+		`set x a b c; set i 0; echo "$x[$i]"`,
+		`echo (echo q)[0]`,
+		`set e; echo $e[-0]`,
+	} {
+		out, errOut, st := runFish(t, src)
+		if out != "" || !strings.Contains(errOut, "start at 1") || st == 0 {
+			t.Errorf("%s: got %q status %d (stderr %q)", src, out, st, errOut)
+		}
+	}
+}
+
 // An empty "$@"-style expansion alone in quotes makes no word, also
 // with an operator. Expected counts are bash's.
 func TestQuotedEmptyListOperatorMakesNoWord(t *testing.T) {

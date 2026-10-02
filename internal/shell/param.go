@@ -704,6 +704,9 @@ func (sh *Shell) applyFishIndex(vals []string, idx *syntax.Index, io *IO) ([]str
 						}
 						end = v
 					}
+					if start == 0 || end == 0 {
+						return nil, errIndexZero
+					}
 					from, to, step := fishRange(start, end, n)
 					for k := from; step != 0; k += step {
 						out = append(out, vals[k-1])
@@ -717,6 +720,9 @@ func (sh *Shell) applyFishIndex(vals []string, idx *syntax.Index, io *IO) ([]str
 				if err != nil {
 					return nil, errorf("invalid index %q", one)
 				}
+				if v == 0 {
+					return nil, errIndexZero
+				}
 				if v < 0 {
 					v += n + 1
 				}
@@ -728,3 +734,8 @@ func (sh *Shell) applyFishIndex(vals []string, idx *syntax.Index, io *IO) ([]str
 	}
 	return out, nil
 }
+
+// errIndexZero is fish's error for $x[0]: indices count from 1, and a 0
+// (often an off-by-one in a computed range like $x[1..$n]) must not
+// quietly select something else.
+var errIndexZero = errorf("array indices start at 1, not 0")
