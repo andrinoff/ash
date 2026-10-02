@@ -280,7 +280,7 @@ func (sh *Shell) expandParam(pe *syntax.ParamExp, io *IO, quoted bool) ([]string
 			case "u":
 				out[i] = caseConvert(v, syntax.OpUpperFirst)
 			case "E":
-				out[i] = unescapeEcho(v)
+				out[i] = unescapeANSIC(v)
 			case "A":
 				out[i] = name + "=" + Quote(v)
 			default:

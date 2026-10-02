@@ -109,6 +109,29 @@ func TestPathListSubstringAndQuote(t *testing.T) {
 	}
 }
 
+// ${x@E} expands escapes like $'...' (bash), not like echo -e.
+func TestTransformEIsANSIC(t *testing.T) {
+	for _, c := range []struct{ val, want string }{
+		{`\101\x42\u0043`, "ABC"},
+		{`a\cAb`, "a\x01b"},
+		{`\'\"\?`, `'"?`},
+		{`\0101`, "\b1"},
+		{`a\tb\e`, "a\tb\x1b"},
+		{`\q\x`, `\q\x`},
+	} {
+		sh := New()
+		sh.SetVar("v", []string{c.val}, setOpts{})
+		f, err := syntax.Parse(`echo "${v@E}"`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := sh.expandFields(f.Stmts[0].Cmd.(*syntax.CallExpr).Args, sh.StdIO(), 0)
+		if err != nil || len(got) != 2 || got[1] != c.want {
+			t.Errorf("%q: got %q %v, want %q", c.val, got, err, c.want)
+		}
+	}
+}
+
 // As in fish, index 0 is an error rather than an empty or shifted slice.
 func TestFishIndexZeroIsAnError(t *testing.T) {
 	for _, src := range []string{

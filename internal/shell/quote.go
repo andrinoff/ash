@@ -109,6 +109,92 @@ func unescapeEcho(s string) string {
 	return b.String()
 }
 
+// unescapeANSIC expands backslash escapes the way $'...' does, which is
+// what ${x@E} means in bash. It differs from echo -e in \nnn octal
+// (no leading 0), \cX (a control character, not the end of output) and
+// \' \" \?.
+func unescapeANSIC(s string) string {
+	if !strings.Contains(s, "\\") {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c != '\\' || i+1 >= len(s) {
+			b.WriteByte(c)
+			continue
+		}
+		i++
+		switch n := s[i]; n {
+		case 'a':
+			b.WriteByte(7)
+		case 'b':
+			b.WriteByte(8)
+		case 'e', 'E':
+			b.WriteByte(27)
+		case 'f':
+			b.WriteByte(12)
+		case 'n':
+			b.WriteByte('\n')
+		case 'r':
+			b.WriteByte('\r')
+		case 't':
+			b.WriteByte('\t')
+		case 'v':
+			b.WriteByte(11)
+		case '\\', '\'', '"', '?':
+			b.WriteByte(n)
+		case 'x':
+			v, k := 0, 0
+			for k < 2 && i+1 < len(s) && isHex(s[i+1]) {
+				i++
+				v = v*16 + hexVal(s[i])
+				k++
+			}
+			if k == 0 {
+				b.WriteString("\\x")
+			} else {
+				b.WriteByte(byte(v))
+			}
+		case 'u', 'U':
+			max := 4
+			if n == 'U' {
+				max = 8
+			}
+			v, k := 0, 0
+			for k < max && i+1 < len(s) && isHex(s[i+1]) {
+				i++
+				v = v*16 + hexVal(s[i])
+				k++
+			}
+			if k == 0 {
+				b.WriteByte('\\')
+				b.WriteByte(n)
+			} else {
+				b.WriteRune(rune(v))
+			}
+		case 'c':
+			if i+1 < len(s) {
+				i++
+				b.WriteByte(s[i] & 0x1f)
+			} else {
+				b.WriteString("\\c")
+			}
+		case '0', '1', '2', '3', '4', '5', '6', '7':
+			v := int(n - '0')
+			for k := 1; k < 3 && i+1 < len(s) && s[i+1] >= '0' && s[i+1] <= '7'; k++ {
+				i++
+				v = v*8 + int(s[i]-'0')
+			}
+			b.WriteByte(byte(v))
+		default:
+			b.WriteByte('\\')
+			b.WriteByte(n)
+		}
+	}
+	return b.String()
+}
+
 func isHex(c byte) bool {
 	return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'
 }
