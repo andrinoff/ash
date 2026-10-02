@@ -40,6 +40,63 @@ func isLetterSeq(seq *syntax.BraceSeq) bool {
 	return isLetter(seq.Start) && isLetter(seq.End)
 }
 
+// expandBraces is braceExpand for a whole word. A word that starts with
+// ~ once its braces are expanded gets tilde expansion, as in bash and
+// fish: ~{,/x} is ~ and ~/x (the parser can't see a tilde prefix in
+// ~{...} itself).
+func expandBraces(parts []syntax.WordPart) [][]syntax.WordPart {
+	words := braceExpand(parts)
+	if len(parts) == 0 {
+		return words
+	}
+	if l, ok := parts[0].(*syntax.Lit); !ok || !strings.HasPrefix(l.Value, "~") {
+		return words
+	}
+	for _, p := range parts {
+		if _, ok := p.(*syntax.BraceExp); ok {
+			for i, w := range words {
+				words[i] = tildePrefix(w)
+			}
+			break
+		}
+	}
+	return words
+}
+
+// tildePrefix turns a leading unquoted ~user (up to a / or the end of
+// the word) into a Tilde part.
+func tildePrefix(parts []syntax.WordPart) []syntax.WordPart {
+	var b strings.Builder
+	k := 0
+	for ; k < len(parts); k++ {
+		l, ok := parts[k].(*syntax.Lit)
+		if !ok {
+			break
+		}
+		b.WriteString(l.Value)
+	}
+	s := b.String()
+	end := strings.IndexByte(s, '/')
+	if end < 0 {
+		if k < len(parts) {
+			return parts // ~ followed by a quote or an expansion
+		}
+		end = len(s)
+	}
+	user := s[1:end]
+	for i := 0; i < len(user); i++ {
+		c := user[i]
+		if !(c == '_' || c == '.' || c == '-' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9') && !(user == "+") {
+			return parts
+		}
+	}
+	out := []syntax.WordPart{&syntax.Tilde{User: user}}
+	if end < len(s) {
+		out = append(out, &syntax.Lit{Value: s[end:]})
+	}
+	return append(out, parts[k:]...)
+}
+
 // braceExpand performs brace expansion, returning one part list per
 // alternative.
 func braceExpand(parts []syntax.WordPart) [][]syntax.WordPart {

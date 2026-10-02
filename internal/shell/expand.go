@@ -165,7 +165,7 @@ func (sh *Shell) expandWord(w *syntax.Word, io *IO, flags expandFlags) ([]string
 		}
 	}
 	var out []string
-	for _, parts := range braceExpand(w.Parts) {
+	for _, parts := range expandBraces(w.Parts) {
 		e := &expander{sh: sh, io: io, fields: []*field{{open: true}}}
 		if err := e.parts(parts, false); err != nil {
 			return nil, err

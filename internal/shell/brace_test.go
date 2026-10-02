@@ -27,6 +27,30 @@ func TestBraceSeqLimits(t *testing.T) {
 	}
 }
 
+func TestTildeAfterBraceExpansion(t *testing.T) {
+	sh := New()
+	home := sh.HomeDir()
+	for _, c := range []struct {
+		src  string
+		want []string
+	}{
+		{`echo ~{,/x}`, []string{"echo", home, home + "/x"}},
+		{`echo ~{/a,/b}/c`, []string{"echo", home + "/a/c", home + "/b/c"}},
+		{`echo ~{'',/q}`, []string{"echo", "~", home + "/q"}},
+		{`echo a~{,x}`, []string{"echo", "a~", "a~x"}},
+		{`echo ~nosuchuser{1,2}`, []string{"echo", "~nosuchuser1", "~nosuchuser2"}},
+	} {
+		f, err := syntax.Parse(c.src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := sh.expandFields(f.Stmts[0].Cmd.(*syntax.CallExpr).Args, sh.StdIO(), 0)
+		if err != nil || !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s: got %q %v, want %q", c.src, got, err, c.want)
+		}
+	}
+}
+
 func truncList(s []string) []string {
 	if len(s) > 5 {
 		return s[:5]
