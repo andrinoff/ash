@@ -323,6 +323,7 @@ func (sh *Shell) clone() *Shell {
 	c.aliasStack = append([]string(nil), sh.aliasStack...)
 	c.srcStack = append([]string(nil), sh.srcStack...)
 	c.subshell = true
+	c.procFds = nil // pending <(...) pipes belong to the parent's command
 	c.ctrl = ctrlNone
 	c.rand = rand.New(rand.NewSource(sh.rand.Int63()))
 	return &c
