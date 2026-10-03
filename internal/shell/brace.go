@@ -189,14 +189,23 @@ func expandSeq(seq *syntax.BraceSeq) []string {
 		}
 		return out
 	}
-	ca, cb := seq.Start[0], seq.End[0]
+	// Letters too: c += step overflowed for a huge step, so {a..e..
+	// 9223372036854775807} gave junk and {a..e..-9223372036854775808}
+	// (whose step stays negative) never ended.
+	ca, cb := int(seq.Start[0]), int(seq.End[0])
 	if ca <= cb {
-		for c := int(ca); c <= int(cb); c += step {
+		for c := ca; ; c += step {
 			out = append(out, string(rune(c)))
+			if uint64(cb-c) < uint64(step) {
+				break
+			}
 		}
 	} else {
-		for c := int(ca); c >= int(cb); c -= step {
+		for c := ca; ; c -= step {
 			out = append(out, string(rune(c)))
+			if uint64(c-cb) < uint64(step) {
+				break
+			}
 		}
 	}
 	return out
