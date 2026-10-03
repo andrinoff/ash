@@ -95,11 +95,13 @@ type Shell struct {
 	subshell   bool
 	inSubst    int
 	inBlock    int
-	jobCtx     *job       // enclosing job for commands run inside a pipeline/background subshell
-	procFds    []*os.File // pipes from <(...) waiting for the current command
-	curSrc     string     // source of the top-level code being run
-	curStmt    string     // text of the current top-level statement (for job names)
-	substCount int        // number of command substitutions run (for assignment status)
+	jobCtx     *job            // enclosing job for commands run inside a pipeline/background subshell
+	procFds    []*os.File      // pipes from <(...) waiting for the current command
+	fds        map[int]fdEntry // descriptors from `exec N>...` and inherited ones (copy on write)
+	redirBase  *IO             // while a command runs: its IO before its own redirections
+	curSrc     string          // source of the top-level code being run
+	curStmt    string          // text of the current top-level statement (for job names)
+	substCount int             // number of command substitutions run (for assignment status)
 
 	callStack []frame
 	srcStack  []string
@@ -188,6 +190,7 @@ func New() *Shell {
 	}
 	sh.global = newScope(nil, scopeGlobal)
 	sh.scope = sh.global
+	sh.fds = inheritedTable()
 	sh.shared = &shared{
 		jobs:      newJobTable(),
 		paths:     newPathCache(),
@@ -396,6 +399,7 @@ type Stream struct {
 	Inherited bool
 	broken    *atomic.Bool
 	closed    bool
+	inTable   bool // held in the shell's descriptor table (sh.fds)
 }
 
 func fileStream(f *os.File, tty bool) *Stream {
@@ -496,11 +500,15 @@ func (sh *Shell) StdIO() *IO {
 	tty := sh.shared.ttyFd >= 0
 	in := fileStream(sh.Stdin, tty && term.IsTerminal(int(sh.Stdin.Fd())))
 	in.Inherited = true
-	return &IO{
+	io := &IO{
 		In:  in,
 		Out: fileStream(sh.Stdout, tty && term.IsTerminal(int(sh.Stdout.Fd()))),
 		Err: fileStream(sh.Stderr, tty && term.IsTerminal(int(sh.Stderr.Fd()))),
 	}
+	for n, e := range sh.fds {
+		io.setFd(n, e.s)
+	}
+	return io
 }
 
 // lockedBuffer collects command substitution output.

@@ -174,7 +174,8 @@ func (sh *Shell) runCommand(cmd syntax.Command, io *IO) int {
 	case *syntax.Subshell:
 		return sh.withRedirs(c.Redirs, io, func(io *IO) int {
 			sub := sh.clone()
-			sub.runStmts(c.Stmts, io)
+			// its own IO: exec redirections inside must not leak out
+			sub.runStmts(c.Stmts, io.clone())
 			if sub.ctrl == ctrlExit {
 				return sub.exitStatus
 			}

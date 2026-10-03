@@ -356,6 +356,7 @@ func (sh *Shell) runBackground(st *syntax.Stmt, io *IO) {
 	}
 	sub := sh.clone()
 	sub.jobCtx = j
+	io = io.clone() // the job's own: exec redirections inside stay there
 	j.wg.Add(1)
 	j.internal = 1
 	// $! names a process; this job has none.
@@ -395,6 +396,7 @@ func (sh *Shell) procSubst(p *syntax.ProcSubst, io *IO) (string, error) {
 			sub.runStmts(p.Stmts, &IO{In: fileStream(r, false), Out: io.Out, Err: io.Err})
 			r.Close()
 		}()
+		w = sh.clearOfShellFds(w)
 		sh.procFds = append(sh.procFds, w)
 		return fmt.Sprintf("/dev/fd/%d", w.Fd()), nil
 	}
@@ -402,8 +404,24 @@ func (sh *Shell) procSubst(p *syntax.ProcSubst, io *IO) (string, error) {
 		sub.runStmts(p.Stmts, &IO{In: io.In, Out: fileStream(w, false), Err: io.Err})
 		w.Close()
 	}()
+	r = sh.clearOfShellFds(r)
 	sh.procFds = append(sh.procFds, r)
 	return fmt.Sprintf("/dev/fd/%d", r.Fd()), nil
+}
+
+// clearOfShellFds renumbers f if its descriptor number is one the script
+// uses for something else (exec 3>file keeps that file elsewhere, leaving
+// 3 free for the next pipe), so /dev/fd/N names f in the command.
+func (sh *Shell) clearOfShellFds(f *os.File) *os.File {
+	if _, clash := sh.fds[int(f.Fd())]; !clash {
+		return f
+	}
+	nf, err := dupFile(f, sh.maxShellFd()+1)
+	if err != nil {
+		return f
+	}
+	f.Close()
+	return nf
 }
 
 func (sh *Shell) takeProcFds() []*os.File {

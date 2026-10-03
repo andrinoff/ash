@@ -7,10 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 
 	"github.com/andrinoff/ash/internal/syntax"
-	"golang.org/x/sys/unix"
 )
 
 func bSource(sh *Shell, io *IO, args []string) int {
@@ -131,17 +129,7 @@ var ExecHook func()
 func bExec(sh *Shell, io *IO, args []string) int {
 	if len(args) < 2 {
 		// redirections only: apply them to the shell itself
-		for n, s := range map[int]*Stream{0: io.In, 1: io.Out, 2: io.Err} {
-			if s != nil && s.File != nil && int(s.File.Fd()) != n {
-				unix.Dup2(int(s.File.Fd()), n)
-			}
-		}
-		for n, s := range io.Extra {
-			if s != nil && s.File != nil {
-				unix.Dup2(int(s.File.Fd()), n)
-			}
-		}
-		return 0
+		return sh.execRedirs(io)
 	}
 	if sh.subshell {
 		st := sh.runExternal(args[1:], io, nil, nil)
@@ -157,12 +145,7 @@ func bExec(sh *Shell, io *IO, args []string) int {
 	if ExecHook != nil {
 		ExecHook()
 	}
-	for n, s := range map[int]*Stream{0: io.In, 1: io.Out, 2: io.Err} {
-		if s != nil && s.File != nil && int(s.File.Fd()) != n {
-			unix.Dup2(int(s.File.Fd()), n)
-		}
-	}
-	err = syscall.Exec(path, args[1:], sh.Environ())
+	err = sh.execProgram(path, args[1:], io)
 	sh.errorMsg(io.Err, "exec: %s: %s", args[1], errText(err))
 	return 126
 }

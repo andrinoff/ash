@@ -104,6 +104,57 @@ func TestWaitInterrupt(t *testing.T) {
 	sh.RunString("kill %1; wait", "test", io)
 }
 
+func TestExecRedirections(t *testing.T) {
+	dir := t.TempDir()
+	file := dir + "/f"
+	cases := []struct{ src, out, errOut string }{
+		// the descriptor stays open for the rest of the script
+		{"exec 3>" + file + "; i=0; while [ $i -lt 300 ]; do echo $i >&3; i=$((i+1)); done; exec 3>&-; wc -l < " + file + " | tr -d ' '", "300\n", ""},
+		// and child processes get it
+		{"exec 3>" + file + "; sh -c 'echo child >&3'; exec 3>&-; cat " + file, "child\n", ""},
+		{"exec 4<" + file + "; read -u 4 l; echo \"l=$l\"; cat <&4", "l=child\n", ""},
+		// even when a process substitution's pipe gets number 3
+		{"exec 3>" + file + "; cat <(echo ps); echo x >&3; exec 3>&-; cat " + file, "ps\nx\n", ""},
+		// saving and restoring stdout
+		{"exec 3>&1; exec 1>/dev/null; echo hidden; exec 1>&3 3>&-; echo restored; echo bad >&3", "restored\n", "ash: 3: bad file descriptor\n"},
+		// in a subshell it ends with the subshell
+		{"(exec >/dev/null; echo hidden); echo visible", "visible\n", ""},
+		{"x=$(exec 2>/dev/null; echo hi); echo $x; echo err >&2", "hi\n", "err\n"},
+		{"echo a | { exec >/dev/null; cat; }; echo visible", "visible\n", ""},
+		{"{ exec >/dev/null; } &\nwait; echo visible", "visible\n", ""},
+		// in a function it lasts
+		{"f() { exec 5>" + file + "; }; f 2>/dev/null; echo via5 >&5; exec 5>&-; cat " + file, "via5\n", ""},
+		{"exec 3>" + file + "; f() { exec 3>" + file + "2; }; f 2>/dev/null; echo hi >&3; exec 3>&-; cat " + file + "; echo sep; cat " + file + "2", "sep\nhi\n", ""},
+	}
+	for _, c := range cases {
+		out, errOut, _ := runScriptTimeout(t, c.src, 5*time.Second)
+		if out != c.out || errOut != c.errOut {
+			t.Errorf("%q:\ngot  %q %q\nwant %q %q", c.src, out, errOut, c.out, c.errOut)
+		}
+	}
+}
+
+// A script can't reach the process's own descriptors (the Go runtime's
+// signal pipe and poller, the editor's files) through >&N.
+func TestDupOfUnknownDescriptor(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "private")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	_, errOut, st := runScript(t, fmt.Sprintf("echo leaked >&%d", f.Fd()))
+	if st != 1 || !strings.Contains(errOut, "bad file descriptor") {
+		t.Errorf("got status %d, stderr %q", st, errOut)
+	}
+	b, _ := os.ReadFile(f.Name())
+	if len(b) != 0 {
+		t.Errorf("wrote %q to the process's own descriptor", b)
+	}
+	if _, err := f.Stat(); err != nil {
+		t.Errorf("descriptor was closed: %v", err)
+	}
+}
+
 // An external command that doesn't read its stdin must leave the rest of
 // a heredoc for the commands after it, as it would with a file.
 func TestHeredocSharedWithExternals(t *testing.T) {

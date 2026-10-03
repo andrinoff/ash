@@ -1,7 +1,6 @@
 package shell
 
 import (
-	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -107,17 +106,11 @@ func (sh *Shell) redirect(rs []*syntax.Redirect, base *IO) (*IO, func(), error) 
 				}
 				return nio, cleanup, errorf("%s: ambiguous redirect", target)
 			}
-			s := nio.fd(n)
-			if s == nil {
-				// a real fd we don't track (e.g. from exec 3>file)
-				if f := os.NewFile(uintptr(n), fmt.Sprintf("/dev/fd/%d", n)); f != nil {
-					if _, statErr := f.Stat(); statErr == nil {
-						s = fileStream(f, false)
-					}
-				}
-				if s == nil {
-					return nio, cleanup, errorf("%d: bad file descriptor", n)
-				}
+			// (from exec 3>file or inherited, never one of the process's
+			// own descriptors: those belong to the runtime)
+			s := sh.ioFd(nio, n)
+			if s == nil || s.closed {
+				return nio, cleanup, errorf("%d: bad file descriptor", n)
 			}
 			nio.setFd(fd, s)
 			if strings.HasSuffix(target, "-") {
@@ -185,8 +178,13 @@ func (sh *Shell) devStream(target string, io *IO) *Stream {
 	}
 	if strings.HasPrefix(target, "/dev/fd/") {
 		n, err := strconv.Atoi(target[len("/dev/fd/"):])
-		if err == nil && (n <= 2 || io.Extra[n] != nil) {
+		if err == nil && n <= 2 {
 			return io.fd(n)
+		}
+		if err == nil {
+			if s := sh.ioFd(io, n); s != nil && !s.closed {
+				return s
+			}
 		}
 	}
 	return nil

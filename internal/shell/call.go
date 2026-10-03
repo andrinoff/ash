@@ -86,6 +86,14 @@ func (sh *Shell) execCall(c *syntax.CallExpr, io *IO) int {
 	if len(c.Args) > 0 {
 		_, aliasOK = c.Args[0].IsUnquotedLit()
 	}
+	// `exec 3>file` needs to know which descriptors its own redirections
+	// changed.
+	prevBase := sh.redirBase
+	sh.redirBase = nil
+	if len(c.Redirs) > 0 {
+		sh.redirBase = io
+	}
+	defer func() { sh.redirBase = prevBase }()
 	if len(arrays) > 0 {
 		return sh.declareArrays(args, arrays, rio, tmp, aliasOK, procFds)
 	}
@@ -277,7 +285,7 @@ func (sh *Shell) childFiles(sio *IO, extra []*os.File) ([]childFile, func(), err
 	var wg sync.WaitGroup
 	files := make([]childFile, 3)
 	streams := []*Stream{sio.In, sio.Out, sio.Err}
-	maxFd := 2
+	maxFd := sh.maxShellFd()
 	for n := range sio.Extra {
 		if n > maxFd {
 			maxFd = n
@@ -290,7 +298,7 @@ func (sh *Shell) childFiles(sio *IO, extra []*os.File) ([]childFile, func(), err
 	}
 	for i := 3; i <= maxFd; i++ {
 		files = append(files, childFile{})
-		streams = append(streams, sio.Extra[i])
+		streams = append(streams, sh.ioFd(sio, i)) // incl. exec 3>file, inherited
 	}
 	for i, s := range streams {
 		if s == nil || s.closed {
