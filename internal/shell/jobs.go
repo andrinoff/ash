@@ -43,6 +43,43 @@ type job struct {
 	wg         sync.WaitGroup // in-process pipeline elements
 	mu         sync.Mutex
 	internal   int // number of in-process elements still running
+	// status of the job's last element when that ran in-process (a
+	// background block or pipeline), since it has no process to wait for
+	inStatus    int
+	hasInStatus bool
+}
+
+func (j *job) setInternalStatus(st int) {
+	j.mu.Lock()
+	j.inStatus, j.hasInStatus = st, true
+	j.mu.Unlock()
+}
+
+// exitStatus is the status `wait` reports for a job that has finished or
+// stopped.
+func (j *job) exitStatus(pipefail bool) int {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	for _, p := range j.procs {
+		if p.state == procStopped {
+			return p.status
+		}
+	}
+	if j.hasInStatus {
+		return j.inStatus
+	}
+	st := 0
+	if len(j.procs) > 0 {
+		st = j.procs[len(j.procs)-1].status
+	}
+	if pipefail {
+		for _, p := range j.procs {
+			if p.status != 0 {
+				st = p.status
+			}
+		}
+	}
+	return st
 }
 
 func (j *job) state() procState {
@@ -244,10 +281,15 @@ stopped:
 // reapJobs collects status changes of background jobs without blocking.
 func (sh *Shell) reapJobs() {
 	for _, j := range sh.shared.jobs.list() {
-		for _, p := range j.procs {
-			if p.state != procDone {
-				waitProc(p, syscall.WUNTRACED|syscall.WCONTINUED|syscall.WNOHANG)
-			}
+		pollJob(j)
+	}
+}
+
+// pollJob collects status changes of j's processes without blocking.
+func pollJob(j *job) {
+	for _, p := range j.procs {
+		if p.state != procDone {
+			waitProc(p, syscall.WUNTRACED|syscall.WCONTINUED|syscall.WNOHANG)
 		}
 	}
 }

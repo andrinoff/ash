@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -202,21 +203,26 @@ func bBg(sh *Shell, io *IO, args []string) int {
 	return 0
 }
 
+// bWait waits for jobs. With no arguments it waits for all of them and
+// returns 0; otherwise it returns the status of the last one named (or,
+// with -n, of whichever finishes first). Ctrl-C stops the wait, not the
+// jobs. It polls so that an interrupt is noticed promptly.
 func bWait(sh *Shell, io *IO, args []string) int {
 	var targets []*job
-	anyOne := false
+	anyOne, named := false, false
+	status := 0
 	for _, a := range args[1:] {
 		if a == "-n" || a == "--any" {
 			anyOne = true
 			continue
 		}
+		named = true
 		j, err := sh.jobSpec(a)
 		if err != nil {
 			if n, perr := strconv.Atoi(a); perr == nil {
 				var ws syscall.WaitStatus
 				if _, err := syscall.Wait4(n, &ws, 0, nil); err == nil {
-					_, st, _, _ := waitStatus(ws)
-					sh.status = st
+					_, status, _, _ = waitStatus(ws)
 					continue
 				}
 			}
@@ -225,27 +231,47 @@ func bWait(sh *Shell, io *IO, args []string) int {
 		}
 		targets = append(targets, j)
 	}
-	if len(targets) == 0 {
+	if !named {
 		targets = sh.shared.jobs.list()
 	}
-	status := 0
-	for _, j := range targets {
-		for _, p := range j.procs {
-			for p.state == procRunning {
-				if sh.interrupted() {
-					return 130
-				}
-				waitProc(p, 0)
+	statuses := make([]int, len(targets))
+	done := make([]bool, len(targets))
+	left := len(targets)
+	delay := time.Millisecond
+	for left > 0 {
+		for i, j := range targets {
+			if done[i] {
+				continue
 			}
-			status = p.status
+			pollJob(j)
+			// With job control, a job that stops ends the wait too.
+			st := j.state()
+			if st == procRunning || st == procStopped && !sh.JobControl {
+				continue
+			}
+			done[i] = true
+			left--
+			statuses[i] = j.exitStatus(sh.opts.pipefail)
+			if st == procDone {
+				sh.shared.jobs.remove(j)
+			}
+			if anyOne {
+				return statuses[i]
+			}
 		}
-		j.wg.Wait()
-		if j.state() == procDone {
-			sh.shared.jobs.remove(j)
-		}
-		if anyOne {
+		if left == 0 {
 			break
 		}
+		if sh.interrupted() {
+			return 130
+		}
+		time.Sleep(delay)
+		if delay < 20*time.Millisecond {
+			delay *= 2
+		}
+	}
+	if named && len(targets) > 0 {
+		return statuses[len(targets)-1]
 	}
 	return status
 }

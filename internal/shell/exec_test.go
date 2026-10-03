@@ -58,6 +58,52 @@ func TestStoppedAndContinuedChildren(t *testing.T) {
 	}
 }
 
+func TestWaitStatus(t *testing.T) {
+	cases := []struct{ src, want string }{
+		// no operands: wait for everything, return 0
+		{"sh -c 'exit 7' &\nwait; echo st=$?", "st=0\n"},
+		// in-process jobs have a status too
+		{"(exit 3) &\nwait %1; echo st=$?", "st=3\n"},
+		{"f() { return 4; }; f &\nwait %1; echo st=$?", "st=4\n"},
+		{"echo hi | (read x; exit 5) &\nwait %1; echo st=$?", "st=5\n"},
+		{"sh -c 'exit 5' &\nwait $!; echo st=$?", "st=5\n"},
+		// the status of the last job named
+		{"sh -c 'exit 2' &\nsh -c 'sleep 0.1; exit 6' &\nwait %1 %2; echo st=$?", "st=6\n"},
+		// -n: whichever finishes first
+		{"sh -c 'sleep 0.3; exit 2' &\nsh -c 'exit 6' &\nwait -n; echo first=$?; wait; echo all=$?", "first=6\nall=0\n"},
+		// a job stopped and continued is waited for until it exits
+		{"sh -c 'sleep 0.3; exit 3' &\nkill -STOP %1; sleep 0.1; kill -CONT %1\nwait %1; echo st=$?", "st=3\n"},
+		// $! doesn't name an earlier, unrelated process
+		{"sh -c 'exit 1' &\nwait\n{ :; } &\necho \"bg=[$!]\"; wait", "bg=[]\n"},
+	}
+	for _, c := range cases {
+		out, errOut, _ := runScriptTimeout(t, c.src, 5*time.Second)
+		if out != c.want {
+			t.Errorf("%q:\ngot  %q (stderr %q)\nwant %q", c.src, out, errOut, c.want)
+		}
+	}
+}
+
+// Ctrl-C stops `wait`, even while the job keeps running.
+func TestWaitInterrupt(t *testing.T) {
+	sh := New()
+	sh.Init()
+	null, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer null.Close()
+	io := &IO{In: fileStream(null, false), Out: fileStream(null, false), Err: fileStream(null, false)}
+	time.AfterFunc(200*time.Millisecond, sh.Interrupt)
+	start := time.Now()
+	st := sh.RunString("sleep 5 &\nwait", "test", io)
+	if d := time.Since(start); st != 130 || d > 3*time.Second {
+		t.Errorf("wait returned %d after %v, want 130 promptly", st, d)
+	}
+	sh.ClearInterrupt()
+	sh.RunString("kill %1; wait", "test", io)
+}
+
 // An external command that doesn't read its stdin must leave the rest of
 // a heredoc for the commands after it, as it would with a file.
 func TestHeredocSharedWithExternals(t *testing.T) {

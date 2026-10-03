@@ -180,19 +180,22 @@ func (sh *Shell) runPipe(p *syntax.Pipeline, io *IO, bg bool) int {
 				j.mu.Unlock()
 				j.wg.Done()
 			}()
-			if e.err != 0 {
-				statusCh[i] = e.err
-				return
-			}
-			st := e.sub.runCommand(e.cmd, e.io)
-			if e.sub.ctrl == ctrlExit {
-				st = e.sub.exitStatus
+			st := e.err
+			if st == 0 {
+				st = e.sub.runCommand(e.cmd, e.io)
+				if e.sub.ctrl == ctrlExit {
+					st = e.sub.exitStatus
+				}
 			}
 			statusCh[i] = st
+			if bg && i == n-1 {
+				j.setInternalStatus(st)
+			}
 		}(i, e)
 	}
 	if bg {
 		sh.shared.jobs.add(j)
+		sh.lastBg = 0 // no process to name if everything runs in-process
 		if len(j.procs) > 0 {
 			sh.lastBg = j.procs[len(j.procs)-1].pid
 		}
@@ -355,6 +358,8 @@ func (sh *Shell) runBackground(st *syntax.Stmt, io *IO) {
 	sub.jobCtx = j
 	j.wg.Add(1)
 	j.internal = 1
+	// $! names a process; this job has none.
+	sh.lastBg = 0
 	if !st.Disown {
 		sh.shared.jobs.add(j)
 		if sh.Interactive {
@@ -368,7 +373,11 @@ func (sh *Shell) runBackground(st *syntax.Stmt, io *IO) {
 			j.mu.Unlock()
 			j.wg.Done()
 		}()
-		sub.runCommand(st.Cmd, io)
+		status := sub.runCommand(st.Cmd, io)
+		if sub.ctrl == ctrlExit {
+			status = sub.exitStatus
+		}
+		j.setInternalStatus(status)
 	}()
 	sh.status = 0
 }
