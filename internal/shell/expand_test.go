@@ -1,6 +1,11 @@
 package shell
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 // args prints each argument in brackets, so tests can see word splitting.
 const argsFn = "args() { for a in \"$@\"; do echo -n \"<$a>\"; done; echo; }; "
@@ -24,6 +29,31 @@ func TestUnexpandedBracesKeepTheirContents(t *testing.T) {
 		if out != c.want {
 			t.Errorf("%s: got %q (stderr %q), want %q", c.src, out, errOut, c.want)
 		}
+	}
+}
+
+// $(< file) is the file's contents, as in bash.
+func TestCmdSubstReadsInputRedirect(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f.txt")
+	if err := os.WriteFile(path, []byte("one\ntwo\n\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ src, want string }{
+		{`x=$(< F); echo "[$x]" $?`, "[one\ntwo] 0\n"},
+		{`f=F; echo "$( <$f )"`, "one\ntwo\n"},
+		{`x=$(0<F); echo ${#x}`, "7\n"},
+		{`x=$(< F.missing); echo "[$x]" $?`, "[] 1\n"},
+		{`for l in $(<F); do echo "<$l>"; done`, "<one>\n<two>\n"},
+	} {
+		src := strings.ReplaceAll(c.src, "F", path)
+		out, _, _ := runScriptIn(t, src, "")
+		if out != c.want {
+			t.Errorf("%s: got %q, want %q", c.src, out, c.want)
+		}
+	}
+	if out, _, _ := runScriptIn(t, `x=$(</dev/stdin); echo "[$x]"`, "from stdin\n"); out != "[from stdin]\n" {
+		t.Errorf("/dev/stdin: got %q", out)
 	}
 }
 

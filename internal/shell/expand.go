@@ -2,6 +2,7 @@ package shell
 
 import (
 	"fmt"
+	"io"
 	"os/user"
 	"regexp"
 	"strconv"
@@ -653,7 +654,11 @@ func (sh *Shell) cmdSubst(stmts []*syntax.Stmt, io *IO) (string, error) {
 	sub.inSubst++
 	buf := &lockedBuffer{}
 	subIO := &IO{In: io.In, Out: &Stream{W: buf}, Err: io.Err}
-	sub.runStmts(stmts, subIO)
+	if c := inputOnly(stmts); c != nil {
+		sub.status = sub.readRedirected(c, subIO, buf)
+	} else {
+		sub.runStmts(stmts, subIO)
+	}
 	sh.status = sub.status
 	if sub.ctrl == ctrlExit {
 		sh.status = sub.exitStatus
@@ -662,6 +667,46 @@ func (sh *Shell) cmdSubst(stmts []*syntax.Stmt, io *IO) (string, error) {
 		return "", errInterrupted
 	}
 	return buf.String(), nil
+}
+
+// inputOnly returns the command if stmts is nothing but an input
+// redirection: $(< file) is the contents of file, as in bash, ksh and
+// zsh, where running it as a command would print nothing.
+func inputOnly(stmts []*syntax.Stmt) *syntax.CallExpr {
+	if len(stmts) != 1 || stmts[0].Background || stmts[0].Cond != syntax.CondNone {
+		return nil
+	}
+	c, ok := stmts[0].Cmd.(*syntax.CallExpr)
+	if !ok || len(c.Args) != 0 || len(c.Assigns) != 0 || len(c.Redirs) != 1 {
+		return nil
+	}
+	if r := c.Redirs[0]; r.Op != syntax.RedirIn || r.Fd > 0 {
+		return nil
+	}
+	return c
+}
+
+// readRedirected copies the input that c redirects into out.
+func (sh *Shell) readRedirected(c *syntax.CallExpr, sio *IO, out *lockedBuffer) int {
+	rio, cleanup, err := sh.redirect(c.Redirs, sio)
+	defer closeAll(sh.takeProcFds())
+	defer cleanup()
+	if err != nil {
+		sh.errorMsg(sio.Err, "%v", err)
+		return 1
+	}
+	b := make([]byte, 32*1024)
+	for {
+		n, err := rio.In.Read(b)
+		out.Write(b[:n])
+		if err == io.EOF {
+			return 0
+		}
+		if err != nil {
+			sh.errorMsg(sio.Err, "%s", errText(err))
+			return 1
+		}
+	}
 }
 
 var errInterrupted = errorf("interrupted")
