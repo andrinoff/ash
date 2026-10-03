@@ -131,18 +131,45 @@ func (sh *Shell) redirect(rs []*syntax.Redirect, base *IO) (*IO, func(), error) 
 			if err2 != nil {
 				return nio, cleanup, err2
 			}
-			nio.setFd(fd, &Stream{R: strings.NewReader(body)})
+			s, err2 := docStream(body)
+			if err2 != nil {
+				return nio, cleanup, err2
+			}
+			opened = append(opened, s.File)
+			nio.setFd(fd, s)
 		case syntax.RedirHerestring:
 			if fd < 0 {
 				fd = 0
 			}
-			nio.setFd(fd, &Stream{R: strings.NewReader(target + "\n")})
+			s, err2 := docStream(target + "\n")
+			if err2 != nil {
+				return nio, cleanup, err2
+			}
+			opened = append(opened, s.File)
+			nio.setFd(fd, s)
 		}
 		if err != nil {
 			return nio, cleanup, err
 		}
 	}
 	return nio, cleanup, nil
+}
+
+// docStream returns the read end of a pipe that yields body, for a heredoc
+// or here-string. Every command reading it shares one read position, as
+// with a file: an external command that doesn't read its input leaves it
+// for the next one (`while read l; do grep -q x $l; done <<EOF`). The
+// writer stops when the reader is closed.
+func docStream(body string) (*Stream, error) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	go func() {
+		w.WriteString(body)
+		w.Close()
+	}()
+	return fileStream(r, false), nil
 }
 
 // devStream emulates /dev/stdin, /dev/stdout, /dev/stderr and /dev/fd/N
