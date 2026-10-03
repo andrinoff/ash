@@ -173,15 +173,16 @@ func (sh *Shell) Jobs() int {
 
 // waitStatus converts a wait status into a shell exit status.
 func waitStatus(ws syscall.WaitStatus) (procState, int, syscall.Signal, bool) {
+	if sig, ok := wsStopped(ws); ok {
+		return procStopped, 128 + int(sig), sig, false
+	}
 	switch {
+	case wsContinued(ws):
+		return procRunning, 0, 0, false
 	case ws.Exited():
 		return procDone, ws.ExitStatus(), 0, false
 	case ws.Signaled():
 		return procDone, 128 + int(ws.Signal()), ws.Signal(), ws.CoreDump()
-	case ws.Stopped():
-		return procStopped, 128 + int(ws.StopSignal()), ws.StopSignal(), false
-	case ws.Continued():
-		return procRunning, 0, 0, false
 	}
 	return procDone, 1, 0, false
 }
