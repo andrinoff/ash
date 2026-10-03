@@ -13,8 +13,17 @@ func TestPpidUidEuid(t *testing.T) {
 	if out != want {
 		t.Errorf("got %q (stderr %q), want %q", out, errOut, want)
 	}
-	if _, errOut, st := runScript(t, `EUID=0`); st == 0 || errOut == "" {
-		t.Errorf("EUID=0 succeeded")
+	if _, errOut, st := runScript(t, `PPID=1`); st == 0 || errOut == "" {
+		t.Errorf("PPID=1 succeeded")
+	}
+	// Setting EUID must not make a script believe it runs as root.
+	if out, errOut, _ := runScript(t, `EUID=0; echo $EUID`); out != fmt.Sprintf("%d\n", os.Geteuid()) {
+		t.Errorf("EUID=0; echo $EUID: got %q (stderr %q)", out, errOut)
+	}
+	// fish configs export UID for docker; that must keep working.
+	out, errOut, st := runFish(t, `set -gx UID 4242; /usr/bin/env | grep '^UID='; echo $UID`)
+	if want := fmt.Sprintf("UID=4242\n%d\n", os.Getuid()); out != want || errOut != "" || st != 0 {
+		t.Errorf("set -gx UID: got %q status %d (stderr %q), want %q", out, st, errOut, want)
 	}
 }
 

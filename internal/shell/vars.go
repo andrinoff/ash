@@ -131,7 +131,11 @@ func (sh *Shell) specialVar(name string) ([]string, bool) {
 		return []string{strconv.Itoa(os.Getpid())}, true
 	case "PPID": // POSIX
 		return []string{strconv.Itoa(os.Getppid())}, true
-	case "UID", "EUID": // bash, zsh: scripts test [ "$EUID" -ne 0 ]
+	case "UID", "EUID":
+		// bash, zsh: scripts test [ "$EUID" -ne 0 ]. These always read
+		// the real ids, but unlike bash they can be set, as in fish:
+		// configs do set -gx UID (id -u) so that docker sees it, and
+		// the value set is what commands get in their environment.
 		if name == "UID" {
 			return []string{strconv.Itoa(os.Getuid())}, true
 		}
@@ -448,7 +452,7 @@ func validVarName(s string) bool {
 
 func isReadOnlySpecial(name string) bool {
 	switch name {
-	case "status", "pipestatus", "PIPESTATUS", "fish_pid", "ash_pid", "history", "last_pid", "EPOCHSECONDS", "EPOCHREALTIME", "CMD_DURATION", "PPID", "UID", "EUID":
+	case "status", "pipestatus", "PIPESTATUS", "fish_pid", "ash_pid", "history", "last_pid", "EPOCHSECONDS", "EPOCHREALTIME", "CMD_DURATION", "PPID":
 		return true
 	}
 	return false
