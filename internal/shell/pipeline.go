@@ -211,6 +211,9 @@ func (sh *Shell) runPipe(p *syntax.Pipeline, io *IO, bg bool) int {
 		return 0
 	}
 	if lastInline >= 0 {
+		if group && j.pgid > 0 {
+			sh.watchProcs(j)
+		}
 		e := elems[lastInline]
 		st := e.err
 		if st == 0 {

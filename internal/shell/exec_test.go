@@ -13,6 +13,12 @@ import (
 // test instead of hanging.
 func runScriptTimeout(t *testing.T, src string, d time.Duration) (string, string, int) {
 	t.Helper()
+	return runScriptSetup(t, src, d, nil)
+}
+
+// runScriptSetup is runScriptTimeout with a hook to adjust the shell.
+func runScriptSetup(t *testing.T, src string, d time.Duration, setup func(*Shell)) (string, string, int) {
+	t.Helper()
 	null, err := os.Open(os.DevNull)
 	if err != nil {
 		t.Fatal(err)
@@ -26,6 +32,9 @@ func runScriptTimeout(t *testing.T, src string, d time.Duration) (string, string
 	go func() {
 		sh := New()
 		sh.Init()
+		if setup != nil {
+			setup(sh)
+		}
 		out, errb := &lockedBuffer{}, &lockedBuffer{}
 		io := &IO{In: fileStream(null, false), Out: &Stream{W: out}, Err: &Stream{W: errb}}
 		st := sh.RunString(src, "test", io)
@@ -41,6 +50,36 @@ func runScriptTimeout(t *testing.T, src string, d time.Duration) (string, string
 		t.Fatalf("%q did not finish within %v", src, d)
 	}
 	return "", "", 0
+}
+
+// With job control a pipeline's processes get their own process group,
+// which has the terminal, so ctrl-c reaches only them. Builtins in the
+// same pipeline have to stop too instead of running on forever.
+func TestInterruptReachesInProcessElements(t *testing.T) {
+	for _, src := range []string{
+		"while true; do :; done | sh -c 'echo $$ > %s; exec sleep 30'",
+		"sh -c 'echo $$ > %s; exec sleep 30' | while true; do :; done",
+	} {
+		pidFile := t.TempDir() + "/pid"
+		src = fmt.Sprintf(src, pidFile)
+		go func() {
+			// ctrl-c: SIGINT to the job's process group
+			for i := 0; i < 100; i++ {
+				time.Sleep(20 * time.Millisecond)
+				b, err := os.ReadFile(pidFile)
+				var pid int
+				if _, err2 := fmt.Sscan(string(b), &pid); err == nil && err2 == nil && pid > 0 {
+					time.Sleep(50 * time.Millisecond)
+					syscall.Kill(-pid, syscall.SIGINT)
+					return
+				}
+			}
+		}()
+		_, errOut, st := runScriptSetup(t, src+"; echo NOTREACHED", 5*time.Second, func(sh *Shell) { sh.JobControl = true })
+		if st == 0 {
+			t.Errorf("%q: status %d (stderr %q)", src, st, errOut)
+		}
+	}
 }
 
 // A child stopped with SIGSTOP is stopped, and one continued with SIGCONT

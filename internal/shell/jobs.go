@@ -42,7 +42,8 @@ type job struct {
 	tmodes     *unix.Termios
 	wg         sync.WaitGroup // in-process pipeline elements
 	mu         sync.Mutex
-	internal   int // number of in-process elements still running
+	internal   int       // number of in-process elements still running
+	waiter     chan bool // set while watchProcs waits for the processes
 	// status of the job's last element when that ran in-process (a
 	// background block or pipeline), since it has no process to wait for
 	inStatus    int
@@ -248,8 +249,9 @@ func waitProc(p *process, flags int) bool {
 	}
 }
 
-// waitJob waits for a foreground job to finish or stop.
-func (sh *Shell) waitJob(j *job) {
+// waitProcs waits for j's processes to exit or stop, and reports whether
+// they stopped.
+func waitProcs(j *job) bool {
 	for _, p := range j.procs {
 		j.mu.Lock()
 		st := p.state
@@ -264,13 +266,60 @@ func (sh *Shell) waitJob(j *job) {
 						waitProc(q, syscall.WUNTRACED|syscall.WNOHANG)
 					}
 				}
-				goto stopped
+				return true
 			}
 		}
 	}
-	j.wg.Wait()
-	return
-stopped:
+	return false
+}
+
+// watchProcs waits for j's processes in the background while the shell
+// runs the job's in-process last element (`sleep 9 | while ...`). The
+// processes have the terminal, so ctrl-c only reaches them: when it kills
+// them, stop the in-process part too. waitJob collects the result.
+func (sh *Shell) watchProcs(j *job) {
+	ch := make(chan bool, 1)
+	j.waiter = ch
+	go func() {
+		stopped := waitProcs(j)
+		if !stopped {
+			sh.noteInterrupt(j)
+		}
+		ch <- stopped
+	}()
+}
+
+// noteInterrupt flags an interrupt if ctrl-c (or ctrl-\) killed one of j's
+// processes, so in-process code stops as well.
+func (sh *Shell) noteInterrupt(j *job) {
+	if !sh.Interactive && !sh.JobControl {
+		return
+	}
+	for _, p := range j.procs {
+		if p.state == procDone && (p.signal == syscall.SIGINT || p.signal == syscall.SIGQUIT) {
+			sh.shared.intr.Store(true)
+			return
+		}
+	}
+}
+
+// waitJob waits for a foreground job to finish or stop.
+func (sh *Shell) waitJob(j *job) {
+	var stopped bool
+	if j.waiter != nil {
+		stopped = <-j.waiter
+		j.waiter = nil
+	} else {
+		stopped = waitProcs(j)
+	}
+	if !stopped {
+		// In-process elements may still be running (`while true; end |
+		// sleep 9`): ctrl-c only reached the processes, which had the
+		// terminal.
+		sh.noteInterrupt(j)
+		j.wg.Wait()
+		return
+	}
 	if sh.shared.ttyFd >= 0 {
 		if t, err := term.GetState(sh.shared.ttyFd); err == nil {
 			j.tmodes = t
