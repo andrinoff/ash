@@ -121,6 +121,14 @@ func TestInProcessBackgroundJobs(t *testing.T) {
 	if got := out.String(); !strings.HasSuffix(got, "waited\n") || strings.Contains(got, "after-sleep") {
 		t.Errorf("after kill: %q", got)
 	}
+	// exiting the shell hangs up their commands too
+	run("f &")
+	time.Sleep(100 * time.Millisecond)
+	sh.HangupJobs()
+	run("wait %1; echo hung-up")
+	if got := out.String(); !strings.HasSuffix(got, "hung-up\n") || strings.Contains(got, "after-sleep") {
+		t.Errorf("after hangup: %q", got)
+	}
 }
 
 // A trapped signal runs its handler between commands; it doesn't abort

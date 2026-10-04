@@ -656,7 +656,13 @@ func sigDescription(s syscall.Signal) string {
 // HangupJobs sends SIGHUP (and SIGCONT) to all jobs; used when exiting.
 func (sh *Shell) HangupJobs() {
 	for _, j := range sh.shared.jobs.list() {
-		if j.disowned || j.pgid <= 0 {
+		if j.disowned {
+			continue
+		}
+		// the commands of a backgrounded block run in groups of their own
+		j.signalInternal(syscall.SIGHUP)
+		j.signalInternal(syscall.SIGCONT)
+		if j.pgid <= 0 {
 			continue
 		}
 		unix.Kill(-j.pgid, syscall.SIGHUP)
