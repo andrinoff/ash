@@ -398,8 +398,7 @@ func bDisown(sh *Shell, io *IO, args []string) int {
 		if j.state() == procStopped && j.pgid > 0 {
 			unix.Kill(-j.pgid, syscall.SIGCONT)
 		}
-		j.disowned = true
-		sh.shared.jobs.remove(j)
+		sh.shared.jobs.disown(j)
 	}
 	return 0
 }

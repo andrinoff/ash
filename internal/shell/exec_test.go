@@ -121,6 +121,33 @@ func TestInProcessBackgroundJobs(t *testing.T) {
 	}
 }
 
+// zombies counts this process's children that have exited unreaped.
+func zombies(t *testing.T) int {
+	t.Helper()
+	out, errOut, st := runScript(t, fmt.Sprintf("ps -A -o ppid=,stat= | awk '$1 == %d && $2 ~ /Z/' | wc -l", os.Getpid()))
+	var n int
+	if _, err := fmt.Sscan(out, &n); err != nil || st != 0 {
+		t.Fatalf("counting zombies: %q %q %d", out, errOut, st)
+	}
+	return n
+}
+
+// A script that starts background jobs and never waits for them must not
+// pile up zombies.
+func TestBackgroundJobsReaped(t *testing.T) {
+	before := zombies(t)
+	runScriptTimeout(t, "for i in 1 2 3 4 5 6 7 8 9 10; do /usr/bin/true &\ndone\nsleep 0.3; /usr/bin/true &\nsleep 0.3", 5*time.Second)
+	if n := zombies(t) - before; n > 1 {
+		t.Errorf("%d zombies left", n)
+	}
+	// and disowned jobs are reaped too
+	before = zombies(t)
+	runScriptTimeout(t, "/usr/bin/true &!\n/usr/bin/true | /usr/bin/true &!\nsleep 0.3; jobs\n/usr/bin/true &\nsleep 0.3", 5*time.Second)
+	if n := zombies(t) - before; n > 1 {
+		t.Errorf("%d zombies left by disowned jobs", n)
+	}
+}
+
 // A child stopped with SIGSTOP is stopped, and one continued with SIGCONT
 // is running again (darwin's wait statuses for these were read backwards).
 func TestStoppedAndContinuedChildren(t *testing.T) {

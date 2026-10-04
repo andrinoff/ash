@@ -178,9 +178,55 @@ type jobTable struct {
 	jobs []*job
 	cur  int // id of the "current" job (%+)
 	prev int
+	// Disowned jobs are no longer the shell's to list, report or hang
+	// up, but their processes still need reaping.
+	disowned []*job
 }
 
 func newJobTable() *jobTable { return &jobTable{} }
+
+// disown forgets j as a job, keeping its processes to reap.
+func (t *jobTable) disown(j *job) {
+	j.disowned = true
+	t.remove(j)
+	t.mu.Lock()
+	t.disowned = append(t.disowned, j)
+	t.mu.Unlock()
+}
+
+// reapDisowned collects disowned processes that have exited.
+func (t *jobTable) reapDisowned() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	kept := t.disowned[:0]
+	for _, j := range t.disowned {
+		pollJob(j)
+		if j.state() != procDone {
+			kept = append(kept, j)
+		}
+	}
+	t.disowned = kept
+}
+
+// maxDoneJobs is how many finished background jobs a script (which never
+// prints job notices) keeps for wait.
+const maxDoneJobs = 256
+
+// trimDone forgets all but the last keep finished jobs.
+func (t *jobTable) trimDone(keep int) {
+	t.mu.Lock()
+	var done []*job
+	for _, j := range t.jobs {
+		if j.state() == procDone {
+			done = append(done, j)
+		}
+	}
+	t.mu.Unlock()
+	for len(done) > keep {
+		t.remove(done[0])
+		done = done[1:]
+	}
+}
 
 func (t *jobTable) add(j *job) {
 	t.mu.Lock()
@@ -411,6 +457,18 @@ func (sh *Shell) waitInternal(j *job) {
 func (sh *Shell) reapJobs() {
 	for _, j := range sh.shared.jobs.list() {
 		pollJob(j)
+	}
+	sh.shared.jobs.reapDisowned()
+}
+
+// reapBeforeBackground runs as a background job starts. The prompt reaps
+// and reports finished jobs, but a script never shows one: without this
+// every finished job would stay a zombie, and the table would keep
+// growing, until the script waits for them.
+func (sh *Shell) reapBeforeBackground() {
+	sh.reapJobs()
+	if !sh.Interactive {
+		sh.shared.jobs.trimDone(maxDoneJobs)
 	}
 }
 

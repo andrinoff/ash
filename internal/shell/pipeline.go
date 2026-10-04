@@ -322,12 +322,17 @@ func (sh *Shell) pipeText(p *syntax.Pipeline) string {
 
 // runBackground starts a statement as a background job.
 func (sh *Shell) runBackground(st *syntax.Stmt, io *IO) {
+	sh.reapBeforeBackground()
 	text := sh.stmtText(st)
 	if p, ok := st.Cmd.(*syntax.Pipeline); ok && len(p.Cmds) > 1 {
 		prev := sh.curStmt
 		sh.curStmt = text
+		before := sh.shared.jobs.current()
 		sh.runPipe(p, io, true)
 		sh.curStmt = prev
+		if j := sh.shared.jobs.current(); st.Disown && j != nil && j != before {
+			sh.shared.jobs.disown(j)
+		}
 		sh.status = 0
 		return
 	}
@@ -353,6 +358,7 @@ func (sh *Shell) runBackground(st *syntax.Stmt, io *IO) {
 			go done()
 			sh.lastBg = pid
 			if st.Disown {
+				sh.shared.jobs.disown(j)
 				return
 			}
 			sh.shared.jobs.add(j)
