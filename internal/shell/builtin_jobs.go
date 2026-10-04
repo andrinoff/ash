@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -265,6 +266,12 @@ func bWait(sh *Shell, io *IO, args []string) int {
 		if sh.interrupted() {
 			return 130
 		}
+		if !sh.subshell {
+			// a trapped signal ends the wait, then its handler runs
+			if sig, ok := sh.shared.traps.pendingSignal(); ok {
+				return 128 + int(sig)
+			}
+		}
 		time.Sleep(delay)
 		if delay < 20*time.Millisecond {
 			delay *= 2
@@ -366,9 +373,22 @@ func bKill(sh *Shell, io *IO, args []string) int {
 		if err := unix.Kill(pid, sig); err != nil {
 			fmt.Fprintf(io.Err, "kill: (%d) - %s\n", pid, errText(err))
 			status = 1
+		} else if pid == os.Getpid() {
+			sh.awaitTrap(sig)
 		}
 	}
 	return status
+}
+
+// awaitTrap gives a signal the shell sent itself (kill -USR1 $$) time to
+// arrive, so a trap on it runs before the next command, as in sh.
+func (sh *Shell) awaitTrap(sig syscall.Signal) {
+	if !sh.HasTrap(strings.TrimPrefix(signalName(sig), "SIG")) {
+		return
+	}
+	for i := 0; i < 100 && !sh.shared.traps.waiting.Load(); i++ {
+		time.Sleep(time.Millisecond)
+	}
 }
 
 func bDisown(sh *Shell, io *IO, args []string) int {
@@ -420,6 +440,20 @@ type traps struct {
 	funcs    map[string]string // signal name -> function (fish --on-signal)
 	ch       chan os.Signal
 	pending  []string
+	// set while signals wait for their handlers, which the main shell
+	// runs between commands
+	waiting atomic.Bool
+}
+
+// pendingSignal returns the first signal waiting for its handler.
+func (t *traps) pendingSignal() (syscall.Signal, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if len(t.pending) == 0 {
+		return 0, false
+	}
+	sig, ok := signalNames[t.pending[0]]
+	return sig, ok
 }
 
 func newTraps() *traps {
@@ -465,11 +499,14 @@ func (t *traps) listen(sh *Shell, name string) {
 	if t.ch == nil {
 		t.ch = make(chan os.Signal, 8)
 		go func() {
+			// The handler runs before the main shell's next command (see
+			// runStmts), like in sh: the signal doesn't stop the command
+			// that is running.
 			for s := range t.ch {
 				t.mu.Lock()
 				t.pending = append(t.pending, strings.TrimPrefix(signalName(s.(syscall.Signal)), "SIG"))
+				t.waiting.Store(true)
 				t.mu.Unlock()
-				sh.Interrupt()
 			}
 		}()
 	}
@@ -478,12 +515,13 @@ func (t *traps) listen(sh *Shell, name string) {
 }
 
 // RunPendingTraps runs handlers for signals that arrived. It returns true
-// if any trap ran (the interrupt flag was ours, not Ctrl-C).
+// if any trap ran.
 func (sh *Shell) RunPendingTraps() bool {
 	t := sh.shared.traps
 	t.mu.Lock()
 	pending := t.pending
 	t.pending = nil
+	t.waiting.Store(false)
 	t.mu.Unlock()
 	for _, name := range pending {
 		sh.RunSignalTrap(name)

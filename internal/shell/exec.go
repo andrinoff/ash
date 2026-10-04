@@ -88,6 +88,13 @@ func (sh *Shell) runStmts(stmts []*syntax.Stmt, io *IO) int {
 		if sh.ctrl != ctrlNone {
 			break
 		}
+		if !sh.subshell && sh.shared.traps.waiting.Load() {
+			// trapped signals: run their handlers between commands
+			sh.RunPendingTraps()
+			if sh.ctrl != ctrlNone {
+				break
+			}
+		}
 		if sh.interrupted() {
 			if sh.status == 0 {
 				sh.status = 130

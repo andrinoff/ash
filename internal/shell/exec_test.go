@@ -123,6 +123,26 @@ func TestInProcessBackgroundJobs(t *testing.T) {
 	}
 }
 
+// A trapped signal runs its handler between commands; it doesn't abort
+// the script like ctrl-c.
+func TestSignalTraps(t *testing.T) {
+	log := t.TempDir() + "/log"
+	cases := []struct{ src, want string }{
+		{"(sleep 0.2; kill -USR1 $$) &\ni=0; while [ $i -lt 5 ]; do sleep 0.1; i=$((i+1)); done; echo done i=$i", "done i=5\n"},
+		{"false; kill -USR1 $$; echo after $?", "after 0\n"},
+		// wait returns early, then the handler runs
+		{"(sleep 0.2; kill -USR1 $$) &\nsleep 3 &\nwait %2; echo wait=$?; kill %2", fmt.Sprintf("wait=%d\n", 128+int(syscall.SIGUSR1))},
+	}
+	for _, c := range cases {
+		os.Remove(log)
+		out, errOut, _ := runScriptTimeout(t, "trap 'echo got >> "+log+"' USR1\n"+c.src, 5*time.Second)
+		b, _ := os.ReadFile(log)
+		if out != c.want || string(b) != "got\n" {
+			t.Errorf("%q:\ngot  %q (stderr %q), handler wrote %q\nwant %q", c.src, out, errOut, b, c.want)
+		}
+	}
+}
+
 // zombies counts this process's children that have exited unreaped.
 func zombies(t *testing.T) int {
 	t.Helper()
