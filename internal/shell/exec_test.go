@@ -59,6 +59,8 @@ func TestInterruptReachesInProcessElements(t *testing.T) {
 	for _, src := range []string{
 		"while true; do :; done | sh -c 'echo $$ > %s; exec sleep 30'",
 		"sh -c 'echo $$ > %s; exec sleep 30' | while true; do :; done",
+		// a command with redirections is in the same process group
+		"sh -c 'echo $$ > %s; exec sleep 30' | sleep 30 >/dev/null",
 	} {
 		pidFile := t.TempDir() + "/pid"
 		src = fmt.Sprintf(src, pidFile)
@@ -180,6 +182,9 @@ func TestWaitStatus(t *testing.T) {
 		{"sh -c 'sleep 0.3; exit 3' &\nkill -STOP %1; sleep 0.1; kill -CONT %1\nwait %1; echo st=$?", "st=3\n"},
 		// $! doesn't name an earlier, unrelated process
 		{"sh -c 'exit 1' &\nwait\n{ :; } &\necho \"bg=[$!]\"; wait", "bg=[]\n"},
+		// a command with redirections is a process of its own
+		{"sh -c 'exit 4' >/dev/null &\ncase $! in ''|0) echo no-pid;; *) echo pid;; esac\nwait $!; echo st=$?", "pid\nst=4\n"},
+		{"cat </nonexistent &\nwait %1; echo st=$?", "st=1\n"},
 	}
 	for _, c := range cases {
 		out, errOut, _ := runScriptTimeout(t, c.src, 5*time.Second)

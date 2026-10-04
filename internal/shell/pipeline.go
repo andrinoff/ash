@@ -76,6 +76,16 @@ type pipeElem struct {
 	procFds  []*os.File
 	err      int // non-zero: element failed before running
 	closers  []*os.File
+	redirs   func() // closes what its redirections opened, once it's spawned
+}
+
+// release closes the files an external element no longer needs in the
+// shell once it has been spawned (or failed to be).
+func (e *pipeElem) release() {
+	if e.redirs != nil {
+		e.redirs()
+		e.redirs = nil
+	}
 }
 
 func (sh *Shell) runPipe(p *syntax.Pipeline, io *IO, bg bool) int {
@@ -90,9 +100,22 @@ func (sh *Shell) runPipe(p *syntax.Pipeline, io *IO, bg bool) int {
 		r, w, err := os.Pipe()
 		if err != nil {
 			sh.errorMsg(io.Err, "pipe: %v", err)
+			closeAll(readers[1 : i+1])
+			closeAll(writers[:i])
 			return 1
 		}
 		writers[i], readers[i+1] = w, r
+	}
+	// closeEnds closes the shell's copies of element i's pipe ends.
+	closeEnds := func(i int) {
+		if i > 0 && readers[i] != nil {
+			readers[i].Close()
+			readers[i] = nil
+		}
+		if i < n-1 && writers[i] != nil {
+			writers[i].Close()
+			writers[i] = nil
+		}
 	}
 	elems := make([]*pipeElem, n)
 	broken := make([]*atomic.Bool, n)
@@ -134,29 +157,27 @@ func (sh *Shell) runPipe(p *syntax.Pipeline, io *IO, bg bool) int {
 	group := sh.JobControl && sh.inSubst == 0 && !sh.subshell
 	var dones []func()
 	for i, e := range elems {
-		if !e.external || e.err != 0 {
+		if !e.external {
 			continue
 		}
-		files, done, err := sh.childFiles(e.io, e.procFds)
-		if err != nil {
-			sh.errorMsg(io.Err, "%v", err)
-			e.err = 1
-			continue
-		}
-		if _, err := sh.spawn(j, e.path, e.args, e.env, files, group); err != nil {
-			e.err = sh.execError(e.args[0], err, io)
-		}
-		closeChildEnds(files)
-		dones = append(dones, done)
 		e.closers = append(e.closers, e.procFds...)
-		if i > 0 {
-			readers[i].Close()
-			readers[i] = nil
+		if e.err == 0 {
+			files, done, err := sh.childFiles(e.io, e.procFds)
+			if err != nil {
+				sh.errorMsg(io.Err, "%v", err)
+				e.err = 1
+			} else {
+				if _, err := sh.spawn(j, e.path, e.args, e.env, files, group); err != nil {
+					e.err = sh.execError(e.args[0], err, io)
+				}
+				closeChildEnds(files)
+				dones = append(dones, done)
+			}
 		}
-		if i < n-1 {
-			writers[i].Close()
-			writers[i] = nil
-		}
+		// Whether it runs or not, the shell is done with its pipe ends
+		// (the neighbors must see EOF) and its redirections.
+		e.release()
+		closeEnds(i)
 	}
 	// 2. run in-process elements
 	statusCh := make([]int, n)
@@ -275,11 +296,10 @@ func (sh *Shell) runPipe(p *syntax.Pipeline, io *IO, bg bool) int {
 }
 
 // classify expands a pipeline element that is a simple command and
-// decides whether it runs as an external process.
+// decides whether it runs as an external process. Its redirections are
+// applied here too (e.io), so that `a | b >file` runs b in the job's
+// process group like the rest instead of in a group of its own.
 func (sh *Shell) classify(e *pipeElem, call *syntax.CallExpr) {
-	if len(call.Redirs) > 0 {
-		return
-	}
 	lit, ok := call.Args[0].IsUnquotedLit()
 	if !ok {
 		return
@@ -309,8 +329,19 @@ func (sh *Shell) classify(e *pipeElem, call *syntax.CallExpr) {
 	if len(tmp) > 0 {
 		env = overrideEnv(env, tmp)
 	}
-	e.external, e.path, e.args, e.env = true, path, args, env
 	e.procFds = e.sub.takeProcFds()
+	if len(call.Redirs) > 0 {
+		rio, cleanup, err := e.sub.redirect(call.Redirs, e.io)
+		e.procFds = append(e.procFds, e.sub.takeProcFds()...) // from `<(...)` targets
+		if err != nil {
+			cleanup()
+			e.sub.errorMsg(e.io.Err, "%v", err)
+			e.external, e.err = true, 1
+			return
+		}
+		e.io, e.redirs = rio, cleanup
+	}
+	e.external, e.path, e.args, e.env = true, path, args, env
 }
 
 func (sh *Shell) pipeText(p *syntax.Pipeline) string {
@@ -341,7 +372,22 @@ func (sh *Shell) runBackground(st *syntax.Stmt, io *IO) {
 		e := &pipeElem{io: io, sub: sh}
 		sh.classify(e, call)
 		if e.external {
-			files, done, err := sh.childFiles(io, e.procFds)
+			defer closeAll(e.procFds)
+			defer e.release()
+			if e.err != 0 {
+				// its redirections failed: a job that ended at once
+				j.setInternalStatus(e.err)
+				sh.lastBg = 0
+				if !st.Disown {
+					sh.shared.jobs.add(j)
+					if sh.Interactive {
+						fmt.Fprintf(sh.Stderr, "[%d]\n", j.id)
+					}
+				}
+				sh.status = 0
+				return
+			}
+			files, done, err := sh.childFiles(e.io, e.procFds)
 			if err != nil {
 				sh.errorMsg(io.Err, "%v", err)
 				sh.status = 1
@@ -349,7 +395,6 @@ func (sh *Shell) runBackground(st *syntax.Stmt, io *IO) {
 			}
 			pid, err := sh.spawn(j, e.path, e.args, e.env, files, sh.JobControl && !sh.subshell && sh.inSubst == 0)
 			closeChildEnds(files)
-			closeAll(e.procFds)
 			if err != nil {
 				done()
 				sh.status = sh.execError(e.args[0], err, io)
