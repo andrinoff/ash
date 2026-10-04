@@ -31,9 +31,32 @@ func (f *field) add(s string, quoted bool) {
 		return
 	}
 	f.pat = append(f.pat, s...)
-	if strings.ContainsAny(s, "*?[") {
+	if !f.glob && isGlobPattern(s) {
 		f.glob = true
 	}
+}
+
+// isGlobPattern reports whether unquoted text would glob: it has * or ?,
+// or a [ with a matching ]. A lone "[" (the test command) is just text.
+func isGlobPattern(s string) bool {
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '*', '?':
+			return true
+		case '[':
+			j := i + 1
+			if j < len(s) && (s[j] == '!' || s[j] == '^') {
+				j++
+			}
+			if j < len(s) && s[j] == ']' {
+				j++
+			}
+			if k := strings.IndexByte(s[j:], ']'); k >= 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (f *field) copy() *field {
@@ -134,7 +157,7 @@ func (sh *Shell) expandFields(words []*syntax.Word, io *IO, flags expandFlags) (
 func (sh *Shell) expandWord(w *syntax.Word, io *IO, flags expandFlags) ([]string, error) {
 	// Fast path: a plain literal with no glob characters.
 	if len(w.Parts) == 1 {
-		if l, ok := w.Parts[0].(*syntax.Lit); ok && !strings.ContainsAny(l.Value, "*?[") {
+		if l, ok := w.Parts[0].(*syntax.Lit); ok && !isGlobPattern(l.Value) {
 			return []string{l.Value}, nil
 		}
 		if q, ok := w.Parts[0].(*syntax.Quoted); ok {
