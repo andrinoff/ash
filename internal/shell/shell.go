@@ -99,6 +99,7 @@ type Shell struct {
 	procFds    []*os.File      // pipes from <(...) waiting for the current command
 	fds        map[int]fdEntry // descriptors from `exec N>...` and inherited ones (copy on write)
 	redirBase  *IO             // while a command runs: its IO before its own redirections
+	bgIntr     *atomic.Bool    // interrupt flag of the in-process background job sh runs in
 	curSrc     string          // source of the top-level code being run
 	curStmt    string          // text of the current top-level statement (for job names)
 	substCount int             // number of command substitutions run (for assignment status)
@@ -384,7 +385,24 @@ func (sh *Shell) Interrupt() { sh.shared.intr.Store(true) }
 // ClearInterrupt resets the interrupt flag.
 func (sh *Shell) ClearInterrupt() { sh.shared.intr.Store(false) }
 
-func (sh *Shell) interrupted() bool { return sh.shared.intr.Load() }
+// interrupted reports whether the code sh runs should stop: the
+// foreground on ctrl-c, an in-process background job on kill %N.
+func (sh *Shell) interrupted() bool {
+	if sh.bgIntr != nil {
+		return sh.bgIntr.Load()
+	}
+	return sh.shared.intr.Load()
+}
+
+// raiseInterrupt stops the code sh runs, like ctrl-c (a command it ran
+// died of SIGINT).
+func (sh *Shell) raiseInterrupt() {
+	if sh.bgIntr != nil {
+		sh.bgIntr.Store(true)
+		return
+	}
+	sh.shared.intr.Store(true)
+}
 
 // Stream is one end of a command's standard I/O. Builtins read and write
 // through it; external commands need File, which is created on demand.

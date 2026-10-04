@@ -350,6 +350,11 @@ func bKill(sh *Shell, io *IO, args []string) int {
 					unix.Kill(p.pid, sig)
 				}
 			}
+			// a backgrounded block or function runs in the shell itself
+			j.signalInternal(sig)
+			if sig == syscall.SIGTERM || sig == syscall.SIGHUP || sig == syscall.SIGINT {
+				j.signalInternal(syscall.SIGCONT)
+			}
 			continue
 		}
 		pid, err := strconv.Atoi(t)

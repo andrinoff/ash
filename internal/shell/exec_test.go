@@ -82,6 +82,45 @@ func TestInterruptReachesInProcessElements(t *testing.T) {
 	}
 }
 
+// A backgrounded block or function runs in the shell: ctrl-c in the
+// foreground must leave it alone, and kill %N must stop it.
+func TestInProcessBackgroundJobs(t *testing.T) {
+	sh := New()
+	sh.Init()
+	null, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer null.Close()
+	out := &lockedBuffer{}
+	io := &IO{In: fileStream(null, false), Out: &Stream{W: out}, Err: &Stream{W: out}}
+	run := func(src string) int {
+		done := make(chan int, 1)
+		go func() { done <- sh.RunString(src, "test", io) }()
+		select {
+		case st := <-done:
+			return st
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%q did not finish", src)
+		}
+		return 0
+	}
+	run("while true; do sleep 0.05; done &\nf() { sleep 30; echo after-sleep; }; f &")
+	time.AfterFunc(200*time.Millisecond, sh.Interrupt) // ctrl-c
+	run("while true; do :; done")
+	time.Sleep(200 * time.Millisecond) // (the shell clears it at the next prompt)
+	sh.ClearInterrupt()
+	time.Sleep(100 * time.Millisecond)
+	run("jobs")
+	if got := out.String(); strings.Count(got, "running") != 2 {
+		t.Fatalf("background jobs after ctrl-c in the foreground:\n%s", got)
+	}
+	run("kill %1 %2; wait %1 %2; echo waited")
+	if got := out.String(); !strings.HasSuffix(got, "waited\n") || strings.Contains(got, "after-sleep") {
+		t.Errorf("after kill: %q", got)
+	}
+}
+
 // A child stopped with SIGSTOP is stopped, and one continued with SIGCONT
 // is running again (darwin's wait statuses for these were read backwards).
 func TestStoppedAndContinuedChildren(t *testing.T) {

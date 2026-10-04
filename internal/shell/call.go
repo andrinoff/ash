@@ -187,11 +187,13 @@ func (sh *Shell) spawnInJob(j *job, path string, args, env []string, io *IO, ext
 		sh.errorMsg(io.Err, "%v", err)
 		return 1
 	}
-	p := &job{cmd: j.cmd, pgid: j.pgid}
 	j.mu.Lock()
-	p.pgid = j.pgid
+	p := &job{cmd: j.cmd, pgid: j.pgid}
 	j.mu.Unlock()
-	group := sh.JobControl && sh.inSubst == 0 && p.pgid > 0
+	// The commands of a backgrounded block or function get a process
+	// group of their own (the job has none), so that ctrl-c at the
+	// terminal doesn't reach them.
+	group := sh.JobControl && (sh.inSubst == 0 && p.pgid > 0 || j.intr != nil)
 	_, err = sh.spawnRaw(p, path, args, env, files, group, false)
 	if err != nil && group {
 		_, err = sh.spawnRaw(p, path, args, env, files, false, false)
@@ -201,7 +203,9 @@ func (sh *Shell) spawnInJob(j *job, path string, args, env []string, io *IO, ext
 		done()
 		return sh.execError(args[0], err, io)
 	}
+	j.addLive(p)
 	sh.waitJob(p)
+	j.removeLive(p)
 	status := sh.finishJob(p)
 	done()
 	return status

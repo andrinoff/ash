@@ -7,7 +7,9 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -44,10 +46,61 @@ type job struct {
 	mu         sync.Mutex
 	internal   int       // number of in-process elements still running
 	waiter     chan bool // set while watchProcs waits for the processes
+	// For a job whose in-process elements run in the background: their
+	// interrupt flag (ctrl-c in the foreground must not stop them, kill
+	// %N must), and the commands they are running right now.
+	intr *atomic.Bool
+	live []*job
 	// status of the job's last element when that ran in-process (a
 	// background block or pipeline), since it has no process to wait for
 	inStatus    int
 	hasInStatus bool
+}
+
+func (j *job) addLive(p *job) {
+	j.mu.Lock()
+	j.live = append(j.live, p)
+	j.mu.Unlock()
+}
+
+func (j *job) removeLive(p *job) {
+	j.mu.Lock()
+	for i, q := range j.live {
+		if q == p {
+			j.live = append(j.live[:i], j.live[i+1:]...)
+			break
+		}
+	}
+	j.mu.Unlock()
+}
+
+// signalInternal delivers sig to the in-process part of a background job
+// (kill %N on a backgrounded block or function): signals that would end a
+// process interrupt it, and the commands it is running get sig.
+func (j *job) signalInternal(sig syscall.Signal) {
+	if j.intr == nil {
+		return
+	}
+	switch sig {
+	case syscall.SIGCONT, syscall.SIGSTOP, syscall.SIGTSTP, syscall.SIGTTIN, syscall.SIGTTOU,
+		syscall.SIGCHLD, syscall.SIGWINCH, syscall.SIGURG, 0:
+	default:
+		j.intr.Store(true)
+	}
+	j.mu.Lock()
+	live := append([]*job(nil), j.live...)
+	j.mu.Unlock()
+	for _, p := range live {
+		p.mu.Lock()
+		if p.pgid > 0 {
+			unix.Kill(-p.pgid, sig)
+		} else {
+			for _, q := range p.procs {
+				unix.Kill(q.pid, sig)
+			}
+		}
+		p.mu.Unlock()
+	}
 }
 
 func (j *job) setInternalStatus(st int) {
@@ -297,7 +350,7 @@ func (sh *Shell) noteInterrupt(j *job) {
 	}
 	for _, p := range j.procs {
 		if p.state == procDone && (p.signal == syscall.SIGINT || p.signal == syscall.SIGQUIT) {
-			sh.shared.intr.Store(true)
+			sh.raiseInterrupt()
 			return
 		}
 	}
@@ -317,12 +370,39 @@ func (sh *Shell) waitJob(j *job) {
 		// sleep 9`): ctrl-c only reached the processes, which had the
 		// terminal.
 		sh.noteInterrupt(j)
-		j.wg.Wait()
+		sh.waitInternal(j)
 		return
 	}
 	if sh.shared.ttyFd >= 0 {
 		if t, err := term.GetState(sh.shared.ttyFd); err == nil {
 			j.tmodes = t
+		}
+	}
+}
+
+// waitInternal waits for j's in-process elements. When they belong to a
+// background job brought back with fg, ctrl-c reaches the shell rather
+// than them: pass it on.
+func (sh *Shell) waitInternal(j *job) {
+	if j.intr == nil {
+		j.wg.Wait()
+		return
+	}
+	done := make(chan struct{})
+	go func() {
+		j.wg.Wait()
+		close(done)
+	}()
+	tick := time.NewTicker(20 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-tick.C:
+			if sh.interrupted() {
+				j.signalInternal(syscall.SIGINT)
+			}
 		}
 	}
 }
@@ -464,10 +544,14 @@ func (sh *Shell) finishJob(j *job) int {
 			switch p.signal {
 			case syscall.SIGINT, syscall.SIGQUIT:
 				if sh.Interactive || sh.JobControl {
-					sh.shared.intr.Store(true)
+					sh.raiseInterrupt()
 				}
 			case syscall.SIGPIPE:
 			default:
+				if sh.bgIntr != nil && sh.bgIntr.Load() {
+					// its background job was killed: that gets reported
+					break
+				}
 				if p == j.procs[len(j.procs)-1] || sh.Interactive {
 					core := ""
 					if p.core {

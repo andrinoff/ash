@@ -81,6 +81,9 @@ type pipeElem struct {
 func (sh *Shell) runPipe(p *syntax.Pipeline, io *IO, bg bool) int {
 	n := len(p.Cmds)
 	j := &job{cmd: sh.pipeText(p), foreground: !bg, background: bg}
+	if bg {
+		j.intr = &atomic.Bool{}
+	}
 	readers := make([]*os.File, n)
 	writers := make([]*os.File, n)
 	for i := 0; i < n-1; i++ {
@@ -116,6 +119,9 @@ func (sh *Shell) runPipe(p *syntax.Pipeline, io *IO, bg bool) int {
 		} else {
 			e.sub = sh.clone()
 			e.sub.jobCtx = j
+			if bg {
+				e.sub.bgIntr = j.intr
+			}
 		}
 		// Find out up front whether this element is a plain external
 		// command so all externals can share a process group.
@@ -359,6 +365,9 @@ func (sh *Shell) runBackground(st *syntax.Stmt, io *IO) {
 	}
 	sub := sh.clone()
 	sub.jobCtx = j
+	// its own interrupt: ctrl-c in the foreground doesn't stop it, kill %N does
+	j.intr = &atomic.Bool{}
+	sub.bgIntr = j.intr
 	io = io.clone() // the job's own: exec redirections inside stay there
 	j.wg.Add(1)
 	j.internal = 1
