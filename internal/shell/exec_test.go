@@ -7,6 +7,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // runScriptTimeout is runScript with stdin from /dev/null, failing the
@@ -174,6 +176,27 @@ func TestSignalTraps(t *testing.T) {
 		if out != c.want || string(b) != "got\n" {
 			t.Errorf("%q:\ngot  %q (stderr %q), handler wrote %q\nwant %q", c.src, out, errOut, b, c.want)
 		}
+	}
+}
+
+// openFds counts this process's open descriptors.
+func openFds() int {
+	n := 0
+	for fd := 0; fd < 1024; fd++ {
+		if _, err := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0); err == nil {
+			n++
+		}
+	}
+	return n
+}
+
+// The shell's copies of a background pipeline's <(...) and >(...) pipes
+// must be closed once its commands are started.
+func TestProcSubstFdsInBackground(t *testing.T) {
+	before := openFds()
+	runScriptTimeout(t, "for i in 1 2 3 4 5; do cat <(echo a) | cat >/dev/null &\necho a | tee >(cat >/dev/null) >/dev/null &\ndone\nwait; sleep 0.2", 5*time.Second)
+	if n := openFds() - before; n > 2 {
+		t.Errorf("%d more descriptors open", n)
 	}
 }
 

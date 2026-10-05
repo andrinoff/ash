@@ -314,6 +314,7 @@ func (sh *Shell) childFiles(sio *IO, extra []*os.File) ([]childFile, func(), err
 		}
 		r, w, err := os.Pipe()
 		if err != nil {
+			closeChildEnds(files) // (which also ends the copies started so far)
 			return nil, func() {}, err
 		}
 		if i == 0 || s.R != nil {

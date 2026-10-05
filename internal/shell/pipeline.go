@@ -74,18 +74,21 @@ type pipeElem struct {
 	args     []string
 	env      []string
 	procFds  []*os.File
-	err      int // non-zero: element failed before running
-	closers  []*os.File
+	err      int    // non-zero: element failed before running
 	redirs   func() // closes what its redirections opened, once it's spawned
 }
 
 // release closes the files an external element no longer needs in the
-// shell once it has been spawned (or failed to be).
+// shell once it has been spawned (or failed to be): what its redirections
+// opened and its <(...) pipes. The process has its own copies; a >(...)
+// reader only sees EOF once the shell's copy is closed too.
 func (e *pipeElem) release() {
 	if e.redirs != nil {
 		e.redirs()
 		e.redirs = nil
 	}
+	closeAll(e.procFds)
+	e.procFds = nil
 }
 
 func (sh *Shell) runPipe(p *syntax.Pipeline, io *IO, bg bool) int {
@@ -160,7 +163,6 @@ func (sh *Shell) runPipe(p *syntax.Pipeline, io *IO, bg bool) int {
 		if !e.external {
 			continue
 		}
-		e.closers = append(e.closers, e.procFds...)
 		if e.err == 0 {
 			files, done, err := sh.childFiles(e.io, e.procFds)
 			if err != nil {
@@ -262,9 +264,6 @@ func (sh *Shell) runPipe(p *syntax.Pipeline, io *IO, bg bool) int {
 	j.wg.Wait()
 	for _, d := range dones {
 		d()
-	}
-	for _, e := range elems {
-		closeAll(e.closers)
 	}
 	// Assemble pipestatus in pipeline order.
 	procStatus := j.statuses()
@@ -372,7 +371,6 @@ func (sh *Shell) runBackground(st *syntax.Stmt, io *IO) {
 		e := &pipeElem{io: io, sub: sh}
 		sh.classify(e, call)
 		if e.external {
-			defer closeAll(e.procFds)
 			defer e.release()
 			if e.err != 0 {
 				// its redirections failed: a job that ended at once
