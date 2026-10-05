@@ -50,6 +50,14 @@ func newPathCache() *pathCache {
 
 func (c *pathCache) lookup(name string, path []string, dir string) (string, error) {
 	key := strings.Join(path, "\x00")
+	for _, d := range path {
+		if !filepath.IsAbs(d) {
+			// a relative entry ("." or "bin") finds different commands
+			// in different directories
+			key += "\x00\x00" + dir
+			break
+		}
+	}
 	c.mu.Lock()
 	if key != c.key {
 		c.key = key
@@ -58,13 +66,19 @@ func (c *pathCache) lookup(name string, path []string, dir string) (string, erro
 	}
 	if p, ok := c.hits[name]; ok {
 		c.mu.Unlock()
-		return p, nil
-	}
-	if c.miss[name] {
+		if isExecutable(p) {
+			return p, nil
+		}
+		// gone (an upgrade moved it, say): look again
+		c.mu.Lock()
+		delete(c.hits, name)
+		c.mu.Unlock()
+	} else if c.miss[name] {
 		c.mu.Unlock()
 		return "", errNotFound
+	} else {
+		c.mu.Unlock()
 	}
-	c.mu.Unlock()
 	for _, d := range path {
 		if d == "" {
 			d = "."
@@ -73,8 +87,7 @@ func (c *pathCache) lookup(name string, path []string, dir string) (string, erro
 			d = filepath.Join(dir, d)
 		}
 		p := filepath.Join(d, name)
-		st, err := os.Stat(p)
-		if err != nil || st.IsDir() || st.Mode()&0o111 == 0 {
+		if !isExecutable(p) {
 			continue
 		}
 		c.mu.Lock()

@@ -131,6 +131,32 @@ func TestInProcessBackgroundJobs(t *testing.T) {
 	}
 }
 
+// Remembered command locations must not go stale.
+func TestCommandLookupCache(t *testing.T) {
+	dir := t.TempDir()
+	for _, d := range []string{"a", "b", "x/bin", "y/bin"} {
+		os.MkdirAll(dir+"/"+d, 0o755)
+	}
+	write := func(path, msg string) {
+		if err := os.WriteFile(dir+"/"+path, []byte("#!/bin/sh\necho "+msg+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("x/bin/tool", "from-x")
+	write("y/bin/tool", "from-y")
+	write("a/moved", "from-a")
+	// (in a subshell: cd in the main shell changes the test's directory)
+	src := "(cd " + dir + "\n" +
+		// a relative PATH entry finds a different command after cd
+		"PATH=bin:" + dir + "/a:" + dir + "/b:$PATH\ncd x; tool; cd ../y; tool; cd ..\n" +
+		// a command that moved to a later PATH entry is found there
+		"moved; mv a/moved b/moved; moved)"
+	out, errOut, _ := runScriptTimeout(t, src, 5*time.Second)
+	if want := "from-x\nfrom-y\nfrom-a\nfrom-a\n"; out != want {
+		t.Errorf("got %q (stderr %q), want %q", out, errOut, want)
+	}
+}
+
 // A trapped signal runs its handler between commands; it doesn't abort
 // the script like ctrl-c.
 func TestSignalTraps(t *testing.T) {

@@ -237,6 +237,8 @@ func (r *compRun) addDirEntries(col *collector, dir string, in *insertion, mode 
 	return true
 }
 
+// isExecutable reports whether path is a regular file with an execute bit
+// set; command lookup and completion both use it.
 func isExecutable(path string) bool {
 	st, err := os.Stat(path)
 	return err == nil && st.Mode().IsRegular() && st.Mode()&0o111 != 0
