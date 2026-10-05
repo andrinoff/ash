@@ -1,6 +1,8 @@
 package shell
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"strconv"
 	"strings"
@@ -47,10 +49,22 @@ func (sh *Shell) redirect(rs []*syntax.Redirect, base *IO) (*IO, func(), error) 
 				return nil
 			}
 			path := sh.absPath(target)
-			if flags&os.O_TRUNC != 0 && (sh.opts.noclobber && r.Op == syntax.RedirOut || r.Op == syntax.RedirNoClobber) {
+			if flags&os.O_TRUNC != 0 && (sh.opts.noclobber && (r.Op == syntax.RedirOut || r.Op == syntax.RedirAll) || r.Op == syntax.RedirNoClobber) {
+				// Create it exclusively: two shells racing for a lock
+				// file (set -C; echo $$ > lock) must not both win.
+				f, err := os.OpenFile(path, flags|os.O_EXCL, 0o666)
+				if err == nil {
+					opened = append(opened, f)
+					nio.setFd(fd, fileStream(f, false))
+					return nil
+				}
+				if !errors.Is(err, fs.ErrExist) {
+					return errorf("%s", errText(err))
+				}
 				if st, err := os.Stat(path); err == nil && st.Mode().IsRegular() {
 					return errorf("%s: file exists (noclobber)", target)
 				}
+				// not a regular file (/dev/null): open it as usual
 			}
 			f, err := os.OpenFile(path, flags, 0o666)
 			if err != nil {

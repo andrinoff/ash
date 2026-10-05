@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -176,6 +178,35 @@ func TestSignalTraps(t *testing.T) {
 		if out != c.want || string(b) != "got\n" {
 			t.Errorf("%q:\ngot  %q (stderr %q), handler wrote %q\nwant %q", c.src, out, errOut, b, c.want)
 		}
+	}
+}
+
+func TestNoclobber(t *testing.T) {
+	dir := t.TempDir()
+	f := dir + "/f"
+	out, errOut, _ := runScript(t, "set -C; echo a > "+f+"; echo b > "+f+"; echo st=$?; echo c >| "+f+"; echo d &> "+f+"; echo st=$?; echo e > /dev/null; echo st=$?; cat "+f)
+	if want := "st=1\nst=1\nst=0\nc\n"; out != want {
+		t.Errorf("got %q (stderr %q), want %q", out, errOut, want)
+	}
+	// the lock file idiom: only one of several racing shells gets the lock
+	lock := dir + "/lock"
+	var wg sync.WaitGroup
+	var won atomic.Int32
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sh := New()
+			b := &lockedBuffer{}
+			io := &IO{In: &Stream{}, Out: &Stream{W: b}, Err: &Stream{W: b}}
+			if sh.RunString("set -C; echo $$ > "+lock, "test", io) == 0 {
+				won.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if n := won.Load(); n != 1 {
+		t.Errorf("%d shells got the lock", n)
 	}
 }
 
