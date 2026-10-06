@@ -181,6 +181,24 @@ func TestSignalTraps(t *testing.T) {
 	}
 }
 
+// The prompt reports a background job that stopped (on terminal input).
+func TestNotifyStoppedBackgroundJob(t *testing.T) {
+	sh := New()
+	sh.Init()
+	sh.Interactive = true
+	b := &lockedBuffer{}
+	io := &IO{In: &Stream{}, Out: &Stream{W: b}, Err: &Stream{W: b}}
+	sh.Stderr, _ = os.Open(os.DevNull)
+	defer sh.Stderr.Close()
+	sh.RunString("sleep 30 &\nkill -STOP %1; sleep 0.2", "test", io)
+	var note strings.Builder
+	sh.NotifyJobs(&note)
+	sh.RunString("kill -KILL %1; wait", "test", io)
+	if !strings.Contains(note.String(), "job 1, 'sleep 30 &' has stopped") {
+		t.Errorf("got %q", note.String())
+	}
+}
+
 func TestNoclobber(t *testing.T) {
 	dir := t.TempDir()
 	f := dir + "/f"

@@ -496,9 +496,16 @@ func (sh *Shell) NotifyJobs(w io.Writer) bool {
 			}
 			sh.shared.jobs.remove(j)
 		case procStopped:
+			// a background job that stopped (reading the terminal, say)
 			if !j.notified {
 				j.notified = true
+				if sh.Interactive && !j.disowned {
+					fmt.Fprintf(w, "ash: job %d, '%s' has stopped\n", j.id, j.cmd)
+					printed = true
+				}
 			}
+		case procRunning:
+			j.notified = false // (continued with kill -CONT)
 		}
 	}
 	return printed
