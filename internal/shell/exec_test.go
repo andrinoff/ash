@@ -161,6 +161,15 @@ func TestCommandLookupCache(t *testing.T) {
 	}
 }
 
+// kill -- -PGID signals a process group.
+func TestKillProcessGroup(t *testing.T) {
+	// (job control: the pipeline's processes get a group of their own)
+	out, errOut, _ := runScriptSetup(t, "sh -c 'echo $$; exec sleep 5' </dev/null 2>/dev/null | { read pid; kill -- -$pid; echo st=$?; }", 5*time.Second, func(sh *Shell) { sh.JobControl = true })
+	if out != "st=0\n" {
+		t.Errorf("got %q (stderr %q)", out, errOut)
+	}
+}
+
 func TestTrapDashDash(t *testing.T) {
 	out, errOut, st := runScript(t, "trap 'echo x' USR2; trap --; trap - USR2; echo after")
 	if !strings.Contains(out, "USR2") || !strings.HasSuffix(out, "after\n") || st != 0 {

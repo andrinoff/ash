@@ -310,7 +310,7 @@ func bKill(sh *Shell, io *IO, args []string) int {
 		}
 		return 0
 	}
-	if len(a) > 0 && strings.HasPrefix(a[0], "-") && len(a[0]) > 1 {
+	if len(a) > 0 && strings.HasPrefix(a[0], "-") && len(a[0]) > 1 && a[0] != "--" {
 		spec := a[0][1:]
 		if spec == "s" || spec == "n" {
 			if len(a) < 2 {
