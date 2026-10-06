@@ -161,6 +161,13 @@ func TestCommandLookupCache(t *testing.T) {
 	}
 }
 
+func TestTrapDashDash(t *testing.T) {
+	out, errOut, st := runScript(t, "trap 'echo x' USR2; trap --; trap - USR2; echo after")
+	if !strings.Contains(out, "USR2") || !strings.HasSuffix(out, "after\n") || st != 0 {
+		t.Errorf("got %q %q %d", out, errOut, st)
+	}
+}
+
 // A trapped signal runs its handler between commands; it doesn't abort
 // the script like ctrl-c.
 func TestSignalTraps(t *testing.T) {

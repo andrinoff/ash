@@ -580,6 +580,9 @@ func (sh *Shell) HasTrap(name string) bool {
 func bTrap(sh *Shell, io *IO, args []string) int {
 	t := sh.shared.traps
 	a := args[1:]
+	if len(a) == 1 && a[0] == "--" {
+		a = nil // `trap --` lists, like `trap`
+	}
 	if len(a) == 0 || a[0] == "-p" {
 		t.mu.Lock()
 		names := make([]string, 0, len(t.handlers))
