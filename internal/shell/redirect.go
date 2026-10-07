@@ -10,6 +10,10 @@ import (
 	"github.com/andrinoff/ash/internal/syntax"
 )
 
+// errWouldBlock: with sh.noFifo set, a redirection named a FIFO,
+// whose open waits for the other end.
+var errWouldBlock = errors.New("opening a FIFO would block")
+
 // redirect applies redirections to a copy of io.
 func (sh *Shell) redirect(rs []*syntax.Redirect, base *IO) (*IO, func(), error) {
 	nio := base.clone()
@@ -49,6 +53,11 @@ func (sh *Shell) redirect(rs []*syntax.Redirect, base *IO) (*IO, func(), error) 
 				return nil
 			}
 			path := sh.absPath(target)
+			if sh.noFifo {
+				if st, err := os.Stat(path); err == nil && st.Mode()&os.ModeNamedPipe != 0 {
+					return errWouldBlock
+				}
+			}
 			if flags&os.O_TRUNC != 0 && (sh.opts.noclobber && (r.Op == syntax.RedirOut || r.Op == syntax.RedirAll) || r.Op == syntax.RedirNoClobber) {
 				// Create it exclusively: two shells racing for a lock
 				// file (set -C; echo $$ > lock) must not both win.

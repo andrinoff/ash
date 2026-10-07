@@ -197,6 +197,23 @@ func TestSignalTraps(t *testing.T) {
 	}
 }
 
+// Opening a FIFO waits for its other end, which may come later: starting a
+// job must not wait for it.
+func TestFIFORedirections(t *testing.T) {
+	dir := t.TempDir()
+	for _, f := range []string{"f1", "f2"} {
+		if err := unix.Mkfifo(dir+"/"+f, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	src := "cat < " + dir + "/f1 > " + dir + "/out &\necho hello > " + dir + "/f1; wait; cat " + dir + "/out\n" +
+		"(echo hi > " + dir + "/f2) | cat < " + dir + "/f2"
+	out, errOut, _ := runScriptTimeout(t, src, 5*time.Second)
+	if out != "hello\nhi\n" {
+		t.Errorf("got %q (stderr %q)", out, errOut)
+	}
+}
+
 // The prompt reports a background job that stopped (on terminal input).
 func TestNotifyStoppedBackgroundJob(t *testing.T) {
 	sh := New()

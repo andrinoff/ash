@@ -330,8 +330,20 @@ func (sh *Shell) classify(e *pipeElem, call *syntax.CallExpr) {
 	}
 	e.procFds = e.sub.takeProcFds()
 	if len(call.Redirs) > 0 {
+		e.sub.noFifo = true
 		rio, cleanup, err := e.sub.redirect(call.Redirs, e.io)
+		e.sub.noFifo = false
 		e.procFds = append(e.procFds, e.sub.takeProcFds()...) // from `<(...)` targets
+		if err == errWouldBlock {
+			// A FIFO: opening it waits for its other end, which may be
+			// another element of this pipeline or a later command (for a
+			// background job). Leave it to run in-process, where the
+			// open can wait without holding up the rest.
+			cleanup()
+			closeAll(e.procFds)
+			e.procFds = nil
+			return
+		}
 		if err != nil {
 			cleanup()
 			e.sub.errorMsg(e.io.Err, "%v", err)

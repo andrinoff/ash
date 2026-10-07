@@ -100,6 +100,7 @@ type Shell struct {
 	fds        map[int]fdEntry // descriptors from `exec N>...` and inherited ones (copy on write)
 	redirBase  *IO             // while a command runs: its IO before its own redirections
 	bgIntr     *atomic.Bool    // interrupt flag of the in-process background job sh runs in
+	noFifo     bool            // redirect: fail with errWouldBlock rather than open a FIFO
 	curSrc     string          // source of the top-level code being run
 	curStmt    string          // text of the current top-level statement (for job names)
 	substCount int             // number of command substitutions run (for assignment status)
@@ -342,6 +343,7 @@ func (sh *Shell) clone() *Shell {
 	c.srcStack = append([]string(nil), sh.srcStack...)
 	c.subshell = true
 	c.procFds = nil // pending <(...) pipes belong to the parent's command
+	c.noFifo = false
 	c.ctrl = ctrlNone
 	c.rand = rand.New(rand.NewSource(sh.rand.Int63()))
 	return &c
