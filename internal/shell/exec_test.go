@@ -424,6 +424,32 @@ func TestDupOfUnknownDescriptor(t *testing.T) {
 	}
 }
 
+// Descriptors the process opened itself (close-on-exec, like the runtime's
+// poller) are never taken for ones ash inherited.
+func TestInheritedDescriptors(t *testing.T) {
+	f, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	fd := int(f.Fd())
+	has := func() bool {
+		for _, n := range openWithoutCloexec() {
+			if n == fd {
+				return true
+			}
+		}
+		return false
+	}
+	if has() {
+		t.Errorf("fd %d (close-on-exec) taken for an inherited one", fd)
+	}
+	unix.FcntlInt(uintptr(fd), unix.F_SETFD, 0)
+	if !has() {
+		t.Errorf("fd %d (inheritable) not found", fd)
+	}
+}
+
 // An external command that doesn't read its stdin must leave the rest of
 // a heredoc for the commands after it, as it would with a file.
 func TestHeredocSharedWithExternals(t *testing.T) {

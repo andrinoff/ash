@@ -27,17 +27,23 @@ type fdEntry struct {
 	owned bool // the shell's own copy: close it when the entry goes away
 }
 
-// inheritedFds are the descriptors above 2 that were open when the
-// process started, before the runtime or the editor opened anything.
-var inheritedFds = func() []int {
+// inheritedFds are the descriptors above 2 that ash was started with.
+var inheritedFds = openWithoutCloexec()
+
+// openWithoutCloexec lists the open descriptors above 2 that are not
+// close-on-exec. At startup those are the inherited ones: everything the
+// runtime opens is close-on-exec (and it may already have opened its
+// poller during package init, if stdin was non-blocking), while anything
+// that survived the exec into ash can't be.
+func openWithoutCloexec() []int {
 	var fds []int
 	for fd := 3; fd < 256; fd++ {
-		if _, err := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0); err == nil {
+		if fl, err := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0); err == nil && fl&unix.FD_CLOEXEC == 0 {
 			fds = append(fds, fd)
 		}
 	}
 	return fds
-}()
+}
 
 var (
 	inheritedOnce  sync.Once
