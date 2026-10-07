@@ -383,6 +383,16 @@ func (sh *Shell) watchProcs(j *job) {
 		stopped := waitProcs(j)
 		if !stopped {
 			sh.noteInterrupt(j)
+			// The shell is still running the rest of the job: take the
+			// terminal back, unless a command it started has it now.
+			// Otherwise reading the terminal there (read ans </dev/tty)
+			// hangs, and ctrl-c goes to a process group that is gone.
+			tty := sh.shared.ttyFd
+			if sh.JobControl && tty >= 0 {
+				if fg, err := term.Foreground(tty); err == nil && fg == j.pgid {
+					term.SetForeground(tty, sh.shared.shellPgid)
+				}
+			}
 		}
 		ch <- stopped
 	}()
