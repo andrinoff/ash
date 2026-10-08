@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/andrinoff/ash/internal/syntax"
 )
 
@@ -226,18 +228,67 @@ func pureParts(parts []syntax.WordPart) bool {
 // docStream returns the read end of a pipe that yields body, for a heredoc
 // or here-string. Every command reading it shares one read position, as
 // with a file: an external command that doesn't read its input leaves it
-// for the next one (`while read l; do grep -q x $l; done <<EOF`). The
-// writer stops when the reader is closed.
+// for the next one (`while read l; do grep -q x $l; done <<EOF`).
+//
+// The body is all there before any command starts, even one that
+// replaces the shell (exec cat <<EOF), which a writer goroutine wouldn't
+// outlive: in the pipe if it fits, otherwise in an unlinked temporary
+// file. Only if there is no such file does a goroutine write the rest.
 func docStream(body string) (*Stream, error) {
 	r, w, err := os.Pipe()
 	if err != nil {
 		return nil, err
 	}
+	rest := []byte(body)
+	if rc, err := w.SyscallConn(); err == nil {
+		rc.Write(func(fd uintptr) bool {
+			// without waiting for a reader: only if non-blocking
+			if fl, err := unix.FcntlInt(fd, unix.F_GETFL, 0); err != nil || fl&unix.O_NONBLOCK == 0 {
+				return true
+			}
+			for len(rest) > 0 {
+				n, err := unix.Write(int(fd), rest)
+				if n <= 0 || err != nil {
+					break
+				}
+				rest = rest[n:]
+			}
+			return true
+		})
+	}
+	if len(rest) == 0 {
+		w.Close()
+		return fileStream(r, false), nil
+	}
+	if f, err := docFile(body); err == nil {
+		r.Close()
+		w.Close()
+		return fileStream(f, false), nil
+	}
 	go func() {
-		w.WriteString(body)
+		w.Write(rest)
 		w.Close()
 	}()
 	return fileStream(r, false), nil
+}
+
+// docFile returns an unlinked temporary file that holds body, open for
+// reading from the start.
+func docFile(body string) (*os.File, error) {
+	f, err := os.CreateTemp("", "ash-doc-")
+	if err != nil {
+		return nil, err
+	}
+	os.Remove(f.Name())
+	if _, err := f.WriteString(body); err != nil {
+		f.Close()
+		return nil, err
+	}
+	if _, err := f.Seek(0, 0); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return f, nil
 }
 
 // devStream emulates /dev/stdin, /dev/stdout, /dev/stderr and /dev/fd/N

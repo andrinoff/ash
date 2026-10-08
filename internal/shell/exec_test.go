@@ -467,11 +467,46 @@ func TestHeredocSharedWithExternals(t *testing.T) {
 		{"while read line; do echo \"got $line\"; /usr/bin/true; done <<EOF\na\nb\nc\nEOF\n", "got a\ngot b\ngot c\n"},
 		{"while read l; do echo $l; /usr/bin/true; done <<< \"x\ny\"", "x\ny\n"},
 		{"{ read a; echo first=$a; cat; } <<EOF\none\ntwo\nthree\nEOF\n", "first=one\ntwo\nthree\n"},
+		// (a body too big for a pipe)
+		{"big=$(head -c 200000 /dev/zero | tr '\\0' x)\n{ read a; echo ${#a}; /usr/bin/true; read b; echo $b; } <<EOF\n$big\nlast\nEOF\n", "200000\nlast\n"},
 	}
 	for _, c := range cases {
 		out, errOut, _ := runScript(t, c.src)
 		if out != c.want {
 			t.Errorf("%q:\ngot  %q (stderr %q)\nwant %q", c.src, out, errOut, c.want)
+		}
+	}
+}
+
+// A heredoc's body is all there before any command starts, so that even a
+// program that replaces the shell (exec cat <<EOF), which no goroutine
+// outlives, gets all of it.
+func TestHeredocWrittenUpFront(t *testing.T) {
+	for _, n := range []int{5, 200000} {
+		s, err := docStream(strings.Repeat("x", n))
+		if err != nil {
+			t.Fatal(err)
+		}
+		// read what is there without waiting for more
+		have := 0
+		rc, err := s.File.SyscallConn()
+		if err != nil {
+			t.Fatal(err)
+		}
+		buf := make([]byte, 1<<16)
+		rc.Read(func(fd uintptr) bool {
+			unix.SetNonblock(int(fd), true)
+			for {
+				n, _ := unix.Read(int(fd), buf)
+				if n <= 0 {
+					return true
+				}
+				have += n
+			}
+		})
+		s.File.Close()
+		if have != n {
+			t.Errorf("%d-byte body: %d bytes there up front", n, have)
 		}
 	}
 }
