@@ -419,7 +419,7 @@ type Stream struct {
 	Inherited bool
 	broken    *atomic.Bool
 	closed    bool
-	inTable   bool // held in the shell's descriptor table (sh.fds)
+	tableFd   int // n+1 when this is (or was) descriptor n in the shell's table (sh.fds)
 }
 
 func fileStream(f *os.File, tty bool) *Stream {

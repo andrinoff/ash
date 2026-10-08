@@ -64,7 +64,7 @@ func inheritedTable() map[int]fdEntry {
 	}
 	m := make(map[int]fdEntry, len(inheritedFiles))
 	for fd, f := range inheritedFiles {
-		m[fd] = fdEntry{s: &Stream{File: f, inTable: true}, owned: true}
+		m[fd] = fdEntry{s: &Stream{File: f, tableFd: fd + 1}, owned: true}
 	}
 	return m
 }
@@ -76,11 +76,12 @@ func (sh *Shell) shellFd(n int) *Stream {
 }
 
 // ioFd returns io's stream for descriptor n, falling back to the shell's
-// table. An IO made before an exec replaced a table entry (the caller of
-// a function that ran `exec 3>file`) follows the table.
+// table. An IO made before an exec replaced table entry n (the caller of
+// a function that ran `exec 3>file`) follows the table; a table stream
+// that a redirection copied to another descriptor (4>&3) stays.
 func (sh *Shell) ioFd(io *IO, n int) *Stream {
 	s := io.fd(n)
-	if n > 2 && (s == nil || s.inTable && s != sh.fds[n].s) {
+	if n > 2 && (s == nil || s.tableFd == n+1 && s != sh.fds[n].s) {
 		return sh.fds[n].s
 	}
 	return s
@@ -99,7 +100,7 @@ func (sh *Shell) setShellFd(n int, s *Stream, owned bool) {
 	if s == nil {
 		delete(m, n)
 	} else {
-		s.inTable = true
+		s.tableFd = n + 1
 		m[n] = fdEntry{s: s, owned: owned}
 	}
 	sh.fds = m
@@ -168,7 +169,10 @@ func (sh *Shell) execRedirs(rio *IO) int {
 			}
 			news[i] = &Stream{File: f, TTY: s.TTY}
 		default:
-			news[i] = s
+			// a copy: each table entry is a stream of its own (see ioFd)
+			c := *s
+			c.tableFd = 0
+			news[i] = &c
 		}
 	}
 	for i, n := range ns {

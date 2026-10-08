@@ -394,6 +394,9 @@ func TestExecRedirections(t *testing.T) {
 		// in a function it lasts
 		{"f() { exec 5>" + file + "; }; f 2>/dev/null; echo via5 >&5; exec 5>&-; cat " + file, "via5\n", ""},
 		{"exec 3>" + file + "; f() { exec 3>" + file + "2; }; f 2>/dev/null; echo hi >&3; exec 3>&-; cat " + file + "; echo sep; cat " + file + "2", "sep\nhi\n", ""},
+		// a redirection copies a descriptor from the table to another number
+		{"exec 3>" + file + "; echo a 4>&3 >&4; sh -c 'echo b >&5' 5>&3; { echo c >&6; } 6>&3; f() { echo d >&7; }; f 7>&3; exec 3>&-; cat " + file, "a\nb\nc\nd\n", ""},
+		{"exec 3>&1; echo out 4>&3 >&4; exec 4>&3; echo four >&4; exec 3>&- 4>&-", "out\nfour\n", ""},
 	}
 	for _, c := range cases {
 		out, errOut, _ := runScriptTimeout(t, c.src, 5*time.Second)
