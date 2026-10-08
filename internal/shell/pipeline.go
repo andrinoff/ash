@@ -316,6 +316,14 @@ func (sh *Shell) classify(e *pipeElem, call *syntax.CallExpr) {
 	if err != nil {
 		return
 	}
+	if e.sub.opensFifo(call.Redirs, e.io) {
+		// A FIFO: opening it waits for its other end, which may be
+		// another element of this pipeline or a later command (for a
+		// background job). Leave it to run in-process, where the open
+		// can wait without holding up the rest. This is found out before
+		// anything is expanded or opened, which would then happen twice.
+		return
+	}
 	args, err := e.sub.expandFields(call.Args, e.io, 0)
 	if err != nil || len(args) == 0 || args[0] != lit {
 		return
@@ -335,10 +343,8 @@ func (sh *Shell) classify(e *pipeElem, call *syntax.CallExpr) {
 		e.sub.noFifo = false
 		e.procFds = append(e.procFds, e.sub.takeProcFds()...) // from `<(...)` targets
 		if err == errWouldBlock {
-			// A FIFO: opening it waits for its other end, which may be
-			// another element of this pipeline or a later command (for a
-			// background job). Leave it to run in-process, where the
-			// open can wait without holding up the rest.
+			// a FIFO that opensFifo couldn't see (its name comes from a
+			// command substitution, say): run in-process as above
 			cleanup()
 			closeAll(e.procFds)
 			e.procFds = nil

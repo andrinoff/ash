@@ -201,7 +201,7 @@ func TestSignalTraps(t *testing.T) {
 // job must not wait for it.
 func TestFIFORedirections(t *testing.T) {
 	dir := t.TempDir()
-	for _, f := range []string{"f1", "f2"} {
+	for _, f := range []string{"f1", "f2", "f3"} {
 		if err := unix.Mkfifo(dir+"/"+f, 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -210,6 +210,13 @@ func TestFIFORedirections(t *testing.T) {
 		"(echo hi > " + dir + "/f2) | cat < " + dir + "/f2"
 	out, errOut, _ := runScriptTimeout(t, src, 5*time.Second)
 	if out != "hello\nhi\n" {
+		t.Errorf("got %q (stderr %q)", out, errOut)
+	}
+	// Nothing is expanded or opened before the FIFO is found: the
+	// substitution runs once, and noclobber doesn't find its own file.
+	src = "d=" + dir + "\nset -C\ncat $(echo run >> $d/log) > $d/out2 < $d/f3 &\necho there > $d/f3; wait; cat $d/out2; wc -l < $d/log | tr -d ' '"
+	out, errOut, _ = runScriptTimeout(t, src, 5*time.Second)
+	if out != "there\n1\n" {
 		t.Errorf("got %q (stderr %q)", out, errOut)
 	}
 }

@@ -171,6 +171,58 @@ func (sh *Shell) redirect(rs []*syntax.Redirect, base *IO) (*IO, func(), error) 
 	return nio, cleanup, nil
 }
 
+// opensFifo reports whether one of rs opens a FIFO. It looks only at
+// targets that expand without side effects (text, variables, ~), so that
+// asking runs nothing; redirect with noFifo set catches the others as it
+// opens them.
+func (sh *Shell) opensFifo(rs []*syntax.Redirect, io *IO) bool {
+	for _, r := range rs {
+		switch r.Op {
+		case syntax.RedirIn, syntax.RedirOut, syntax.RedirAppend, syntax.RedirClobber,
+			syntax.RedirNoClobber, syntax.RedirInOut, syntax.RedirAll, syntax.RedirAllAppend:
+		default:
+			continue
+		}
+		if r.Target == nil || !pureParts(r.Target.Parts) {
+			continue
+		}
+		fs, err := sh.expandFields([]*syntax.Word{r.Target}, io, 0)
+		if err != nil || len(fs) != 1 || sh.devStream(fs[0], io) != nil {
+			continue
+		}
+		if st, err := os.Stat(sh.absPath(fs[0])); err == nil && st.Mode()&os.ModeNamedPipe != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// pureParts reports whether expanding a word made of parts has no side
+// effects: no command, process or arithmetic substitution, ${x:=y} or
+// ${x:?message}.
+func pureParts(parts []syntax.WordPart) bool {
+	for _, p := range parts {
+		switch p := p.(type) {
+		case *syntax.Lit, *syntax.Quoted, *syntax.Tilde:
+		case *syntax.DblQuoted:
+			if !pureParts(p.Parts) {
+				return false
+			}
+		case *syntax.ParamExp:
+			switch p.Op {
+			case syntax.OpAssign, syntax.OpAssignUnset, syntax.OpError, syntax.OpErrorUnset:
+				return false
+			}
+			if p.Index != nil || p.Arg != nil && !pureParts(p.Arg.Parts) || p.Arg2 != nil && !pureParts(p.Arg2.Parts) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // docStream returns the read end of a pipe that yields body, for a heredoc
 // or here-string. Every command reading it shares one read position, as
 // with a file: an external command that doesn't read its input leaves it
