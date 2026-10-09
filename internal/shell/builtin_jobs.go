@@ -260,17 +260,18 @@ func bWait(sh *Shell, io *IO, args []string) int {
 				return statuses[i]
 			}
 		}
+		if !sh.subshell {
+			// A trapped signal ends the wait, even if the jobs are done
+			// by now, as in bash; its handler runs next.
+			if sig := sh.shared.traps.pendingSignal(); sig != 0 {
+				return 128 + int(sig)
+			}
+		}
 		if left == 0 {
 			break
 		}
 		if sh.interrupted() {
 			return 130
-		}
-		if !sh.subshell {
-			// a trapped signal ends the wait, then its handler runs
-			if sig, ok := sh.shared.traps.pendingSignal(); ok {
-				return 128 + int(sig)
-			}
 		}
 		time.Sleep(delay)
 		if delay < 20*time.Millisecond {
@@ -370,25 +371,18 @@ func bKill(sh *Shell, io *IO, args []string) int {
 			status = 1
 			continue
 		}
+		if pid == os.Getpid() && sh.shared.traps.queue(strings.TrimPrefix(signalName(sig), "SIG")) {
+			// A trapped signal to ourselves: queue the handler directly so
+			// it runs before the next command, as in bash, instead of
+			// whenever the signal reaches its goroutine.
+			continue
+		}
 		if err := unix.Kill(pid, sig); err != nil {
 			fmt.Fprintf(io.Err, "kill: (%d) - %s\n", pid, errText(err))
 			status = 1
-		} else if pid == os.Getpid() {
-			sh.awaitTrap(sig)
 		}
 	}
 	return status
-}
-
-// awaitTrap gives a signal the shell sent itself (kill -USR1 $$) time to
-// arrive, so a trap on it runs before the next command, as in sh.
-func (sh *Shell) awaitTrap(sig syscall.Signal) {
-	if !sh.HasTrap(strings.TrimPrefix(signalName(sig), "SIG")) {
-		return
-	}
-	for i := 0; i < 100 && !sh.shared.traps.waiting.Load(); i++ {
-		time.Sleep(time.Millisecond)
-	}
 }
 
 func bDisown(sh *Shell, io *IO, args []string) int {
@@ -438,26 +432,15 @@ type traps struct {
 	mu       sync.Mutex
 	handlers map[string]string // signal name (or EXIT/ERR) -> code
 	funcs    map[string]string // signal name -> function (fish --on-signal)
-	ch       chan os.Signal
+	chans    map[syscall.Signal]chan os.Signal
+	ignored  map[syscall.Signal]bool // set to SIG_IGN by trap '' SIG
 	pending  []string
-	// set while signals wait for their handlers, which the main shell
-	// runs between commands
-	waiting atomic.Bool
-}
-
-// pendingSignal returns the first signal waiting for its handler.
-func (t *traps) pendingSignal() (syscall.Signal, bool) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if len(t.pending) == 0 {
-		return 0, false
-	}
-	sig, ok := signalNames[t.pending[0]]
-	return sig, ok
+	has      atomic.Bool // pending is not empty
 }
 
 func newTraps() *traps {
-	return &traps{handlers: map[string]string{}, funcs: map[string]string{}}
+	return &traps{handlers: map[string]string{}, funcs: map[string]string{},
+		chans: map[syscall.Signal]chan os.Signal{}, ignored: map[syscall.Signal]bool{}}
 }
 
 func normSig(s string) (string, bool) {
@@ -469,7 +452,9 @@ func normSig(s string) (string, bool) {
 		return u, true
 	}
 	if sig, ok := parseSignal(u); ok {
-		return strings.TrimPrefix(signalName(sig), "SIG"), true
+		if name := signalName(sig); strings.HasPrefix(name, "SIG") {
+			return name[3:], true
+		}
 	}
 	return "", false
 }
@@ -482,56 +467,132 @@ func (t *traps) setFuncHandler(sh *Shell, sig, fn string) {
 	t.mu.Lock()
 	t.funcs[name] = fn
 	t.mu.Unlock()
-	t.listen(sh, name)
+	t.sync(sh, name)
 }
 
-func (t *traps) listen(sh *Shell, name string) {
+// sync makes the process's handling of a signal match its trap: caught
+// (and run between commands) when there is a handler, ignored when the
+// trap is empty, the default after trap - SIG.
+func (t *traps) sync(sh *Shell, name string) {
 	sig, ok := signalNames[name]
-	if !ok {
+	if !ok || sig == syscall.SIGKILL || sig == syscall.SIGSTOP {
 		return
 	}
-	switch sig {
-	case syscall.SIGINT, syscall.SIGCHLD, syscall.SIGWINCH, syscall.SIGTSTP, syscall.SIGTTIN, syscall.SIGTTOU, syscall.SIGKILL, syscall.SIGSTOP:
-		// owned by the shell's own handling; delivered via RunSignalTrap
-		return
+	// The interactive shell handles these itself; the trap is only
+	// recorded. For TERM, HUP and QUIT it may also be caught, but their
+	// disposition is left alone.
+	owned := false
+	if sh.Interactive {
+		switch sig {
+		case syscall.SIGINT, syscall.SIGCHLD, syscall.SIGWINCH, syscall.SIGTSTP, syscall.SIGTTIN, syscall.SIGTTOU:
+			return
+		case syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT:
+			owned = true
+		}
 	}
 	t.mu.Lock()
-	if t.ch == nil {
-		t.ch = make(chan os.Signal, 8)
-		go func() {
-			// The handler runs before the main shell's next command (see
-			// runStmts), like in sh: the signal doesn't stop the command
-			// that is running.
-			for s := range t.ch {
-				t.mu.Lock()
-				t.pending = append(t.pending, strings.TrimPrefix(signalName(s.(syscall.Signal)), "SIG"))
-				t.waiting.Store(true)
-				t.mu.Unlock()
-			}
-		}()
+	defer t.mu.Unlock()
+	if !sh.Interactive && signal.Ignored(sig) && !t.ignored[sig] {
+		// POSIX: signals ignored on entry can't be trapped or reset
+		return
 	}
-	t.mu.Unlock()
-	signal.Notify(t.ch, sig)
+	code, hasCode := t.handlers[name]
+	_, hasFn := t.funcs[name]
+	switch {
+	case hasFn || hasCode && code != "":
+		delete(t.ignored, sig)
+		if t.chans[sig] == nil {
+			ch := make(chan os.Signal, 4)
+			t.chans[sig] = ch
+			signal.Notify(ch, sig)
+			go func() {
+				for range ch {
+					t.mu.Lock()
+					t.pending = append(t.pending, name)
+					t.has.Store(true)
+					t.mu.Unlock()
+				}
+			}()
+		}
+	case hasCode && !owned:
+		t.stop(sig)
+		signal.Ignore(sig)
+		t.ignored[sig] = true
+	default:
+		t.stop(sig)
+		if t.ignored[sig] {
+			signal.Reset(sig)
+			delete(t.ignored, sig)
+		}
+	}
+}
+
+// stop stops catching sig. t.mu is held.
+func (t *traps) stop(sig syscall.Signal) {
+	if ch := t.chans[sig]; ch != nil {
+		signal.Stop(ch) // no more sends after this returns
+		close(ch)
+		delete(t.chans, sig)
+	}
+}
+
+// pendingSignal returns the first trapped signal waiting to be handled.
+func (t *traps) pendingSignal() syscall.Signal {
+	if !t.has.Load() {
+		return 0
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if len(t.pending) == 0 {
+		return 0
+	}
+	return signalNames[t.pending[0]]
+}
+
+// queue records that a trapped signal arrived, as its handler would.
+func (t *traps) queue(name string) bool {
+	if sig := signalNames[name]; sig == 0 || sig == syscall.SIGKILL || sig == syscall.SIGSTOP {
+		return false
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	code := t.handlers[name]
+	_, hasFn := t.funcs[name]
+	if code == "" && !hasFn {
+		return false
+	}
+	t.pending = append(t.pending, name)
+	t.has.Store(true)
+	return true
 }
 
 // RunPendingTraps runs handlers for signals that arrived. It returns true
 // if any trap ran.
-func (sh *Shell) RunPendingTraps() bool {
+func (sh *Shell) RunPendingTraps() bool { return sh.runPendingTraps(sh.StdIO()) }
+
+// runPendingTraps runs the handlers with the streams of the code that
+// was running when the signal arrived.
+func (sh *Shell) runPendingTraps(io *IO) bool {
 	t := sh.shared.traps
+	if !t.has.Load() {
+		return false
+	}
 	t.mu.Lock()
 	pending := t.pending
 	t.pending = nil
-	t.waiting.Store(false)
+	t.has.Store(false)
 	t.mu.Unlock()
 	for _, name := range pending {
-		sh.RunSignalTrap(name)
+		sh.runSignalTrap(name, io)
 	}
 	return len(pending) > 0
 }
 
 // RunSignalTrap runs the trap or --on-signal handler for a signal name
 // like "INT". It reports whether a handler existed.
-func (sh *Shell) RunSignalTrap(name string) bool {
+func (sh *Shell) RunSignalTrap(name string) bool { return sh.runSignalTrap(name, sh.StdIO()) }
+
+func (sh *Shell) runSignalTrap(name string, io *IO) bool {
 	t := sh.shared.traps
 	t.mu.Lock()
 	code, hasCode := t.handlers[name]
@@ -541,12 +602,14 @@ func (sh *Shell) RunSignalTrap(name string) bool {
 		return false
 	}
 	saved := sh.status
-	sh.ClearInterrupt()
+	if name == "INT" {
+		sh.ClearInterrupt() // the trap handles ctrl-c
+	}
 	if hasFn {
-		sh.CallFunction(fn, []string{"SIG" + name}, sh.StdIO())
+		sh.CallFunction(fn, []string{"SIG" + name}, io)
 	}
 	if hasCode && code != "" {
-		sh.RunString(code, "", sh.StdIO())
+		sh.RunString(code, "", io)
 	}
 	sh.status = saved
 	return true
@@ -580,27 +643,34 @@ func (sh *Shell) HasTrap(name string) bool {
 func bTrap(sh *Shell, io *IO, args []string) int {
 	t := sh.shared.traps
 	a := args[1:]
-	if len(a) == 1 && a[0] == "--" {
-		a = nil // `trap --` lists, like `trap`
+	if len(a) > 0 && a[0] == "--" {
+		a = a[1:]
 	}
 	if len(a) == 0 || a[0] == "-p" {
 		t.mu.Lock()
-		names := make([]string, 0, len(t.handlers))
-		for n := range t.handlers {
-			names = append(names, n)
+		var names []string
+		if len(a) > 1 {
+			for _, s := range a[1:] {
+				if n, ok := normSig(s); ok {
+					names = append(names, n)
+				}
+			}
+		} else {
+			for n := range t.handlers {
+				names = append(names, n)
+			}
+			sort.Strings(names)
 		}
-		sort.Strings(names)
 		for _, n := range names {
-			fmt.Fprintf(io.Out, "trap -- %s %s\n", Quote(t.handlers[n]), n)
+			if code, ok := t.handlers[n]; ok {
+				fmt.Fprintf(io.Out, "trap -- %s %s\n", Quote(code), n)
+			}
 		}
 		t.mu.Unlock()
 		return 0
 	}
 	if a[0] == "-l" {
 		return bKill(sh, io, []string{"kill", "-l"})
-	}
-	if a[0] == "--" {
-		a = a[1:]
 	}
 	code := a[0]
 	sigs := a[1:]
@@ -625,11 +695,7 @@ func bTrap(sh *Shell, io *IO, args []string) int {
 			t.handlers[name] = code
 		}
 		t.mu.Unlock()
-		if code != "-" {
-			t.listen(sh, name)
-		} else if sig, ok := signalNames[name]; ok && t.ch != nil {
-			signal.Reset(sig)
-		}
+		t.sync(sh, name)
 	}
 	return 0
 }

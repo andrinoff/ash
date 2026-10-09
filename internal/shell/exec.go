@@ -88,13 +88,6 @@ func (sh *Shell) runStmts(stmts []*syntax.Stmt, io *IO) int {
 		if sh.ctrl != ctrlNone {
 			break
 		}
-		if !sh.subshell && sh.shared.traps.waiting.Load() {
-			// trapped signals: run their handlers between commands
-			sh.RunPendingTraps()
-			if sh.ctrl != ctrlNone {
-				break
-			}
-		}
 		if sh.interrupted() {
 			if sh.status == 0 {
 				sh.status = 130
@@ -102,6 +95,10 @@ func (sh *Shell) runStmts(stmts []*syntax.Stmt, io *IO) int {
 			break
 		}
 		sh.runStmt(st, io)
+		if !sh.subshell && sh.shared.traps.has.Load() {
+			// run handlers for trapped signals between commands
+			sh.runPendingTraps(io)
+		}
 		if sh.subshell && io.Out != nil && io.Out.broken != nil && io.Out.broken.Load() {
 			sh.ctrl = ctrlExit
 			sh.exitStatus = 141
@@ -648,6 +645,9 @@ func (sh *Shell) RunTopLevel(src string, io *IO) int {
 		}
 		sh.curStmt = sh.stmtText(st)
 		sh.runStmt(st, io)
+		if sh.shared.traps.has.Load() {
+			sh.runPendingTraps(io)
+		}
 	}
 	return sh.status
 }
