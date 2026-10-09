@@ -108,6 +108,12 @@ type Shell struct {
 	callStack []frame
 	srcStack  []string
 
+	// getopts state: the OPTIND variable getopts last set, and the
+	// position inside a cluster of options like -abc. Assigning OPTIND
+	// makes a new *Var, which resets the position, as in bash.
+	getoptsVar *Var
+	getoptsSub int
+
 	startTime time.Time
 	rand      *rand.Rand
 
@@ -256,6 +262,7 @@ func (sh *Shell) initDefaults() {
 		sh.global.put("PATH", &Var{Vals: []string{"/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"}, Export: true, Path: true})
 	}
 	set("IFS", " \t\n")
+	set("OPTIND", "1")
 	host, _ := os.Hostname()
 	if i := strings.IndexByte(host, '.'); i > 0 {
 		host = host[:i]

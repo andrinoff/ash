@@ -176,85 +176,101 @@ func bGetopts(sh *Shell, io *IO, args []string) int {
 	if silent {
 		optstring = optstring[1:]
 	}
+	optVar, _ := sh.lookupVar("OPTIND")
 	optind := 1
-	if v := sh.Get("OPTIND"); v != "" {
-		optind, _ = strconv.Atoi(v)
+	if optVar != nil {
+		if n, err := strconv.Atoi(strings.TrimSpace(optVar.String())); err == nil && n > 1 {
+			optind = n
+		}
 	}
 	sub := 0
-	if v := sh.Get("_ash_getopts_sub"); v != "" {
-		sub, _ = strconv.Atoi(v)
+	if optVar != nil && optVar == sh.getoptsVar {
+		sub = sh.getoptsSub
 	}
 	setVar := func(n, v string) { sh.SetVar(n, []string{v}, setOpts{scope: setShAuto}) }
-	if optind-1 >= len(params) {
+	unsetOptarg := func() { sh.UnsetVar("OPTARG", setShAuto) }
+	// finish records where the next call continues; OPTIND is set on
+	// every call, as in bash, so `shift $((OPTIND-1))` always works.
+	finish := func(status int) int {
+		setVar("OPTIND", strconv.Itoa(optind))
+		sh.getoptsVar, _ = sh.lookupVar("OPTIND")
+		sh.getoptsSub = sub
+		return status
+	}
+	end := func() int {
+		sub = 0
 		setVar(name, "?")
-		return 1
+		unsetOptarg()
+		return finish(1)
+	}
+	if optind-1 >= len(params) {
+		return end()
 	}
 	arg := params[optind-1]
+	if sub >= len(arg) {
+		// the arguments changed since the last call
+		sub = 0
+	}
 	if sub == 0 {
 		if arg == "--" {
-			setVar("OPTIND", strconv.Itoa(optind+1))
-			setVar(name, "?")
-			return 1
+			optind++
+			return end()
 		}
 		if len(arg) < 2 || arg[0] != '-' {
-			setVar(name, "?")
-			return 1
+			return end()
 		}
 		sub = 1
 	}
 	c := arg[sub]
+	opt := string([]byte{c})
 	sub++
 	next := func() {
 		if sub >= len(arg) {
 			optind++
 			sub = 0
 		}
-		setVar("OPTIND", strconv.Itoa(optind))
-		setVar("_ash_getopts_sub", strconv.Itoa(sub))
 	}
 	i := strings.IndexByte(optstring, c)
 	if i < 0 || c == ':' {
 		if silent {
-			setVar("OPTARG", string(c))
+			setVar("OPTARG", opt)
 		} else {
-			fmt.Fprintf(io.Err, "getopts: illegal option -- %c\n", c)
-			sh.UnsetVar("OPTARG", setShAuto)
+			fmt.Fprintf(io.Err, "getopts: illegal option -- %s\n", opt)
+			unsetOptarg()
 		}
 		setVar(name, "?")
 		next()
-		return 0
+		return finish(0)
 	}
 	if i+1 < len(optstring) && optstring[i+1] == ':' {
-		if sub < len(arg) {
+		switch {
+		case sub < len(arg):
 			setVar("OPTARG", arg[sub:])
 			optind++
-			sub = 0
-		} else if optind < len(params) {
+		case optind < len(params):
 			setVar("OPTARG", params[optind])
 			optind += 2
-			sub = 0
-		} else {
-			if silent {
-				setVar(name, ":")
-				setVar("OPTARG", string(c))
-			} else {
-				fmt.Fprintf(io.Err, "getopts: option requires an argument -- %c\n", c)
-				setVar(name, "?")
-			}
+		default:
 			optind++
 			sub = 0
-			setVar("OPTIND", strconv.Itoa(optind))
-			setVar("_ash_getopts_sub", "0")
-			return 0
+			if silent {
+				setVar(name, ":")
+				setVar("OPTARG", opt)
+			} else {
+				fmt.Fprintf(io.Err, "getopts: option requires an argument -- %s\n", opt)
+				setVar(name, "?")
+				unsetOptarg()
+			}
+			return finish(0)
 		}
-		setVar(name, string(c))
-		setVar("OPTIND", strconv.Itoa(optind))
-		setVar("_ash_getopts_sub", strconv.Itoa(sub))
-		return 0
+		sub = 0
+		setVar(name, opt)
+		return finish(0)
 	}
-	setVar(name, string(c))
+	setVar(name, opt)
+	unsetOptarg()
 	next()
-	return 0
+	return finish(0)
 }
 
 func bShopt(sh *Shell, io *IO, args []string) int { return 0 }
