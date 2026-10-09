@@ -6,6 +6,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
 // runJobsScript is runScript with /dev/null as a real stdin file, so
@@ -77,5 +78,31 @@ echo "wait=$?"
 	want := "handled\nwait=" + strconv.Itoa(128+int(syscall.SIGUSR1)) + "\n"
 	if out != want || errOut != "" {
 		t.Errorf("got %q (stderr %q), want %q", out, errOut, want)
+	}
+}
+
+func TestWaitStatuses(t *testing.T) {
+	out, errOut, _ := runJobsScript(t, `
+sh -c 'sleep 0.2; exit 3' &
+p1=$!
+sh -c 'exit 4' &
+p2=$!
+wait $p1 $p2; echo "named $?"
+sh -c 'exit 5' &
+wait; echo "all $?"
+`)
+	if want := "named 4\nall 0\n"; out != want {
+		t.Fatalf("got %q (stderr %q), want %q", out, errOut, want)
+	}
+}
+
+func TestWaitAnyReturnsFirstToFinish(t *testing.T) {
+	start := time.Now()
+	out, errOut, _ := runJobsScript(t, "sleep 3 &\nsh -c 'sleep 0.1; exit 6' &\nwait -n; echo \"any $?\"; kill %1")
+	if out != "any 6\n" {
+		t.Fatalf("got %q (stderr %q)", out, errOut)
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("wait -n waited for the first job: %v", d)
 	}
 }
