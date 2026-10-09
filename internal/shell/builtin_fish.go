@@ -2,6 +2,8 @@ package shell
 
 import (
 	"fmt"
+	"math"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -341,9 +343,29 @@ func bRandom(sh *Shell, io *IO, args []string) int {
 		fmt.Fprintln(io.Err, "random: invalid range")
 		return 2
 	}
-	n := (hi-lo)/step + 1
-	fmt.Fprintln(io.Out, lo+sh.rand.Int63n(n)*step)
+	// Work in uint64: hi-lo can be up to 2^64-1, which overflows int64
+	// (random 0 9223372036854775807 used to panic in Int63n).
+	steps := (uint64(hi) - uint64(lo)) / uint64(step)
+	var k uint64
+	if steps == math.MaxUint64 {
+		k = sh.rand.Uint64()
+	} else {
+		k = randUint64n(sh.rand, steps+1)
+	}
+	fmt.Fprintln(io.Out, int64(uint64(lo)+k*uint64(step)))
 	return 0
+}
+
+// randUint64n returns a uniform random number in [0, n), n > 0.
+func randUint64n(r *rand.Rand, n uint64) uint64 {
+	if n <= math.MaxInt64 {
+		return uint64(r.Int63n(int64(n)))
+	}
+	for {
+		if v := r.Uint64(); v < n {
+			return v
+		}
+	}
 }
 
 // Abbreviations.
