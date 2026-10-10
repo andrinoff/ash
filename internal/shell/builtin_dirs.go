@@ -256,11 +256,7 @@ func bCdh(sh *Shell, io *IO, args []string) int {
 		if i >= 25 {
 			break
 		}
-		show := d
-		if strings.HasPrefix(d, home) {
-			show = "~" + d[len(home):]
-		}
-		fmt.Fprintf(io.Out, "%2d) %s\n", i+1, show)
+		fmt.Fprintf(io.Out, "%2d) %s\n", i+1, tildeDir(d, home))
 	}
 	if sh.shared.readLine == nil {
 		return 0
@@ -288,7 +284,7 @@ func bPushd(sh *Shell, io *IO, args []string) int {
 			return st
 		}
 		sh.dirStack[len(sh.dirStack)-1] = cur
-		return printDirs(sh, io)
+		return printDirs(sh, io, "")
 	}
 	cur := sh.dir
 	target := args[1]
@@ -308,14 +304,14 @@ func bPushd(sh *Shell, io *IO, args []string) int {
 				return st
 			}
 			sh.dirStack = reversed(rot[1:])
-			return printDirs(sh, io)
+			return printDirs(sh, io, "")
 		}
 	}
 	if st := sh.changeDir(target, io, false); st != 0 {
 		return st
 	}
 	sh.dirStack = append(sh.dirStack, cur)
-	return printDirs(sh, io)
+	return printDirs(sh, io, "")
 }
 
 func reversed(s []string) []string {
@@ -326,37 +322,123 @@ func reversed(s []string) []string {
 	return out
 }
 
+// dirsIndex turns +N (from the left of `dirs`, 0 being the current
+// directory) or -N (from the right) into an index into that list.
+func dirsIndex(sh *Shell, arg string) (int, bool) {
+	if len(arg) < 2 || arg[0] != '+' && arg[0] != '-' {
+		return 0, false
+	}
+	n, err := strconv.Atoi(arg[1:])
+	if err != nil || n < 0 || n > len(sh.dirStack) {
+		return 0, false
+	}
+	if arg[0] == '-' {
+		n = len(sh.dirStack) - n
+	}
+	return n, true
+}
+
 func bPopd(sh *Shell, io *IO, args []string) int {
+	noCd, idx := false, 0
+	for _, a := range args[1:] {
+		if a == "-n" {
+			noCd = true
+			continue
+		}
+		n, ok := dirsIndex(sh, a)
+		if !ok {
+			if len(a) > 1 && (a[0] == '+' || a[0] == '-') {
+				fmt.Fprintf(io.Err, "popd: %s: directory stack index out of range\n", a)
+			} else {
+				fmt.Fprintf(io.Err, "popd: %s: invalid argument\n", a)
+			}
+			return 1
+		}
+		idx = n
+	}
 	if len(sh.dirStack) == 0 {
 		fmt.Fprintln(io.Err, "popd: directory stack empty")
 		return 1
 	}
-	top := sh.dirStack[len(sh.dirStack)-1]
-	if st := sh.changeDir(top, io, false); st != 0 {
-		return st
+	if idx == 0 && !noCd {
+		top := sh.dirStack[len(sh.dirStack)-1]
+		if st := sh.changeDir(top, io, false); st != 0 {
+			return st
+		}
+		sh.dirStack = sh.dirStack[:len(sh.dirStack)-1]
+		return printDirs(sh, io, "")
 	}
-	sh.dirStack = sh.dirStack[:len(sh.dirStack)-1]
-	return printDirs(sh, io)
+	if idx == 0 {
+		idx = 1 // popd -n drops the entry after the current directory
+	}
+	// drop entry idx of `dirs` without changing directory
+	i := len(sh.dirStack) - idx
+	sh.dirStack = append(sh.dirStack[:i:i], sh.dirStack[i+1:]...)
+	return printDirs(sh, io, "")
 }
 
 func bDirs(sh *Shell, io *IO, args []string) int {
-	if len(args) > 1 && args[1] == "-c" {
-		sh.dirStack = nil
-		return 0
+	mode := ""
+	for _, a := range args[1:] {
+		switch a {
+		case "-c":
+			sh.dirStack = nil
+			return 0
+		case "-l", "-p", "-v":
+			mode += a[1:]
+		default:
+			n, ok := dirsIndex(sh, a)
+			if !ok {
+				fmt.Fprintf(io.Err, "dirs: %s: invalid argument\n", a)
+				return 1
+			}
+			all := append([]string{sh.dir}, reversed(sh.dirStack)...)
+			d := all[n]
+			if !strings.Contains(mode, "l") {
+				d = tildeDir(d, sh.HomeDir())
+			}
+			fmt.Fprintln(io.Out, d)
+			return 0
+		}
 	}
-	return printDirs(sh, io)
+	return printDirs(sh, io, mode)
 }
 
-func printDirs(sh *Shell, io *IO) int {
+// tildeDir abbreviates the home directory in d to ~.
+func tildeDir(d, home string) string {
+	if home == "" || home == "/" {
+		return d
+	}
+	home = strings.TrimSuffix(home, "/")
+	if d == home || strings.HasPrefix(d, home+"/") {
+		return "~" + d[len(home):]
+	}
+	return d
+}
+
+// printDirs prints the directory stack; mode holds dirs' -l (full
+// paths), -p (one per line) and -v (numbered, one per line).
+func printDirs(sh *Shell, io *IO, mode string) int {
 	home := sh.HomeDir()
 	parts := []string{sh.dir}
 	parts = append(parts, reversed(sh.dirStack)...)
 	for i, d := range parts {
-		if strings.HasPrefix(d, home) {
-			parts[i] = "~" + d[len(home):]
+		if !strings.Contains(mode, "l") {
+			parts[i] = tildeDir(d, home)
 		}
 	}
-	fmt.Fprintln(io.Out, strings.Join(parts, " "))
+	switch {
+	case strings.Contains(mode, "v"):
+		for i, d := range parts {
+			fmt.Fprintf(io.Out, "%2d  %s\n", i, d)
+		}
+	case strings.Contains(mode, "p"):
+		for _, d := range parts {
+			fmt.Fprintln(io.Out, d)
+		}
+	default:
+		fmt.Fprintln(io.Out, strings.Join(parts, " "))
+	}
 	return 0
 }
 
