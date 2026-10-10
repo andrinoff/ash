@@ -69,10 +69,13 @@ func bSource(sh *Shell, io *IO, args []string) int {
 		return 2
 	}
 	sh.srcStack = append(sh.srcStack, name)
+	// Arguments become $argv for the file; afterwards the scope gets
+	// back exactly what it had (nothing, if argv lived elsewhere).
+	argScope := sh.scope
 	var saved *Var
 	if len(args) > 2 {
-		saved, _ = sh.lookupVar("argv")
-		sh.scope.put("argv", &Var{Vals: args[2:]})
+		saved = argScope.get("argv")
+		argScope.put("argv", &Var{Vals: args[2:]})
 	}
 	prev := sh.curSrc
 	sh.curSrc = src
@@ -84,9 +87,7 @@ func bSource(sh *Shell, io *IO, args []string) int {
 	}
 	sh.curSrc = prev
 	if len(args) > 2 {
-		if saved != nil {
-			sh.scope.put("argv", saved)
-		}
+		argScope.put("argv", saved)
 	}
 	sh.srcStack = sh.srcStack[:len(sh.srcStack)-1]
 	if sh.ctrl == ctrlReturn {
