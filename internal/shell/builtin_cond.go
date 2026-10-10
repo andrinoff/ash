@@ -346,6 +346,20 @@ func parseTestNumber(s string) (float64, error) {
 	return f, err
 }
 
+// arithOperand evaluates an operand of -eq and friends inside [[ ]] as
+// an arithmetic expression, like bash ([[ $unset -eq 0 ]] is true), but
+// leaves plain numbers alone so "08" stays decimal.
+func (sh *Shell) arithOperand(s string) (string, error) {
+	if _, err := parseTestNumber(s); err == nil {
+		return s, nil
+	}
+	v, err := sh.arith(s)
+	if err != nil {
+		return "", err
+	}
+	return strconv.FormatInt(v, 10), nil
+}
+
 // evalTest evaluates a [[ ]] expression.
 func (sh *Shell) evalTest(e syntax.TestExpr, io *IO) (bool, error) {
 	switch e := e.(type) {
@@ -419,6 +433,15 @@ func (sh *Shell) evalTest(e syntax.TestExpr, io *IO) (bool, error) {
 		y, err := sh.expandString(yw, io)
 		if err != nil {
 			return false, err
+		}
+		switch e.Op {
+		case "-eq", "-ne", "-lt", "-le", "-gt", "-ge":
+			if x, err = sh.arithOperand(x); err != nil {
+				return false, err
+			}
+			if y, err = sh.arithOperand(y); err != nil {
+				return false, err
+			}
 		}
 		return sh.binaryTest(e.Op, x, y)
 	}

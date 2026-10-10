@@ -15,3 +15,18 @@ func TestTestLargeIntegers(t *testing.T) {
 		t.Fatalf("got %q (stderr %q), want %q", out, errOut, want)
 	}
 }
+
+func TestDoubleBracketArithmeticOperands(t *testing.T) {
+	out, errOut, _ := runScript(t, `
+x=5
+[[ x -eq 5 ]]; echo $?
+[[ 1+1 -eq 2 ]]; echo $?
+[[ "" -eq 0 ]]; echo $?
+[[ $unset -gt 0 ]]; echo $?
+[[ 08 -eq 8 ]]; echo $?
+[ "" -eq 0 ] 2>/dev/null; echo $?
+`)
+	if want := "0\n0\n0\n1\n0\n2\n"; out != want {
+		t.Fatalf("got %q (stderr %q), want %q", out, errOut, want)
+	}
+}
