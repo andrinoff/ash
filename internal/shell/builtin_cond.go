@@ -1,7 +1,9 @@
 package shell
 
 import (
+	"cmp"
 	"fmt"
+	"math"
 	"os"
 	"regexp"
 	"strconv"
@@ -267,27 +269,23 @@ func (sh *Shell) binaryTest(op, x, y string) (bool, error) {
 	case ">":
 		return x > y, nil
 	case "-eq", "-ne", "-lt", "-le", "-gt", "-ge":
-		a, err1 := parseTestNumber(x)
-		b, err2 := parseTestNumber(y)
-		if err1 != nil {
-			return false, errorf("invalid integer '%s'", x)
-		}
-		if err2 != nil {
-			return false, errorf("invalid integer '%s'", y)
+		c, err := compareNumbers(x, y)
+		if err != nil {
+			return false, err
 		}
 		switch op {
 		case "-eq":
-			return a == b, nil
+			return c == 0, nil
 		case "-ne":
-			return a != b, nil
+			return c != 0, nil
 		case "-lt":
-			return a < b, nil
+			return c < 0, nil
 		case "-le":
-			return a <= b, nil
+			return c <= 0, nil
 		case "-gt":
-			return a > b, nil
+			return c > 0, nil
 		}
-		return a >= b, nil
+		return c >= 0, nil
 	case "-nt", "-ot":
 		s1, e1 := os.Stat(sh.absPath(x))
 		s2, e2 := os.Stat(sh.absPath(y))
@@ -315,13 +313,37 @@ func (sh *Shell) binaryTest(op, x, y string) (bool, error) {
 	return false, errorf("unknown operator %s", op)
 }
 
+// compareNumbers compares two numbers for -eq and friends: exactly when
+// both are integers (going through float64 lost precision past 2^53, so
+// large values compared equal), and like fish when either is a decimal.
+func compareNumbers(x, y string) (int, error) {
+	a, err1 := strconv.ParseInt(strings.TrimSpace(x), 10, 64)
+	b, err2 := strconv.ParseInt(strings.TrimSpace(y), 10, 64)
+	if err1 == nil && err2 == nil {
+		return cmp.Compare(a, b), nil
+	}
+	fa, err := parseTestNumber(x)
+	if err != nil {
+		return 0, errorf("invalid integer '%s'", x)
+	}
+	fb, err := parseTestNumber(y)
+	if err != nil {
+		return 0, errorf("invalid integer '%s'", y)
+	}
+	return cmp.Compare(fa, fb), nil
+}
+
 // parseTestNumber accepts integers and (like fish) decimals.
 func parseTestNumber(s string) (float64, error) {
 	s = strings.TrimSpace(s)
 	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
 		return float64(n), nil
 	}
-	return strconv.ParseFloat(s, 64)
+	f, err := strconv.ParseFloat(s, 64)
+	if err == nil && (math.IsNaN(f) || math.IsInf(f, 0)) {
+		return 0, errorf("invalid number")
+	}
+	return f, err
 }
 
 // evalTest evaluates a [[ ]] expression.
