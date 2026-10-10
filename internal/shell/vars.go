@@ -17,6 +17,8 @@ type Var struct {
 	Export   bool
 	ReadOnly bool
 	Path     bool // PATH-like: split on ':' when set from a string, joined with ':' when exported
+
+	universal bool // saved in the universal variable file (set -U)
 }
 
 func (v *Var) String() string {
@@ -361,8 +363,13 @@ func (sh *Shell) SetVar(name string, vals []string, o setOpts) error {
 	if nv.Path {
 		nv.Vals = splitPathList(vals)
 	}
+	// Changing a universal variable without naming a scope changes the
+	// saved one, as in fish; set -g makes a global that shadows it.
+	if o.scope == setUniversal || prev != nil && prev.universal && (o.scope == setAuto || o.scope == setShAuto) {
+		nv.universal = true
+	}
 	target.put(name, nv)
-	if o.scope == setUniversal {
+	if nv.universal {
 		sh.saveUniversal(name, nv)
 	}
 	sh.varChanged(name)
@@ -380,6 +387,17 @@ func (sh *Shell) setExported(name, val string) {
 
 // UnsetVar removes a variable from the innermost scope that has it.
 func (sh *Shell) UnsetVar(name string, sc setScope) error {
+	switch v := sh.global.get(name); {
+	case sc == setUniversal && (v == nil || !v.universal):
+		// not loaded here, or shadowed by a global: erase only the
+		// saved variable
+		if sh.saveUniversal(name, nil) {
+			return nil
+		}
+		return errNotSet
+	case sc == setGlobal && v != nil && v.universal:
+		return errNotSet // there is no global, only the universal variable
+	}
 	var target *scope
 	switch sc {
 	case setGlobal, setUniversal:
@@ -400,12 +418,18 @@ func (sh *Shell) UnsetVar(name string, sc setScope) error {
 	if target == nil {
 		return errNotSet
 	}
-	if v := target.get(name); v.ReadOnly {
+	v := target.get(name)
+	if v.ReadOnly {
 		return errorf("%s: read-only variable", name)
 	}
 	target.put(name, nil)
-	if sc == setUniversal {
+	if v.universal {
 		sh.saveUniversal(name, nil)
+	} else if target == sh.global {
+		// erasing a global that shadowed a universal variable uncovers it
+		if u := sh.universalVar(name); u != nil {
+			sh.global.put(name, u)
+		}
 	}
 	sh.varChanged(name)
 	return nil
