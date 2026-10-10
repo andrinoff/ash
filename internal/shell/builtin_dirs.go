@@ -35,11 +35,13 @@ func bPwd(sh *Shell, io *IO, args []string) int {
 
 func bCd(sh *Shell, io *IO, args []string) int {
 	a := args[1:]
+	physical := false
 	for len(a) > 0 && (a[0] == "-L" || a[0] == "-P" || a[0] == "--") {
 		if a[0] == "--" {
 			a = a[1:]
 			break
 		}
+		physical = a[0] == "-P"
 		a = a[1:]
 	}
 	var target string
@@ -62,21 +64,34 @@ func bCd(sh *Shell, io *IO, args []string) int {
 		fmt.Fprintln(io.Err, "cd: too many arguments")
 		return 1
 	}
-	return sh.changeDir(target, io, len(a) > 0 && a[0] == "-")
+	return sh.chdir(target, io, len(a) > 0 && a[0] == "-", physical)
 }
 
 // changeDir changes the shell's directory, honoring CDPATH.
 func (sh *Shell) changeDir(target string, io *IO, echoDir bool) int {
+	return sh.chdir(target, io, echoDir, false)
+}
+
+// cdpathApplies reports whether cd looks for target in $CDPATH: not for
+// absolute paths or ones starting with ./ or ../ (but .config does).
+func cdpathApplies(target string) bool {
+	return !filepath.IsAbs(target) && target != "." && target != ".." &&
+		!strings.HasPrefix(target, "./") && !strings.HasPrefix(target, "../")
+}
+
+// chdir is changeDir; physical (cd -P) resolves symbolic links.
+func (sh *Shell) chdir(target string, io *IO, echoDir, physical bool) int {
 	dest := ""
-	if !filepath.IsAbs(target) && !strings.HasPrefix(target, ".") {
+	if cdpathApplies(target) {
 		for _, cp := range sh.GetList("CDPATH") {
-			if cp == "" {
-				continue
+			dir := cp
+			if dir == "" {
+				dir = "." // an empty entry is the current directory
 			}
-			cand := filepath.Join(sh.absPath(sh.expandTildeString(cp)), target)
+			cand := filepath.Join(sh.absPath(sh.expandTildeString(dir)), target)
 			if st, err := os.Stat(cand); err == nil && st.IsDir() {
 				dest = cand
-				if cp != "." {
+				if dir != "." {
 					echoDir = true
 				}
 				break
@@ -87,6 +102,11 @@ func (sh *Shell) changeDir(target string, io *IO, echoDir bool) int {
 		dest = sh.absPath(target)
 	}
 	dest = filepath.Clean(dest)
+	if physical {
+		if r, err := filepath.EvalSymlinks(dest); err == nil {
+			dest = r
+		}
+	}
 	st, err := os.Stat(dest)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
