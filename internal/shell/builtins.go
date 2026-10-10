@@ -181,7 +181,7 @@ func bEcho(sh *Shell, io *IO, args []string) int {
 		if escapes {
 			u := unescapeEcho(a)
 			b.WriteString(u)
-			if strings.Contains(a, "\\c") {
+			if echoStops(a) {
 				io.Out.WriteString(b.String())
 				return 0
 			}
@@ -196,6 +196,20 @@ func bEcho(sh *Shell, io *IO, args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// echoStops reports whether s has a \c escape, which ends echo -e's
+// output. An escaped backslash before c (\\c) is not one.
+func echoStops(s string) bool {
+	for i := 0; i+1 < len(s); i++ {
+		if s[i] == '\\' {
+			if s[i+1] == 'c' {
+				return true
+			}
+			i++
+		}
+	}
+	return false
 }
 
 func bExit(sh *Shell, io *IO, args []string) int {
