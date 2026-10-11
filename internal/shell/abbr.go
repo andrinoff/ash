@@ -12,6 +12,7 @@ type Abbr struct {
 	Expansion string
 	Position  string // "command" or "anywhere"
 	Regex     *regexp.Regexp
+	RegexSrc  string // --regex as given
 	Function  string
 	SetCursor string // marker, "" if unset
 	Command   string // --command: only for this command
@@ -199,12 +200,14 @@ func bAbbr(sh *Shell, io *IO, args []string) int {
 				b.WriteString(" --set-cursor=" + Quote(x.SetCursor))
 			}
 			if x.Regex != nil {
-				b.WriteString(" --regex " + Quote(x.Regex.String()))
+				b.WriteString(" --regex " + Quote(x.RegexSrc))
 			}
-			b.WriteString(" -- " + Quote(x.Name))
+			// options before --, so the output can be run again
 			if x.Function != "" {
 				b.WriteString(" --function " + Quote(x.Function))
-			} else {
+			}
+			b.WriteString(" -- " + Quote(x.Name))
+			if x.Function == "" {
 				b.WriteString(" " + Quote(x.Expansion))
 			}
 			fmt.Fprintln(io.Out, b.String())
@@ -243,9 +246,16 @@ func bAbbr(sh *Shell, io *IO, args []string) int {
 		}
 		t.mu.Lock()
 		x, ok := t.index[rest[0]]
+		_, taken := t.index[rest[1]]
 		t.mu.Unlock()
 		if !ok {
+			fmt.Fprintf(io.Err, "abbr --rename: no abbreviation named %s\n", rest[0])
 			return 1
+		}
+		if taken {
+			// fish refuses rather than silently replacing the other one
+			fmt.Fprintf(io.Err, "abbr --rename: abbreviation %s already exists, cannot rename %s\n", rest[1], rest[0])
+			return 2
 		}
 		t.remove(rest[0])
 		cp := *x
@@ -275,7 +285,7 @@ func bAbbr(sh *Shell, io *IO, args []string) int {
 			fmt.Fprintf(io.Err, "abbr: invalid regex: %v\n", err)
 			return 2
 		}
-		ab.Regex = re
+		ab.Regex, ab.RegexSrc = re, regex
 	}
 	if ab.Position != "command" && ab.Position != "anywhere" {
 		fmt.Fprintf(io.Err, "abbr: invalid position '%s'\n", ab.Position)
