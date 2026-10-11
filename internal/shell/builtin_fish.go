@@ -225,6 +225,11 @@ done:
 			fmt.Fprintf(io.Err, "functions: function '%s' does not exist\n", a[0])
 			return 1
 		}
+		if sh.lookupFunc(a[1]) != nil {
+			// fish won't overwrite a function with a copy
+			fmt.Fprintf(io.Err, "functions: function '%s' already exists, cannot copy '%s'\n", a[1], a[0])
+			return 1
+		}
 		cp := *fn
 		cp.Name = a[1]
 		cp.OnEvent, cp.OnVariable, cp.OnSignal = nil, nil, nil

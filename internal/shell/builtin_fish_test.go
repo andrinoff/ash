@@ -40,3 +40,15 @@ random 0 2 10
 		t.Fatalf("random START STEP END gave %d", n[3])
 	}
 }
+
+func TestFunctionsCopyWontOverwrite(t *testing.T) {
+	out, errOut, _ := runFish(t, `
+function foo; echo foo; end
+function bar; echo bar; end
+functions -c foo bar; echo $status
+bar
+`)
+	if want := "1\nbar\n"; out != want || errOut == "" {
+		t.Fatalf("got %q (stderr %q), want %q", out, errOut, want)
+	}
+}
