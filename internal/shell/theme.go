@@ -366,8 +366,9 @@ func (sh *Shell) loadTheme(src string) error {
 	if v := os.Getenv("ASH_THEME_MODE"); v == "light" {
 		dark = false
 	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	// Start from the defaults: roles the previous theme set but this one
+	// doesn't must not keep the old theme's colors.
+	styles := DefaultTheme().styles
 	for _, line := range strings.Split(src, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -395,7 +396,10 @@ func (sh *Shell) loadTheme(src string) error {
 		default:
 			continue
 		}
-		t.styles[role] = ParseStyle(fields[1:])
+		styles[role] = ParseStyle(fields[1:])
 	}
+	t.mu.Lock()
+	t.styles = styles
+	t.mu.Unlock()
 	return nil
 }
