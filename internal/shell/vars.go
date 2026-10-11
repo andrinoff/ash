@@ -105,6 +105,21 @@ func (sh *Shell) lookupVar(name string) (*Var, *scope) {
 	return nil, nil
 }
 
+// localScopeOf returns the scope holding a local variable name: the
+// blocks of the current function (or top level) and the function scope
+// itself, as fish's set -ql and set -el see them. nil if none has it.
+func (sh *Shell) localScopeOf(name string) *scope {
+	for s := sh.scope; s != nil; s = s.parent {
+		if s.get(name) != nil {
+			return s
+		}
+		if s.kind != scopeBlock {
+			break
+		}
+	}
+	return nil
+}
+
 // funcScope returns the innermost function scope, or the global scope.
 func (sh *Shell) funcScope() *scope {
 	for s := sh.scope; s != nil; s = s.parent {
@@ -405,9 +420,7 @@ func (sh *Shell) UnsetVar(name string, sc setScope) error {
 			target = sh.global
 		}
 	case setLocal:
-		if sh.scope.get(name) != nil {
-			target = sh.scope
-		}
+		target = sh.localScopeOf(name)
 	case setFunction:
 		if fs := sh.funcScope(); fs.get(name) != nil {
 			target = fs

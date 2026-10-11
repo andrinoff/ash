@@ -41,6 +41,19 @@ func (sh *Shell) universalVar(name string) *Var {
 	return u.vars[name]
 }
 
+// universalNames lists the universal variables this shell knows, sorted.
+func (sh *Shell) universalNames() []string {
+	u := sh.shared.universal
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	names := make([]string, 0, len(u.vars))
+	for n := range u.vars {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // readUniversal parses the variables file. Each line is "FLAGS NAME"
 // followed by one \x1e-separated field per element.
 func readUniversal(path string) map[string]*Var {

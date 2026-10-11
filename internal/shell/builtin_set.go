@@ -11,7 +11,8 @@ var shOptionLetters = "euxfvnCabhmBH"
 // isPosixSet decides whether `set` arguments are sh-style options
 // (set -e, set -euo pipefail, set -- a b) rather than fish variables.
 func isPosixSet(args []string) bool {
-	if len(args) == 0 {
+	if len(args) == 0 || len(args) == 1 && args[0] == "-n" {
+		// set -n lists variable names (fish); sh's noexec isn't supported
 		return false
 	}
 	if args[0] == "--" || args[0] == "-o" || args[0] == "+o" {
@@ -227,6 +228,9 @@ func bSet(sh *Shell, io *IO, args []string) int {
 	rest := a[i:]
 	_ = long
 	if query {
+		if len(rest) == 0 {
+			return 255 // fish: nothing to test
+		}
 		missing := 0
 		for _, n := range rest {
 			name, idx, err := splitVarIndex(n)
@@ -289,9 +293,19 @@ func bSet(sh *Shell, io *IO, args []string) int {
 		return status
 	}
 	if len(rest) == 0 {
-		// list variables
-		for _, n := range sh.VarNames() {
+		// list variables, only those in the scope given (set -l, -g...)
+		list := sh.VarNames()
+		if scoped && o.scope == setUniversal {
+			list = sh.universalNames()
+		}
+		for _, n := range list {
+			if scoped && !sh.inScope(n, o.scope) {
+				continue
+			}
 			v, _ := sh.lookupVar(n)
+			if scoped {
+				v = sh.scopedVar(n, o.scope)
+			}
 			if o.export == 1 && (v == nil || !v.Export) {
 				continue
 			}
@@ -303,9 +317,16 @@ func bSet(sh *Shell, io *IO, args []string) int {
 				continue
 			}
 			vals, _ := sh.getVar(n)
+			if scoped && v != nil {
+				vals = v.Vals
+			}
 			q := make([]string, len(vals))
 			for k, x := range vals {
 				q[k] = Quote(x)
+			}
+			if len(q) == 0 {
+				fmt.Fprintln(io.Out, n)
+				continue
 			}
 			fmt.Fprintf(io.Out, "%s %s\n", n, strings.Join(q, " "))
 		}
@@ -359,19 +380,57 @@ func (sh *Shell) queryVar(name string, sc setScope, scoped bool) ([]string, bool
 	if !scoped {
 		return sh.getVar(name)
 	}
-	var s *scope
-	switch sc {
-	case setGlobal, setUniversal:
-		s = sh.global
-	case setLocal:
-		s = sh.scope
-	case setFunction:
-		s = sh.funcScope()
-	}
-	if v := s.get(name); v != nil {
+	if v := sh.scopedVar(name, sc); v != nil {
 		return v.Vals, true
 	}
 	return nil, false
+}
+
+// scopedVar returns the variable name as seen in the scope named by a
+// set option (-l, -g, -U or -f), or nil.
+func (sh *Shell) scopedVar(name string, sc setScope) *Var {
+	var v *Var
+	switch sc {
+	case setGlobal:
+		if v = sh.global.get(name); v != nil && v.universal {
+			v = nil
+		}
+	case setUniversal:
+		v = sh.universalVar(name)
+	case setLocal:
+		if s := sh.localScopeOf(name); s != nil {
+			v = s.get(name)
+		}
+	case setFunction:
+		v = sh.funcScope().get(name)
+	}
+	return v
+}
+
+// inScope reports whether variable name is listed by set -l, -g, -U or
+// -f (sc).
+func (sh *Shell) inScope(name string, sc setScope) bool {
+	switch sc {
+	case setLocal:
+		for s := sh.scope; s != nil && s.kind != scopeGlobal; s = s.parent {
+			if s.get(name) != nil {
+				return true
+			}
+			if s.kind == scopeFunc {
+				break
+			}
+		}
+		return false
+	case setFunction:
+		s := sh.funcScope()
+		return s != sh.global && s.get(name) != nil
+	case setGlobal:
+		v := sh.global.get(name)
+		return v != nil && !v.universal
+	case setUniversal:
+		return sh.universalVar(name) != nil
+	}
+	return true
 }
 
 func (sh *Shell) showVar(io *IO, name string) {
