@@ -23,3 +23,12 @@ begin; . `+Quote(p)+` r; end; echo "block: $# [$1]"`)
 		t.Fatalf("got %q (stderr %q), want %q", out, errOut, want)
 	}
 }
+
+func TestCommandVAndTypeP(t *testing.T) {
+	// command -V printed bare names like -v; type -P complained about a
+	// name it didn't find instead of failing quietly like bash.
+	out, errOut, _ := runScript(t, `command -V cd; command -V nonexistent-ash-cmd; echo $?; type -P nonexistent-ash-cmd; echo $?; type -- cd`)
+	if want := "cd is a builtin\n1\n1\ncd is a builtin\n"; out != want || errOut != "type: could not find 'nonexistent-ash-cmd'\n" {
+		t.Fatalf("got %q (stderr %q), want %q", out, errOut, want)
+	}
+}

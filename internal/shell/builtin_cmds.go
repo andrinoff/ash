@@ -222,7 +222,11 @@ func bUnalias(sh *Shell, io *IO, args []string) int {
 func bType(sh *Shell, io *IO, args []string) int {
 	quiet, all, typeOnly, pathOnly, forcePath, noFuncs := false, false, false, false, false, false
 	var names []string
-	for _, a := range args[1:] {
+	for i, a := range args[1:] {
+		if a == "--" && names == nil {
+			names = append(names, args[i+2:]...)
+			break
+		}
 		switch a {
 		case "-q", "--query":
 			quiet = true
@@ -316,7 +320,7 @@ func bType(sh *Shell, io *IO, args []string) int {
 		}
 		if !found {
 			status = 1
-			if !quiet && !typeOnly && !pathOnly {
+			if !quiet && !typeOnly && !pathOnly && !forcePath {
 				fmt.Fprintf(io.Err, "type: could not find '%s'\n", name)
 			}
 		}
@@ -340,7 +344,7 @@ func describeCmd(name, kind, desc string) string {
 
 func bCommand(sh *Shell, io *IO, args []string) int {
 	a := args[1:]
-	query, verbose, all := false, false, false
+	query, verbose, all, describe := false, false, false, false
 	for len(a) > 0 && strings.HasPrefix(a[0], "-") && len(a[0]) > 1 {
 		opt := a[0]
 		if opt == "--" {
@@ -353,7 +357,7 @@ func bCommand(sh *Shell, io *IO, args []string) int {
 		case "-v", "-s", "--search":
 			verbose = true
 		case "-V":
-			verbose = true
+			describe = true
 		case "-a", "--all":
 			all = true
 		case "-p":
@@ -363,8 +367,10 @@ func bCommand(sh *Shell, io *IO, args []string) int {
 				switch c {
 				case 'q':
 					query = true
-				case 'v', 's', 'V':
+				case 'v', 's':
 					verbose = true
+				case 'V':
+					describe = true
 				case 'a':
 					all = true
 				case 'p':
@@ -381,6 +387,10 @@ func bCommand(sh *Shell, io *IO, args []string) int {
 	}
 	if len(a) == 0 {
 		return 0
+	}
+	if describe && !query {
+		// bash: say what each name is, like type
+		return bType(sh, io, append([]string{"type", "--"}, a...))
 	}
 	if query || verbose {
 		status := 1
