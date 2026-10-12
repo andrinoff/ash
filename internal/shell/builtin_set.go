@@ -380,7 +380,7 @@ func (sh *Shell) queryVar(name string, sc setScope, scoped bool) ([]string, bool
 	if !scoped {
 		return sh.getVar(name)
 	}
-	if v := sh.scopedVar(name, sc); v != nil {
+	if v := sh.scopedVar(name, sc); v != nil && !v.unset {
 		return v.Vals, true
 	}
 	return nil, false

@@ -19,6 +19,7 @@ type Var struct {
 	Path     bool // PATH-like: split on ':' when set from a string, joined with ':' when exported
 
 	universal bool // saved in the universal variable file (set -U)
+	unset     bool // declared without a value (local x, export x): not set yet
 }
 
 func (v *Var) String() string {
@@ -242,7 +243,7 @@ func (sh *Shell) getVar(name string) ([]string, bool) {
 	if vals, ok := sh.specialVar(name); ok {
 		return vals, vals != nil || name == "@" || name == "*" || name == "pipestatus" || name == "argv"
 	}
-	if v, _ := sh.lookupVar(name); v != nil {
+	if v, _ := sh.lookupVar(name); v != nil && !v.unset {
 		return v.Vals, true
 	}
 	return nil, false
@@ -293,6 +294,7 @@ type setOpts struct {
 	export   int8 // 1: export, -1: unexport, 0: keep
 	readOnly bool
 	path     int8 // 1: force path var, -1: force non-path, 0: by name
+	unset    bool // declare without a value, as bash's local x and export x do
 }
 
 // SetVar assigns a variable. It is the single entry point for writes so
@@ -349,7 +351,7 @@ func (sh *Shell) SetVar(name string, vals []string, o setOpts) error {
 	if prev != nil && prev.ReadOnly {
 		return errorf("%s: read-only variable", name)
 	}
-	nv := &Var{Vals: vals}
+	nv := &Var{Vals: vals, unset: o.unset}
 	if prev != nil {
 		nv.Export = prev.Export
 		nv.Path = prev.Path
@@ -514,7 +516,7 @@ func (sh *Shell) Environ() []string {
 				continue
 			}
 			seen[name] = true
-			if v.Export {
+			if v.Export && !v.unset {
 				sep := " "
 				if v.Path {
 					sep = ":"

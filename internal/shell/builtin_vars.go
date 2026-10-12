@@ -45,20 +45,25 @@ func (sh *Shell) declArgs(io *IO, cmd string, args []string, o setOpts) int {
 			continue
 		}
 		if !hasVal {
+			// Like bash, a name declared without a value (local x,
+			// export x, declare x) stays unset until it is assigned:
+			// ${x-default} gives default and export x puts nothing in
+			// the environment.
 			v, where := sh.lookupVar(name)
 			switch {
 			case o.scope == setFunction || o.scope == setLocal:
-				// local x: create empty local (keeping value if already local)
+				// local x: a new unset local (keeping the value if already local)
 				target := sh.funcScope()
 				if where == target && v != nil {
 					break
 				}
-				sh.SetVar(name, []string{}, o)
+				lo := o
+				lo.unset = true
+				sh.SetVar(name, []string{}, lo)
 			case v != nil:
-				sh.SetVar(name, v.Vals, setOpts{scope: setShAuto, export: o.export, readOnly: o.readOnly})
+				sh.SetVar(name, v.Vals, setOpts{scope: setShAuto, export: o.export, readOnly: o.readOnly, unset: v.unset})
 			default:
-				// export FOO with no value: mark for export when set
-				sh.SetVar(name, []string{}, setOpts{scope: setGlobal, export: o.export, readOnly: o.readOnly})
+				sh.SetVar(name, []string{}, setOpts{scope: setGlobal, export: o.export, readOnly: o.readOnly, unset: true})
 			}
 			continue
 		}
@@ -77,6 +82,15 @@ func (sh *Shell) declArgs(io *IO, cmd string, args []string, o setOpts) int {
 		}
 	}
 	return status
+}
+
+// declValue is "=value" for listings, or nothing for a variable that
+// was declared without a value.
+func declValue(v *Var) string {
+	if v.unset {
+		return ""
+	}
+	return "=" + Quote(v.String())
 }
 
 func bExport(sh *Shell, io *IO, args []string) int {
@@ -99,7 +113,7 @@ func bExport(sh *Shell, io *IO, args []string) int {
 		for _, n := range names {
 			v, _ := sh.lookupVar(n)
 			if v != nil && v.Export {
-				fmt.Fprintf(io.Out, "export %s=%s\n", n, Quote(v.String()))
+				fmt.Fprintln(io.Out, "export "+n+declValue(v))
 			}
 		}
 		return 0
@@ -140,7 +154,7 @@ func bReadonly(sh *Shell, io *IO, args []string) int {
 	if len(a) == 0 {
 		for _, n := range sh.VarNames() {
 			if v, _ := sh.lookupVar(n); v != nil && v.ReadOnly {
-				fmt.Fprintf(io.Out, "readonly %s=%s\n", n, Quote(v.String()))
+				fmt.Fprintln(io.Out, "readonly "+n+declValue(v))
 			}
 		}
 		return 0
@@ -223,7 +237,7 @@ func bDeclare(sh *Shell, io *IO, args []string) int {
 				fmt.Fprintf(io.Out, "declare -a %s=(%s)\n", n, strings.Join(q, " "))
 				continue
 			}
-			fmt.Fprintf(io.Out, "declare %s %s=%s\n", flags, n, Quote(v.String()))
+			fmt.Fprintf(io.Out, "declare %s %s%s\n", flags, n, declValue(v))
 		}
 		return 0
 	}
