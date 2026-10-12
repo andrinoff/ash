@@ -262,12 +262,13 @@ func (r *REPL) importHistory() {
 }
 
 // readLine is used by the read builtin when stdin is the terminal.
-func (r *REPL) readLine(prompt string) (string, error) {
+func (r *REPL) readLine(prompt, initial string) (string, error) {
 	line, err := r.ed.ReadLine(editor.ReadOpts{
 		Prompt: func(string) func() editor.Prompt {
 			return func() editor.Prompt { return editor.Prompt{Left: prompt} }
 		},
-		Simple: true,
+		Initial: initial,
+		Simple:  true,
 	})
 	if err == editor.ErrInterrupt {
 		// ctrl-c in `read` stops the whole command, like in bash

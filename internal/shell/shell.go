@@ -178,7 +178,7 @@ type shared struct {
 	session   string
 	termCols  atomic.Int32
 	termRows  atomic.Int32
-	readLine  func(prompt string) (string, error)
+	readLine  func(prompt, initial string) (string, error)
 	transient atomic.Bool
 }
 
@@ -593,8 +593,11 @@ func (sh *Shell) SetTermSize(cols, rows int) {
 	sh.shared.termRows.Store(int32(rows))
 }
 
-// SetReadLine lets `read` use the interactive editor.
-func (sh *Shell) SetReadLine(f func(prompt string) (string, error)) { sh.shared.readLine = f }
+// SetReadLine lets `read` and `vared` use the interactive editor; f
+// edits a line that starts out as initial.
+func (sh *Shell) SetReadLine(f func(prompt, initial string) (string, error)) {
+	sh.shared.readLine = f
+}
 
 func (sh *Shell) optFlags() string {
 	var b strings.Builder

@@ -261,7 +261,7 @@ func bCdh(sh *Shell, io *IO, args []string) int {
 	if sh.shared.readLine == nil {
 		return 0
 	}
-	ans, err := sh.shared.readLine("cdh> ")
+	ans, err := sh.shared.readLine("cdh> ", "")
 	if err != nil {
 		return 1
 	}

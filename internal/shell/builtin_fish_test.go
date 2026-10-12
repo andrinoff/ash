@@ -41,6 +41,22 @@ random 0 2 10
 	}
 }
 
+func TestVaredStartsFromTheValue(t *testing.T) {
+	sh := New()
+	sh.Init()
+	var prompts []string
+	sh.SetReadLine(func(prompt, initial string) (string, error) {
+		prompts = append(prompts, prompt+"|"+initial)
+		return initial + "XY", nil
+	})
+	out := &lockedBuffer{}
+	io := &IO{In: &Stream{TTY: true}, Out: &Stream{W: out}, Err: &Stream{W: &lockedBuffer{}}}
+	sh.RunString(`set x hello; vared x; echo $x; read -e -i def -p 'p> ' y; echo $y`, "test.fish", io)
+	if want := "helloXY\ndefXY\n"; out.String() != want {
+		t.Fatalf("got %q, want %q (prompts %q)", out.String(), want, prompts)
+	}
+}
+
 func TestFunctionsCopyWontOverwrite(t *testing.T) {
 	out, errOut, _ := runFish(t, `
 function foo; echo foo; end

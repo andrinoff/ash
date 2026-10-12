@@ -21,7 +21,7 @@ import (
 func bRead(sh *Shell, io *IO, args []string) int {
 	var (
 		raw, silent, list, line, shellMode bool
-		prompt                             string
+		prompt, initial                    string
 		delim                              = "\n"
 		nchars                             = -1
 		timeout                            time.Duration
@@ -75,8 +75,10 @@ func bRead(sh *Shell, io *IO, args []string) int {
 			case "--prompt-str", "--prompt":
 				// fish's --prompt is a command; ash shows it as text
 				prompt = value()
-			case "--right-prompt", "--command":
+			case "--right-prompt":
 				value()
+			case "--command":
+				initial = value()
 			case "--silent":
 				silent = true
 			case "--nchars":
@@ -171,7 +173,7 @@ func bRead(sh *Shell, io *IO, args []string) int {
 				}
 				fd = n
 			case 'i', 'c':
-				value() // initial text for the editor
+				initial = value() // text to start editing from
 			case 'l':
 				o.scope = setLocal
 			case 'g':
@@ -223,7 +225,7 @@ func bRead(sh *Shell, io *IO, args []string) int {
 	}
 	record := func() (*readText, readEnd) {
 		if useEditor {
-			return sh.readEditorLine(prompt, spec.raw)
+			return sh.readEditorLine(prompt, initial, spec.raw)
 		}
 		return readRecord(in, &spec)
 	}
@@ -693,10 +695,10 @@ func readTermMode(in *Stream, silent, cbreak bool, errOut *Stream) func() {
 
 // readEditorLine reads a line with the interactive editor, handling
 // backslashes like readRecord (a trailing one continues the line).
-func (sh *Shell) readEditorLine(prompt string, raw bool) (*readText, readEnd) {
+func (sh *Shell) readEditorLine(prompt, initial string, raw bool) (*readText, readEnd) {
 	t := &readText{}
 	for {
-		s, err := sh.shared.readLine(prompt)
+		s, err := sh.shared.readLine(prompt, initial)
 		if err != nil {
 			if sh.interrupted() {
 				return t, readInterrupted
@@ -727,6 +729,6 @@ func (sh *Shell) readEditorLine(prompt string, raw bool) (*readText, readEnd) {
 		if !more {
 			return t, readOK
 		}
-		prompt = ""
+		prompt, initial = "", ""
 	}
 }

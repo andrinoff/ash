@@ -415,10 +415,9 @@ func bVared(sh *Shell, io *IO, args []string) int {
 		return 1
 	}
 	name := args[1]
-	if sh.Editor != nil {
-		sh.Editor.SetBuffer(sh.Get(name), len(sh.Get(name)))
-	}
-	v, err := sh.shared.readLine(name + "> ")
+	// start from the current value (setting the editor's buffer before
+	// it starts reading was lost, so vared began empty)
+	v, err := sh.shared.readLine(name+"> ", sh.Get(name))
 	if err != nil {
 		return 1
 	}
