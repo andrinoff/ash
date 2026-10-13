@@ -688,6 +688,15 @@ func bTrap(sh *Shell, io *IO, args []string) int {
 			fmt.Fprintf(io.Err, "trap: %s: invalid signal specification\n", s)
 			return 1
 		}
+		if name == "EXIT" && sh.subshell {
+			// A subshell's EXIT trap runs when the subshell ends and
+			// must not replace its parent's.
+			sh.exitTrap = nil
+			if code != "-" {
+				sh.exitTrap = &code
+			}
+			continue
+		}
 		t.mu.Lock()
 		if code == "-" {
 			delete(t.handlers, name)
@@ -698,4 +707,20 @@ func bTrap(sh *Shell, io *IO, args []string) int {
 		t.sync(sh, name)
 	}
 	return 0
+}
+
+// finishSubshell runs a subshell's EXIT trap when the subshell ends. io is
+// the subshell's streams.
+func (sh *Shell) finishSubshell(io *IO) {
+	if code := sh.exitTrap; code != nil {
+		sh.exitTrap = nil
+		ctrl, status := sh.ctrl, sh.status
+		sh.ctrl = ctrlNone
+		if *code != "" {
+			sh.RunString(*code, "", io)
+		}
+		if sh.ctrl != ctrlExit { // exit in the trap sets the status
+			sh.ctrl, sh.status = ctrl, status
+		}
+	}
 }

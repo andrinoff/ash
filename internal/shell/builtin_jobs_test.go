@@ -106,3 +106,25 @@ func TestWaitAnyReturnsFirstToFinish(t *testing.T) {
 		t.Fatalf("wait -n waited for the first job: %v", d)
 	}
 }
+
+func TestSubshellExitTrap(t *testing.T) {
+	// A subshell's EXIT trap replaced the parent's and only ran when the
+	// whole shell exited.
+	sh := New()
+	sh.Init()
+	out := &lockedBuffer{}
+	io := &IO{In: &Stream{}, Out: &Stream{W: out}, Err: &Stream{W: &lockedBuffer{}}}
+	sh.RunString(`
+trap 'echo parent-exit' EXIT
+( trap 'echo sub-exit' EXIT; echo in-sub ); echo after
+x=$(trap 'echo subst-exit' EXIT; echo val); echo "[$x]"
+( trap 'exit 7' EXIT; true ); echo "status $?"
+`, "test", io)
+	want := "in-sub\nsub-exit\nafter\n[val\nsubst-exit]\nstatus 7\n"
+	if out.String() != want {
+		t.Fatalf("got %q, want %q", out.String(), want)
+	}
+	if code := sh.shared.traps.handlers["EXIT"]; code != "echo parent-exit" {
+		t.Fatalf("the shell's EXIT trap is now %q", code)
+	}
+}

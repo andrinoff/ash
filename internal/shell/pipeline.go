@@ -212,6 +212,9 @@ func (sh *Shell) runPipe(p *syntax.Pipeline, io *IO, bg bool) int {
 			st := e.err
 			if st == 0 {
 				st = e.sub.runCommand(e.cmd, e.io)
+				if e.sub != sh {
+					e.sub.finishSubshell(e.io)
+				}
 				if e.sub.ctrl == ctrlExit {
 					st = e.sub.exitStatus
 				}
@@ -454,6 +457,7 @@ func (sh *Shell) runBackground(st *syntax.Stmt, io *IO) {
 			j.wg.Done()
 		}()
 		status := sub.runCommand(st.Cmd, io)
+		sub.finishSubshell(io)
 		if sub.ctrl == ctrlExit {
 			status = sub.exitStatus
 		}
@@ -472,7 +476,9 @@ func (sh *Shell) procSubst(p *syntax.ProcSubst, io *IO) (string, error) {
 	sub.inSubst++
 	if p.Out {
 		go func() {
-			sub.runStmts(p.Stmts, &IO{In: fileStream(r, false), Out: io.Out, Err: io.Err})
+			pio := &IO{In: fileStream(r, false), Out: io.Out, Err: io.Err}
+			sub.runStmts(p.Stmts, pio)
+			sub.finishSubshell(pio)
 			r.Close()
 		}()
 		w = sh.clearOfShellFds(w)
@@ -480,7 +486,9 @@ func (sh *Shell) procSubst(p *syntax.ProcSubst, io *IO) (string, error) {
 		return fmt.Sprintf("/dev/fd/%d", w.Fd()), nil
 	}
 	go func() {
-		sub.runStmts(p.Stmts, &IO{In: io.In, Out: fileStream(w, false), Err: io.Err})
+		pio := &IO{In: io.In, Out: fileStream(w, false), Err: io.Err}
+		sub.runStmts(p.Stmts, pio)
+		sub.finishSubshell(pio)
 		w.Close()
 	}()
 	r = sh.clearOfShellFds(r)

@@ -114,6 +114,8 @@ type Shell struct {
 	getoptsVar *Var
 	getoptsSub int
 
+	exitTrap *string // a subshell's own trap ... EXIT
+
 	startTime time.Time
 	rand      *rand.Rand
 
@@ -351,6 +353,7 @@ func (sh *Shell) clone() *Shell {
 	c.subshell = true
 	c.procFds = nil // pending <(...) pipes belong to the parent's command
 	c.noFifo = false
+	c.exitTrap = nil // traps aren't inherited by subshells
 	c.ctrl = ctrlNone
 	c.rand = rand.New(rand.NewSource(sh.rand.Int63()))
 	return &c

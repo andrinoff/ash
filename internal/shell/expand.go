@@ -659,6 +659,7 @@ func (sh *Shell) cmdSubst(stmts []*syntax.Stmt, io *IO) (string, error) {
 	} else {
 		sub.runStmts(stmts, subIO)
 	}
+	sub.finishSubshell(subIO)
 	sh.status = sub.status
 	if sub.ctrl == ctrlExit {
 		sh.status = sub.exitStatus
