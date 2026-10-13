@@ -128,3 +128,18 @@ x=$(trap 'echo subst-exit' EXIT; echo val); echo "[$x]"
 		t.Fatalf("the shell's EXIT trap is now %q", code)
 	}
 }
+
+func TestWaitInProcessBackgroundJob(t *testing.T) {
+	// Functions and groups run in the background in a goroutine; wait
+	// reported 0 for them whatever their status.
+	out, errOut, _ := runJobsScript(t, `
+{ sleep 0.1; exit 5; } &
+wait %1; echo "group $?"
+f() { return 6; }
+f &
+wait %1; echo "function $?"
+`)
+	if want := "group 5\nfunction 6\n"; out != want {
+		t.Fatalf("got %q (stderr %q), want %q", out, errOut, want)
+	}
+}
