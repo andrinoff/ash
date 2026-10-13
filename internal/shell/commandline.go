@@ -265,12 +265,13 @@ func CommandTokens(s string) []string {
 				have = false
 			}
 		case c == '|' || c == ';' || c == '&':
+			// an operator ends a word but isn't one; like fish, the
+			// words of every process in the text are listed
 			if have {
 				out = append(out, cur.String())
 				cur.Reset()
 				have = false
 			}
-			out = nil // a new process starts
 		default:
 			cur.WriteByte(c)
 			have = true
