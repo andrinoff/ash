@@ -283,7 +283,9 @@ done:
 	}
 	if len(a) == 0 || names {
 		list := sh.FunctionNames(all)
-		if names {
+		if names && io.Out.TTY {
+			// like fish: a comma-separated list at a terminal, one name
+			// per line otherwise, so `for f in (functions -n)` works
 			fmt.Fprintln(io.Out, strings.Join(list, ", "))
 			return 0
 		}

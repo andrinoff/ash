@@ -57,6 +57,14 @@ func TestVaredStartsFromTheValue(t *testing.T) {
 	}
 }
 
+func TestFunctionsNamesOnePerLine(t *testing.T) {
+	// functions -n joined the names with commas even when piped
+	out, _, _ := runFish(t, `function aaa; end; function aab; end; for f in (functions -n); switch $f; case aaa aab; echo $f; end; end`)
+	if out != "aaa\naab\n" {
+		t.Fatalf("got %q", out)
+	}
+}
+
 func TestFunctionsCopyWontOverwrite(t *testing.T) {
 	out, errOut, _ := runFish(t, `
 function foo; echo foo; end
