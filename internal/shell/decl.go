@@ -89,6 +89,7 @@ func (sh *Shell) declareArrays(args []string, arrays []declArray, io *IO, tmp []
 		}
 		nv := *v
 		nv.Vals = vals
+		nv.unset = false // local arr declared it unset; now it has a value
 		if nv.Path {
 			nv.Vals = splitPathList(vals)
 		}
