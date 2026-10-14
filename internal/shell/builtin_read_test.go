@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestReadIFSTrimming(t *testing.T) {
@@ -100,5 +101,48 @@ func TestReadLeavesFileOffsetAfterRecord(t *testing.T) {
 	out, _, _ = runScript(t, `n=0; while read -r line; do n=$((n+1)); done < `+Quote(p)+`; echo $n`)
 	if out != "4\n" {
 		t.Fatalf("while read: got %q", out)
+	}
+}
+
+func TestReadRunsTrapsWhileWaiting(t *testing.T) {
+	// A trapped signal (say ctrl-c with trap '...; exit' INT) waited
+	// for read to get a whole line before its handler ran. As in bash,
+	// the handler runs while read waits, and read goes on waiting if
+	// the handler doesn't exit.
+	run := func(src string, feed func(w *os.File)) (string, int, time.Duration) {
+		t.Helper()
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r.Close()
+		defer w.Close()
+		go feed(w)
+		sh := New()
+		sh.Init()
+		out := &lockedBuffer{}
+		io := &IO{In: fileStream(r, false), Out: &Stream{W: out}, Err: &Stream{W: &lockedBuffer{}}}
+		start := time.Now()
+		st := sh.RunString(src, "test", io)
+		if exit, s := sh.ShouldExit(); exit {
+			st = s
+		}
+		return out.String(), st, time.Since(start)
+	}
+	out, st, d := run(`trap 'echo caught; exit 3' USR1
+( sleep 0.1; kill -USR1 $$ ) &
+read -t 4 x
+echo "not reached $?"`, func(*os.File) {})
+	if out != "caught\n" || st != 3 || d > 2*time.Second {
+		t.Fatalf("exit in trap: got %q status %d after %v", out, st, d)
+	}
+	out, st, _ = run(`trap 'echo usr1' USR1
+( sleep 0.1; kill -USR1 $$ ) &
+read -t 4 x; echo "[$x] $?"`, func(w *os.File) {
+		time.Sleep(400 * time.Millisecond)
+		w.WriteString("line\n")
+	})
+	if out != "usr1\n[line] 0\n" || st != 0 {
+		t.Fatalf("trap without exit: got %q status %d", out, st)
 	}
 }

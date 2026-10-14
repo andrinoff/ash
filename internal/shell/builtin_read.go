@@ -211,7 +211,19 @@ func bRead(sh *Shell, io *IO, args []string) int {
 		}
 		return 1
 	}
-	spec := readSpec{delim: delim, nchars: nchars, raw: raw || line, stop: sh.interrupted}
+	spec := readSpec{delim: delim, nchars: nchars, raw: raw || line}
+	spec.stop = func() bool {
+		// Run the handlers of trapped signals while waiting, as bash
+		// does; otherwise ctrl-c with trap '...; exit' INT did nothing
+		// until a whole line had been typed.
+		if !sh.subshell && sh.shared.traps.has.Load() {
+			sh.runPendingTraps(io)
+			if sh.ctrl != ctrlNone {
+				return true // the handler ran exit
+			}
+		}
+		return sh.interrupted()
+	}
 	if hasTimeout {
 		spec.deadline = time.Now().Add(timeout)
 	}
