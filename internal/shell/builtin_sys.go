@@ -41,12 +41,57 @@ func bUmask(sh *Shell, io *IO, args []string) int {
 		return 0
 	}
 	v, err := strconv.ParseUint(a[0], 8, 32)
-	if err != nil {
-		fmt.Fprintf(io.Err, "umask: %s: invalid mask (use octal)\n", a[0])
-		return 1
+	if err != nil || v > 0o777 {
+		cur := syscall.Umask(0)
+		syscall.Umask(cur)
+		m, ok := symbolicUmask(a[0], cur)
+		if !ok {
+			fmt.Fprintf(io.Err, "umask: %s: invalid mask\n", a[0])
+			return 1
+		}
+		v = uint64(m)
 	}
 	syscall.Umask(int(v))
 	return 0
+}
+
+// symbolicUmask applies a chmod-style spec like u=rwx,g=rx,o= or g-w
+// (bash and fish accept these) to the mask cur. The spec says which
+// permissions to allow; the mask is the opposite.
+func symbolicUmask(spec string, cur int) (int, bool) {
+	allowed := ^cur & 0o777
+	for _, clause := range strings.Split(spec, ",") {
+		i, who := 0, 0
+		for ; i < len(clause) && strings.IndexByte("ugoa", clause[i]) >= 0; i++ {
+			who |= map[byte]int{'u': 0o700, 'g': 0o070, 'o': 0o007, 'a': 0o777}[clause[i]]
+		}
+		if who == 0 {
+			who = 0o777
+		}
+		if i == len(clause) {
+			return 0, false
+		}
+		for i < len(clause) {
+			op := clause[i]
+			if op != '=' && op != '+' && op != '-' {
+				return 0, false
+			}
+			perm := 0
+			for i++; i < len(clause) && strings.IndexByte("rwx", clause[i]) >= 0; i++ {
+				perm |= map[byte]int{'r': 0o444, 'w': 0o222, 'x': 0o111}[clause[i]]
+			}
+			perm &= who
+			switch op {
+			case '=':
+				allowed = allowed&^who | perm
+			case '+':
+				allowed |= perm
+			case '-':
+				allowed &^= perm
+			}
+		}
+	}
+	return ^allowed & 0o777, true
 }
 
 func bTimes(sh *Shell, io *IO, args []string) int {

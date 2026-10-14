@@ -1,6 +1,19 @@
 package shell
 
-import "testing"
+import (
+	"syscall"
+	"testing"
+)
+
+func TestUmaskSymbolic(t *testing.T) {
+	old := syscall.Umask(0o022)
+	defer syscall.Umask(old)
+	// Symbolic modes were rejected as "invalid mask (use octal)".
+	out, errOut, _ := runScript(t, `umask u=rwx,g=rx,o=; umask; umask g-x; umask; umask a+w; umask; umask u=rwx,go=; umask; umask 7777 2>/dev/null; echo $?; umask`)
+	if want := "0027\n0037\n0015\n0077\n1\n0077\n"; out != want { // what bash prints
+		t.Fatalf("got %q (stderr %q), want %q", out, errOut, want)
+	}
+}
 
 func TestGetoptsResetMidCluster(t *testing.T) {
 	// The first call stops inside "-ab"; resetting OPTIND must not
