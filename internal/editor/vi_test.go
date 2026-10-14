@@ -47,6 +47,40 @@ func TestViTillAdjacent(t *testing.T) {
 	}
 }
 
+func TestViOperatorCount(t *testing.T) {
+	cases := []struct {
+		buf  string
+		pos  int
+		keys string
+		want string
+	}{
+		{"one two three four", 0, "2dw", "three four"},
+		{"one two three four", 0, "d2w", "three four"},
+		{"one two three four five six seven", 0, "2d2w", "five six seven"},
+		{"a.b.c.d", 0, "2df.", "c.d"},
+		{"one two three four", 0, "2cwX\x1b", "X three four"},
+		{"one two three four", 0, "dw", "two three four"},
+	}
+	for _, c := range cases {
+		e := viEditor(c.buf, c.pos)
+		viKeys(e, c.keys)
+		if got := string(e.buf); got != c.want {
+			t.Errorf("%q, %q: got %q, want %q", c.buf, c.keys, got, c.want)
+		}
+	}
+	// a count before f/t is the occurrence to find
+	e := viEditor("a.b.c.d", 0)
+	viKeys(e, "2f.")
+	if e.pos != 3 {
+		t.Errorf("2f.: pos %d, want 3", e.pos)
+	}
+	e.pos = 6
+	viKeys(e, "2T.")
+	if e.pos != 4 {
+		t.Errorf("2T.: pos %d, want 4", e.pos)
+	}
+}
+
 func TestViRepeatTill(t *testing.T) {
 	// ; after t must not get stuck in front of the character
 	e := viEditor("a.b.c.d", 0)

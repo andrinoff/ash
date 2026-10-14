@@ -211,6 +211,10 @@ func (e *Editor) viKey(k Key) bool {
 		return true
 	}
 	count := max(v.count, 1)
+	if v.op != 0 && v.opCount > 0 {
+		// 2dw is d2w; 2d3w deletes six words
+		count *= v.opCount
+	}
 
 	switch r {
 	case 'g':
@@ -297,10 +301,11 @@ func (e *Editor) viKey(k Key) bool {
 
 	// motions
 	if target, inclusive, ok := e.viMotion(r, count); ok {
-		v.count = 0
 		if r == 'f' || r == 'F' || r == 't' || r == 'T' {
+			// waiting for the character; viMotion kept the count
 			return true
 		}
+		v.count = 0
 		e.viApply(target, inclusive)
 		return true
 	}
