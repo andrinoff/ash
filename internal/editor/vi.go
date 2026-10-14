@@ -186,7 +186,7 @@ func (e *Editor) viKey(k Key) bool {
 		f := v.find
 		v.find = 0
 		v.lastFind, v.lastChar = f, r
-		target, ok := e.findChar(f, r, max(v.count, 1))
+		target, ok := e.findChar(f, r, max(v.count, 1), false)
 		v.count = 0
 		if ok {
 			e.viApply(target, f == 'f' || f == 't')
@@ -524,7 +524,7 @@ func (e *Editor) viMotion(r rune, count int) (int, bool, bool) {
 		if r == ',' {
 			f = map[rune]rune{'f': 'F', 'F': 'f', 't': 'T', 'T': 't'}[f]
 		}
-		t, ok := e.findChar(f, e.vi.lastChar, count)
+		t, ok := e.findChar(f, e.vi.lastChar, count, true)
 		if !ok {
 			return p, false, true
 		}
@@ -533,20 +533,16 @@ func (e *Editor) viMotion(r rune, count int) (int, bool, bool) {
 	return 0, false, false
 }
 
-func (e *Editor) findChar(f, c rune, count int) (int, bool) {
+// findChar finds the target of f, F, t or T. repeat is set for ; and ,
+// which skip a target right next to the cursor for t and T, so that
+// repeating them doesn't get stuck.
+func (e *Editor) findChar(f, c rune, count int, repeat bool) (int, bool) {
 	p := e.pos
 	found := 0
 	switch f {
 	case 'f', 't':
-		start := p + 1
-		if f == 't' {
-			start = p + 2
-		}
-		for i := start - 1 + 0; i < len(e.buf); i++ {
-			if i <= p {
-				continue
-			}
-			if f == 't' && i == p+1 && e.buf[i] == c && count == 1 {
+		for i := p + 1; i < len(e.buf); i++ {
+			if repeat && f == 't' && i == p+1 && e.buf[i] == c && count == 1 {
 				continue
 			}
 			if e.buf[i] == c {
@@ -561,7 +557,7 @@ func (e *Editor) findChar(f, c rune, count int) (int, bool) {
 		}
 	case 'F', 'T':
 		for i := p - 1; i >= 0; i-- {
-			if f == 'T' && i == p-1 && e.buf[i] == c && count == 1 {
+			if repeat && f == 'T' && i == p-1 && e.buf[i] == c && count == 1 {
 				continue
 			}
 			if e.buf[i] == c {
