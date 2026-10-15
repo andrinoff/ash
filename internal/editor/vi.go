@@ -25,7 +25,9 @@ func (e *Editor) setViMode(m string) {
 	}
 	prev := e.viMode
 	e.viMode = m
-	if m == "default" && prev == "insert" && e.pos > 0 && e.pos == len(e.buf) {
+	if m == "default" && prev == "insert" && e.pos > 0 && e.buf[e.pos-1] != '\n' {
+		// like vi, leaving insert mode steps back onto the character
+		// before the cursor (but not onto the previous line)
 		e.pos--
 	}
 	if m == "visual" {

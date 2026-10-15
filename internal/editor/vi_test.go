@@ -109,6 +109,35 @@ func TestViChangeWord(t *testing.T) {
 	}
 }
 
+func TestViEscapeMovesLeft(t *testing.T) {
+	e := viEditor("", 0)
+	e.viMode = "insert"
+	viKeys(e, "abcd")
+	e.handleKey(Key{Code: KeyLeft})
+	e.handleKey(Key{Code: KeyLeft})
+	viKeys(e, "\x1b")
+	if e.viMode != "default" || e.pos != 1 {
+		t.Fatalf("mode %s pos %d, want default 1", e.viMode, e.pos)
+	}
+	// x now deletes the character before where the insert cursor was
+	viKeys(e, "x")
+	if got := string(e.buf); got != "acd" {
+		t.Fatalf("x: %q", got)
+	}
+	// at the start of a line the cursor stays put
+	e = viEditor("ab\ncd", 3)
+	e.viMode = "insert"
+	viKeys(e, "\x1b")
+	if e.pos != 3 {
+		t.Fatalf("start of line: pos %d", e.pos)
+	}
+	e = viEditor("ab", 0)
+	viKeys(e, "i\x1b")
+	if e.pos != 0 {
+		t.Fatalf("start of buffer: pos %d", e.pos)
+	}
+}
+
 func TestViRepeatTill(t *testing.T) {
 	// ; after t must not get stuck in front of the character
 	e := viEditor("a.b.c.d", 0)
