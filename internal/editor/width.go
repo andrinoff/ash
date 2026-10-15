@@ -41,9 +41,16 @@ func textWidth(s string) int {
 }
 
 // cutWidth returns the part of an escape-containing string between
-// display columns left and right.
+// display columns left and right. Escape sequences before left are kept,
+// so the styles in effect carry over.
 func cutWidth(s string, left, right int) string {
-	return ansi.CutWc(s, left, right)
+	// Not ansi.CutWc: it cuts the left side with TruncateWc instead of
+	// TruncateLeftWc and so returns the first columns again.
+	s = ansi.TruncateWc(s, right, "")
+	if left > 0 {
+		s = ansi.TruncateLeftWc(s, left, "")
+	}
+	return s
 }
 
 // stripANSI removes escape sequences.
