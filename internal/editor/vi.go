@@ -464,22 +464,15 @@ func (e *Editor) viMotion(r rune, count int) (int, bool, bool) {
 			p = max(len(e.buf)-1, 0)
 		}
 		return p, false, true
-	case 'w':
-		for i := 0; i < count; i++ {
-			p = viNextWord(e.buf, p, false)
+	case 'w', 'W':
+		big := r == 'W'
+		if e.vi.op == 'c' && p < len(e.buf) && viClass(e.buf[p], big) != 0 {
+			// cw on a word changes to its end, not over the space after
+			// it; on a blank it works like dw
+			return viChangeWordEnd(e.buf, p, count, big), true, true
 		}
-		if e.vi.op == 'c' {
-			// cw behaves like ce
-			q := e.pos
-			for i := 0; i < count; i++ {
-				q = viWordEnd(e.buf, q, false)
-			}
-			return q, true, true
-		}
-		return p, false, true
-	case 'W':
 		for i := 0; i < count; i++ {
-			p = viNextWord(e.buf, p, true)
+			p = viNextWord(e.buf, p, big)
 		}
 		return p, false, true
 	case 'e':
@@ -761,6 +754,20 @@ func viWordEnd(buf []rune, p int, big bool) int {
 	c := viClass(buf[p], big)
 	for p+1 < len(buf) && viClass(buf[p+1], big) == c {
 		p++
+	}
+	return p
+}
+
+// viChangeWordEnd is the last character cw changes from p (on a word):
+// the end of that word, even when p is already on its last character,
+// then the ends of the next count-1 words.
+func viChangeWordEnd(buf []rune, p, count int, big bool) int {
+	c := viClass(buf[p], big)
+	for p+1 < len(buf) && viClass(buf[p+1], big) == c {
+		p++
+	}
+	for i := 1; i < count; i++ {
+		p = viWordEnd(buf, p, big)
 	}
 	return p
 }

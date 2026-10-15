@@ -81,6 +81,34 @@ func TestViOperatorCount(t *testing.T) {
 	}
 }
 
+func TestViChangeWord(t *testing.T) {
+	cases := []struct {
+		buf  string
+		pos  int
+		keys string
+		want string
+	}{
+		{"git commit", 0, "cwX\x1b", "X commit"},
+		// on the last character of a word only that character changes
+		{"git commit", 2, "cwX\x1b", "giX commit"},
+		{"git commit -m", 9, "cwX\x1b", "git commiX -m"},
+		{"one two three", 0, "c2wX\x1b", "X three"},
+		{"one two three", 2, "c2wX\x1b", "onX three"},
+		{"foo.bar baz", 3, "cwX\x1b", "fooXbar baz"},
+		{"foo.bar baz", 0, "cWX\x1b", "X baz"},
+		{"foo.bar baz", 6, "cWX\x1b", "foo.baX baz"},
+		// on a blank, cw changes the blanks like dw
+		{"a   b", 1, "cwX\x1b", "aXb"},
+	}
+	for _, c := range cases {
+		e := viEditor(c.buf, c.pos)
+		viKeys(e, c.keys)
+		if got := string(e.buf); got != c.want {
+			t.Errorf("%q at %d, %q: got %q, want %q", c.buf, c.pos, c.keys, got, c.want)
+		}
+	}
+}
+
 func TestViRepeatTill(t *testing.T) {
 	// ; after t must not get stuck in front of the character
 	e := viEditor("a.b.c.d", 0)
