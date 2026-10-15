@@ -133,7 +133,12 @@ func decodeKey(buf []byte, final bool) (Key, int, bool) {
 	case c == 0:
 		return Key{Rune: ' ', Mod: ModCtrl, Raw: "\x00"}, 1, false
 	case c < 0x20:
-		return Key{Rune: rune(c + 'a' - 1), Mod: ModCtrl, Raw: string(c)}, 1, false
+		r := rune(c) + 'a' - 1
+		if c > 0x1a {
+			// ctrl-\ ctrl-] ctrl-^ ctrl-_ (ctrl-/ sends the last one too)
+			r = rune(c) + '@'
+		}
+		return Key{Rune: r, Mod: ModCtrl, Raw: string(c)}, 1, false
 	}
 	if !utf8.FullRune(buf) {
 		if final {
