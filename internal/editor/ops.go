@@ -789,7 +789,7 @@ func fnPrependSudo(e *Editor, k Key) {
 func (e *Editor) commandAtCursor() string {
 	s := string(e.buf[:e.pos])
 	i := strings.LastIndexAny(s, "|;&\n(")
-	rest := string(e.buf[i+1:])
+	rest := string(e.buf)[i+1:] // i is a byte offset, not a rune index
 	fields := strings.Fields(rest)
 	for _, f := range fields {
 		if strings.Contains(f, "=") || f == "sudo" || f == "command" || f == "builtin" || f == "exec" || f == "time" || f == "env" {
