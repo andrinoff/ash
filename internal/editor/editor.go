@@ -416,8 +416,14 @@ func (e *Editor) processInput(final bool) {
 	for len(e.input) > 0 && !e.done {
 		k, n, more := decodeKey(e.input, final)
 		if more {
+			// The timeout runs from the last byte received, so a paste
+			// that is still arriving is never cut short (and its newlines
+			// run as Enter).
+			d := escDelay(e.input)
 			if e.escTimer == nil {
-				e.escTimer = time.NewTimer(escDelay(e.input))
+				e.escTimer = time.NewTimer(d)
+			} else {
+				e.escTimer.Reset(d)
 			}
 			return
 		}
@@ -437,15 +443,21 @@ func (e *Editor) processInput(final bool) {
 	}
 }
 
+// How long to wait for the rest of an incomplete key sequence.
+var (
+	escTimeout   = 30 * time.Millisecond  // a lone ESC
+	seqTimeout   = 300 * time.Millisecond // a partial escape sequence
+	pasteTimeout = 2 * time.Second        // a bracketed paste still arriving
+)
+
 func escDelay(input []byte) time.Duration {
 	switch {
 	case bytes.HasPrefix(input, []byte("\x1b[200~")):
-		// a bracketed paste still arriving
-		return 2 * time.Second
+		return pasteTimeout
 	case len(input) > 1:
-		return 300 * time.Millisecond
+		return seqTimeout
 	}
-	return 30 * time.Millisecond
+	return escTimeout
 }
 
 // ttyReader reads the terminal in a goroutine that can be stopped
