@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"bytes"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -339,7 +340,7 @@ func decodeCSI(buf []byte, final bool) (Key, int, bool) {
 			k.Raw = raw
 		case 200:
 			// bracketed paste: read until ESC [ 201 ~
-			end := strings.Index(string(buf[n:]), "\x1b[201~")
+			end := bytes.Index(buf[n:], []byte("\x1b[201~"))
 			if end < 0 {
 				if final {
 					return Key{Paste: string(buf[n:])}, len(buf), false

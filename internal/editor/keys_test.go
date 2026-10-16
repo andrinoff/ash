@@ -1,6 +1,27 @@
 package editor
 
-import "testing"
+import (
+	"bytes"
+	"runtime"
+	"testing"
+)
+
+// Every read during a bracketed paste decodes the buffered input again;
+// that must not copy the whole paste each time.
+func TestDecodePartialPasteDoesNotCopy(t *testing.T) {
+	buf := append([]byte("\x1b[200~"), bytes.Repeat([]byte("x"), 1<<20)...)
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	for i := 0; i < 10; i++ {
+		if _, _, more := decodeKey(buf, false); !more {
+			t.Fatal("an unterminated paste should wait for more input")
+		}
+	}
+	runtime.ReadMemStats(&after)
+	if d := after.TotalAlloc - before.TotalAlloc; d > 1<<20 {
+		t.Fatalf("decoding an incomplete paste 10 times allocated %d bytes", d)
+	}
+}
 
 func TestDecodeControlPunctuation(t *testing.T) {
 	cases := map[string]string{
