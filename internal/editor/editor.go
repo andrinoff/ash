@@ -128,7 +128,7 @@ type Editor struct {
 
 	// input
 	input       []byte
-	pendingKeys []string
+	pendingKeys []Key // a key sequence that may continue a longer binding
 	reader      *ttyReader
 	escTimer    *time.Timer
 	chordTimer  *time.Timer

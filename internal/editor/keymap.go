@@ -309,30 +309,31 @@ func (e *Editor) handleKey(k Key) {
 			return
 		}
 	}
-	name := k.Name()
-	seq := append(append([]string(nil), e.pendingKeys...), name)
-	key := strings.Join(seq, ",")
+	seq := append(append([]Key(nil), e.pendingKeys...), k)
+	key := seqName(seq)
 	mode := e.keymapName()
-	if b, ok := e.lookup(mode, key); ok {
-		if e.hasLonger(mode, key) {
-			e.pendingKeys = seq
-			e.startChordTimer()
-			return
-		}
-		e.pendingKeys = nil
-		e.runBinding(b, k)
-		return
-	}
 	if e.hasLonger(mode, key) {
 		e.pendingKeys = seq
 		e.startChordTimer()
 		return
 	}
-	if len(e.pendingKeys) > 0 {
+	if b, ok := e.lookup(mode, key); ok {
 		e.pendingKeys = nil
-		e.handleKey(k)
+		e.runBinding(b, k)
 		return
 	}
+	if len(e.pendingKeys) > 0 {
+		// The keys so far began a longer binding that this one doesn't
+		// continue: they count as typed on their own.
+		e.pendingKeys = nil
+		e.runKeys(seq)
+		return
+	}
+	e.unbound(k)
+}
+
+// unbound handles a key with no binding: printable keys insert themselves.
+func (e *Editor) unbound(k Key) {
 	if k.Code == KeyNone && k.Mod&(ModCtrl|ModAlt|ModSuper) == 0 && k.Rune >= ' ' {
 		e.selfInsert(k.Rune)
 		return
@@ -342,6 +343,39 @@ func (e *Editor) handleKey(k Key) {
 	}
 }
 
+// runKeys handles keys that didn't make up a longer binding: the longest
+// bound sequence they start with runs (or else the first key on its own),
+// then the keys after it are handled again.
+func (e *Editor) runKeys(keys []Key) {
+	mode := e.keymapName()
+	n := 1
+	b, ok := binding{}, false
+	for i := len(keys); i > 0 && !ok; i-- {
+		if b, ok = e.lookup(mode, seqName(keys[:i])); ok {
+			n = i
+		}
+	}
+	if ok {
+		e.runBinding(b, keys[n-1])
+	} else {
+		e.unbound(keys[0])
+	}
+	for _, k := range keys[n:] {
+		if e.done {
+			return
+		}
+		e.handleKey(k)
+	}
+}
+
+func seqName(keys []Key) string {
+	names := make([]string, len(keys))
+	for i, k := range keys {
+		names[i] = k.Name()
+	}
+	return strings.Join(names, ",")
+}
+
 func (e *Editor) startChordTimer() {
 	if e.chordTimer != nil {
 		e.chordTimer.Stop()
@@ -349,15 +383,12 @@ func (e *Editor) startChordTimer() {
 	e.chordTimer = time.NewTimer(500 * time.Millisecond)
 }
 
-// flushChord runs a pending key sequence after the chord timeout.
+// flushChord handles a pending key sequence after the chord timeout.
 func (e *Editor) flushChord() {
 	seq := e.pendingKeys
 	e.pendingKeys = nil
-	if len(seq) == 0 {
-		return
-	}
-	if b, ok := e.lookup(e.keymapName(), strings.Join(seq, ",")); ok {
-		e.runBinding(b, Key{})
+	if len(seq) > 0 {
+		e.runKeys(seq)
 	}
 }
 
