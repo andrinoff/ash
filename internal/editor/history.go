@@ -83,17 +83,10 @@ func (e *Editor) stepHistory(dir int, prefix bool) {
 	e.pos = len(e.buf)
 	h.matchStart, h.matchEnd = -1, -1
 	if n >= 0 && h.query != "" {
-		lower := strings.ToLower(text)
-		q := h.query
-		var i int
-		if hasUpper(q) {
-			i = strings.Index(text, q)
-		} else {
-			i = strings.Index(lower, strings.ToLower(q))
-		}
-		if i >= 0 {
-			h.matchStart = len([]rune(text[:i]))
-			h.matchEnd = h.matchStart + len([]rune(q))
+		// a lowercase query matches any case
+		q := []rune(h.query)
+		if i := indexRunes(e.buf, q, !hasUpper(h.query)); i >= 0 {
+			h.matchStart, h.matchEnd = i, i+len(q)
 		}
 	}
 	e.hl = nil
@@ -107,6 +100,22 @@ func (e *Editor) stepHistory(dir int, prefix bool) {
 		h.active = false
 		e.update()
 	}
+}
+
+// indexRunes returns the rune index of the first q in s, ignoring case
+// if fold is set, or -1. It works on runes because lowercasing a string
+// can change its length in bytes (İ, K) and so move the match.
+func indexRunes(s, q []rune, fold bool) int {
+	for i := 0; i+len(q) <= len(s); i++ {
+		j := 0
+		for j < len(q) && (s[i+j] == q[j] || fold && unicode.ToLower(s[i+j]) == unicode.ToLower(q[j])) {
+			j++
+		}
+		if j == len(q) {
+			return i
+		}
+	}
+	return -1
 }
 
 func hasUpper(s string) bool {
