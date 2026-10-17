@@ -21,7 +21,7 @@ type histSearch struct {
 }
 
 func fnHistoryPager(e *Editor, k Key) {
-	if e.cfg.SearchHistory == nil && e.cfg.History == nil {
+	if e.opts.Simple || e.cfg.SearchHistory == nil && e.cfg.History == nil {
 		return
 	}
 	if e.search != nil {

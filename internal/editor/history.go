@@ -25,6 +25,14 @@ type histNav struct {
 	tokIdx    int
 }
 
+// history is the command history to navigate; `read` (Simple) has none.
+func (e *Editor) history() HistorySource {
+	if e.opts.Simple {
+		return nil
+	}
+	return e.cfg.History
+}
+
 func (e *Editor) startHist(prefix bool) {
 	h := &e.hist
 	h.active = true
@@ -33,8 +41,8 @@ func (e *Editor) startHist(prefix bool) {
 	h.query = strings.TrimSpace(h.saved)
 	h.idx = -1
 	h.matches = nil
-	if e.cfg.History != nil {
-		all := e.cfg.History.Search(h.query, prefix)
+	if e.history() != nil {
+		all := e.history().Search(h.query, prefix)
 		for _, m := range all {
 			if m != h.saved {
 				h.matches = append(h.matches, m)
@@ -53,7 +61,7 @@ func (e *Editor) histStepPrefix(dir int) {
 }
 
 func (e *Editor) stepHistory(dir int, prefix bool) {
-	if e.cfg.History == nil {
+	if e.history() == nil {
 		return
 	}
 	if !e.hist.active {
@@ -128,7 +136,7 @@ func hasUpper(s string) bool {
 }
 
 func (e *Editor) histJump(oldest bool) {
-	if e.cfg.History == nil {
+	if e.history() == nil {
 		return
 	}
 	if !e.hist.active {
@@ -146,7 +154,7 @@ func (e *Editor) histJump(oldest bool) {
 // tokenSearch replaces the token under the cursor with tokens from
 // history that contain it (fish's alt-up).
 func (e *Editor) tokenSearch(dir int) {
-	if e.cfg.History == nil {
+	if e.history() == nil {
 		return
 	}
 	h := &e.hist
@@ -165,7 +173,7 @@ func (e *Editor) tokenSearch(dir int) {
 		h.tokIdx = -1
 		h.tokens = nil
 		seen := map[string]bool{h.tokQuery: true}
-		for _, entry := range e.cfg.History.Search(h.tokQuery, false) {
+		for _, entry := range e.history().Search(h.tokQuery, false) {
 			words := splitWords(entry)
 			for i := len(words) - 1; i >= 0; i-- {
 				w := words[i]

@@ -763,8 +763,8 @@ func hasCmd(name string) bool {
 
 func fnPrependSudo(e *Editor, k Key) {
 	if len(e.buf) == 0 {
-		if e.cfg.History != nil {
-			if h := e.cfg.History.Search("", false); len(h) > 0 {
+		if e.history() != nil {
+			if h := e.history().Search("", false); len(h) > 0 {
 				e.buf = []rune(h[0])
 			}
 		}
@@ -896,13 +896,13 @@ func pagerCmd() string {
 }
 
 func fnYankLastArg(e *Editor, k Key) {
-	if e.cfg.History == nil {
+	if e.history() == nil {
 		return
 	}
 	n := &e.lastArg
 	if !n.active || e.lastCmd != "yank-last-arg" {
 		n.active = true
-		n.entries = e.cfg.History.Search("", false)
+		n.entries = e.history().Search("", false)
 		n.idx = -1
 		n.start = e.pos
 		n.end = e.pos

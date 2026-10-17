@@ -15,6 +15,26 @@ func (h foldHist) Search(q string, prefix bool) []string {
 	return out
 }
 
+// `read` (Simple) has no history: up, ctrl-r and friends don't bring
+// back shell commands.
+func TestSimpleHasNoHistory(t *testing.T) {
+	e := searchEditor(fakeHist{"secret shell command"})
+	e.opts.Simple = true
+	for _, fn := range []string{"up-or-search", "history-search-backward", "history-prefix-search-backward",
+		"beginning-of-history", "history-token-search-backward", "yank-last-arg", "history-pager"} {
+		e.buf, e.pos = nil, 0
+		e.call(fn, Key{})
+		if len(e.buf) != 0 || e.search != nil {
+			t.Fatalf("%s in read: buf %q, search open %v", fn, string(e.buf), e.search != nil)
+		}
+	}
+	e.opts.Simple = false
+	e.call("up-or-search", Key{})
+	if string(e.buf) != "secret shell command" {
+		t.Fatalf("the command line lost its history: %q", string(e.buf))
+	}
+}
+
 // The highlighted match is found on runes: lowercasing İ makes the text
 // longer in bytes, which shifted the match and could index past the end.
 func TestHistoryMatchHighlightNonASCII(t *testing.T) {
