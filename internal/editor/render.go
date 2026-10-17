@@ -113,7 +113,9 @@ func (e *Editor) layout(p Prompt, final bool) frame {
 	for i := 0; i <= total; i++ {
 		if i == total {
 			if i == e.pos && f.row < 0 {
-				if lb.col >= cols {
+				// A full row pushes the cursor to the next one, but the
+				// accepted line needs no row for it: output follows.
+				if lb.col >= cols && !final {
 					newline()
 				}
 				f.row, f.col = len(f.lines), lb.col

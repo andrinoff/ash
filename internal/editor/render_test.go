@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -24,6 +25,45 @@ func TestCutWidth(t *testing.T) {
 			t.Errorf("cutWidth(%q, %d, %d) = %q, want %q", c.s, c.left, c.right, got, c.want)
 		}
 	}
+}
+
+// An accepted line that exactly fills the row must not leave an empty
+// row (for the cursor) between it and the command's output.
+func TestFinalLayoutExactFill(t *testing.T) {
+	e := newTestEditor(10)
+	e.buf = []rune("12345678")
+	e.pos = len(e.buf)
+	if f := e.layout(Prompt{Left: "> "}, false); len(f.lines) != 2 || f.row != 1 {
+		t.Fatalf("editing: %d lines, cursor row %d", len(f.lines), f.row)
+	}
+	f := e.layout(Prompt{Left: "> "}, true)
+	if got := plainLines(f); len(got) != 1 || got[0] != "> 12345678" || f.row != 0 {
+		t.Fatalf("final: %q, cursor row %d", got, f.row)
+	}
+	out := captureOutput(t, e, func() {
+		e.prompt = Prompt{Left: "> "}
+		e.finalRender()
+	})
+	if n := strings.Count(out, "\n"); n != 1 {
+		t.Fatalf("final render moved down %d lines: %q", n, out)
+	}
+}
+
+// captureOutput returns what e writes to the terminal during f.
+func captureOutput(t *testing.T, e *Editor, f func()) string {
+	t.Helper()
+	tmp, err := os.CreateTemp(t.TempDir(), "out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tmp.Close()
+	e.out = tmp
+	f()
+	b, err := os.ReadFile(tmp.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
 
 // A prompt line wider than the terminal wraps onto as many rows as it
