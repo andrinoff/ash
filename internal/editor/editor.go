@@ -154,7 +154,12 @@ type Editor struct {
 	queued   []string
 	repaint  bool
 	recalc   bool
-	promptCh chan Prompt
+	promptCh chan promptResult
+	// Prompts render in the background and can finish out of order; each
+	// request is numbered and only a newer one replaces what's shown.
+	promptGen   int
+	promptShown int
+	promptDone  chan struct{} // closed when ReadLine returns
 
 	async chan func()
 	mu    sync.Mutex
@@ -242,12 +247,14 @@ func (e *Editor) ReadLine(o ReadOpts) (string, error) {
 	}()
 
 	e.update()
-	e.promptCh = make(chan Prompt, 4)
+	e.promptCh = make(chan promptResult, 4)
+	e.promptDone = make(chan struct{})
+	defer close(e.promptDone)
 	e.requestPrompt()
 	havePrompt := false
 	select {
-	case p := <-e.promptCh:
-		e.prompt = p
+	case r := <-e.promptCh:
+		e.setPrompt(r)
 		havePrompt = true
 	case <-time.After(o.Wait):
 	}
@@ -274,8 +281,8 @@ func (e *Editor) ReadLine(o ReadOpts) (string, error) {
 			chordC = e.chordTimer.C
 		}
 		select {
-		case p := <-e.promptCh:
-			e.prompt = p
+		case r := <-e.promptCh:
+			e.setPrompt(r)
 		case data, ok := <-e.reader.data:
 			if !ok {
 				e.finish("", ErrEOF)
@@ -344,15 +351,34 @@ func (e *Editor) requestPrompt() {
 	} else {
 		km = "insert"
 	}
+	if e.promptCh == nil {
+		return
+	}
 	render := e.opts.Prompt(km)
-	ch := e.promptCh
+	e.promptGen++
+	gen, ch, done := e.promptGen, e.promptCh, e.promptDone
 	go func() {
-		p := render()
+		r := promptResult{gen, render()}
 		select {
-		case ch <- p:
-		default:
+		case ch <- r:
+		case <-done:
 		}
 	}()
+}
+
+type promptResult struct {
+	gen int
+	p   Prompt
+}
+
+// setPrompt shows a rendered prompt unless a later request's prompt is
+// already shown (a slow render for the previous vi mode must not replace
+// the prompt for the current one).
+func (e *Editor) setPrompt(r promptResult) {
+	if r.gen > e.promptShown {
+		e.prompt = r.p
+		e.promptShown = r.gen
+	}
 }
 
 // readCooked is the fallback when the terminal can't go raw.
