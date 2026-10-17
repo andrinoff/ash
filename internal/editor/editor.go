@@ -201,6 +201,9 @@ func (e *Editor) Notify(msg string) {
 
 // ReadLine reads one line of input.
 func (e *Editor) ReadLine(o ReadOpts) (string, error) {
+	if e.reading {
+		return e.readNested(o)
+	}
 	e.reading = true
 	defer func() { e.reading = false }()
 	e.opts = o
@@ -295,6 +298,23 @@ func (e *Editor) ReadLine(o ReadOpts) (string, error) {
 	e.finalRender()
 	e.resetCursorShape()
 	return e.result, e.err
+}
+
+// readNested reads a line for a command that a key binding runs while a
+// line is being edited (`read` in a binding). It uses a separate editor
+// so the command line, its undo history and the mode survive; typeahead
+// and the kill ring are shared.
+func (e *Editor) readNested(o ReadOpts) (string, error) {
+	sub := New(e.in, e.out, e.cfg)
+	sub.cfg.OnKeymap = nil
+	sub.keymap = e.keymap
+	sub.binds = e.binds
+	sub.kill = e.kill
+	sub.input, e.input = e.input, nil
+	line, err := sub.ReadLine(o)
+	e.input = append(sub.input, e.input...)
+	e.kill = sub.kill
+	return line, err
 }
 
 func (e *Editor) keymapName() string {
