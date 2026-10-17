@@ -152,7 +152,14 @@ func (s *histSearch) handle(e *Editor, k Key) {
 		s.close(e, true)
 		e.pos = 0
 	case k.Paste != "":
-		ins := []rune(strings.ReplaceAll(k.Paste, "\n", " "))
+		// the query is one line: newlines, tabs and other control
+		// characters become spaces
+		ins := []rune(strings.Map(func(r rune) rune {
+			if r < 0x20 || r == 0x7f {
+				return ' '
+			}
+			return r
+		}, k.Paste))
 		s.query = append(s.query[:s.qpos], append(ins, s.query[s.qpos:]...)...)
 		s.qpos += len(ins)
 		s.refresh(e)

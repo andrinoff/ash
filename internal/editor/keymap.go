@@ -282,6 +282,11 @@ func shellQuote(s string) string {
 func (e *Editor) handleKey(k Key) {
 	e.message = ""
 	if k.Paste != "" {
+		if e.search != nil {
+			// pasted into the search query, not the previewed line
+			e.search.handle(e, k)
+			return
+		}
 		e.paste(k.Paste)
 		return
 	}
