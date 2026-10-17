@@ -644,7 +644,8 @@ func fnExecute(e *Editor, k Key) {
 	e.pager = nil
 	e.expandAbbr()
 	line := string(e.buf)
-	if e.cfg.Incomplete != nil && strings.TrimSpace(line) != "" && e.cfg.Incomplete(line) {
+	// (`read` takes any text: an apostrophe isn't an open quote there)
+	if e.cfg.Incomplete != nil && !e.opts.Simple && strings.TrimSpace(line) != "" && e.cfg.Incomplete(line) {
 		e.insert([]rune{'\n'})
 		return
 	}
