@@ -1,6 +1,9 @@
 package editor
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestCommonPrefix(t *testing.T) {
 	cases := []struct{ a, b, want string }{
@@ -15,6 +18,31 @@ func TestCommonPrefix(t *testing.T) {
 	for _, c := range cases {
 		if got := commonPrefix(c.a, c.b); got != c.want {
 			t.Errorf("commonPrefix(%q, %q) = %q, want %q", c.a, c.b, got, c.want)
+		}
+	}
+}
+
+// Undo after choosing a completion in the pager brings back the typed
+// token, not the line from before the token.
+func TestUndoAfterPagerCompletion(t *testing.T) {
+	for _, accept := range []Key{{Code: KeyEnter}, {Rune: 'x'}, {Paste: "y"}} {
+		e := newTestEditor(80)
+		e.cfg.Complete = func(buf string, cursor int) Completion {
+			return Completion{Start: 3, End: cursor, Items: []Candidate{{Text: "foo.txt"}, {Text: "fob.txt"}}}
+		}
+		typeKeys(e, "ls fo")
+		e.handleKey(Key{Code: KeyTab}) // opens the pager
+		e.handleKey(Key{Code: KeyTab}) // selects foo.txt
+		e.handleKey(accept)
+		if e.pager != nil || !strings.HasPrefix(string(e.buf), "ls foo.txt") {
+			t.Fatalf("%v: buf %q", accept, string(e.buf))
+		}
+		if string(e.buf) != "ls foo.txt" {
+			e.call("undo", Key{}) // the key typed after accepting
+		}
+		e.call("undo", Key{})
+		if got := string(e.buf); got != "ls fo" {
+			t.Fatalf("%v: undo gave %q, want the typed token", accept, got)
 		}
 	}
 }

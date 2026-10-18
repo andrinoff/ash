@@ -98,8 +98,9 @@ func (s *histSearch) close(e *Editor, keep bool) {
 	if !keep {
 		e.buf = []rune(s.saved)
 		e.pos = s.savedPos
-	} else {
-		e.pushUndo()
+	} else if string(e.buf) != s.saved {
+		// undo goes back to the line from before the search
+		e.pushUndoState([]rune(s.saved), s.savedPos)
 	}
 	e.update()
 }

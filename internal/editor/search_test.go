@@ -15,6 +15,27 @@ func searchEditor(hist fakeHist) *Editor {
 	return e
 }
 
+// Undo after taking a line from the history search brings back what was
+// typed before the search.
+func TestUndoAfterHistorySearch(t *testing.T) {
+	e := searchEditor(fakeHist{"git status", "echo hello world"})
+	typeKeys(e, "ec")
+	e.call("history-pager", Key{})
+	e.handleKey(Key{Paste: "ho"})
+	e.handleKey(Key{Code: KeyEnter})
+	if got := string(e.buf); got != "echo hello world" {
+		t.Fatalf("accepted %q", got)
+	}
+	e.call("undo", Key{})
+	if got := string(e.buf); got != "ec" {
+		t.Fatalf("undo: %q, want the text from before the search", got)
+	}
+	e.call("redo", Key{})
+	if got := string(e.buf); got != "echo hello world" {
+		t.Fatalf("redo: %q", got)
+	}
+}
+
 // Pasting while the history search is open adds to the query.
 func TestPasteIntoHistorySearch(t *testing.T) {
 	e := searchEditor(fakeHist{"git status", "echo hello world", "ls -la"})

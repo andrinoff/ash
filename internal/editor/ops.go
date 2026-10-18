@@ -127,13 +127,16 @@ func (e *Editor) wordRight(pos int, in func(rune) bool) int {
 	return pos
 }
 
-func (e *Editor) pushUndo() {
-	cp := make([]rune, len(e.buf))
-	copy(cp, e.buf)
+func (e *Editor) pushUndo() { e.pushUndoState(e.buf, e.pos) }
+
+// pushUndoState records buf and pos as the state undo returns to.
+func (e *Editor) pushUndoState(buf []rune, pos int) {
+	cp := make([]rune, len(buf))
+	copy(cp, buf)
 	if n := len(e.undo); n > 0 && string(e.undo[n-1].buf) == string(cp) {
 		return
 	}
-	e.undo = append(e.undo, snapshot{cp, e.pos})
+	e.undo = append(e.undo, snapshot{cp, pos})
 	if len(e.undo) > 500 {
 		e.undo = e.undo[len(e.undo)-500:]
 	}
@@ -192,7 +195,7 @@ func (e *Editor) paste(s string) {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\r", "\n")
 	if e.pager != nil {
-		e.pager = nil
+		e.pager.accept(e)
 	}
 	e.pushUndo()
 	e.lastCmd = "paste"

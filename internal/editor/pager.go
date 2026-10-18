@@ -115,26 +115,30 @@ func (p *pager) handle(e *Editor, k Key) bool {
 	case k.Code == KeyPgUp:
 		p.page(e, -1)
 	case k.Code == KeyEnter:
-		if p.selected >= 0 {
-			e.pager = nil
-			e.update()
-			return true
-		}
-		e.pager = nil
-		return false
+		selected := p.selected >= 0
+		p.accept(e)
+		return selected
 	case k.Code == KeyEscape || k.Name() == "ctrl-g" || k.Name() == "ctrl-c":
 		p.cancel(e)
 	default:
 		// any other key closes the pager and is handled normally
-		if p.selected >= 0 {
-			e.pager = nil
-			e.update()
-		} else {
-			e.pager = nil
-		}
+		p.accept(e)
 		return false
 	}
 	return true
+}
+
+// accept closes the pager keeping the selected candidate; undo goes back
+// to the line from before the completion.
+func (p *pager) accept(e *Editor) {
+	e.pager = nil
+	if p.selected < 0 {
+		return
+	}
+	if string(e.buf) != p.original {
+		e.pushUndoState([]rune(p.original), p.origPos)
+	}
+	e.update()
 }
 
 // move changes the selection by d items (and dc columns).
