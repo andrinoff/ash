@@ -2,6 +2,7 @@ package editor
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
@@ -21,6 +22,45 @@ func runeWidth(r rune) int {
 	return runewidth.RuneWidth(r)
 }
 
+// widths returns the number of cells each rune of rs takes when drawn by
+// the editor. An emoji sequence (❤️ with its variation selector, 👍🏽,
+// 👨‍👩‍👧) is as wide as terminals draw the whole sequence; that width is
+// counted on its first rune and the rest take none, so the cursor never
+// stops inside it. Other text is measured rune by rune.
+func widths(rs []rune) []int {
+	ws := make([]int, len(rs))
+	var s string // rs as a string, built on the first sequence
+	off := 0     // byte offset of rs[i] in s
+	for i := 0; i < len(rs); {
+		r := rs[i]
+		ws[i] = runeWidth(r)
+		n := utf8.RuneLen(r)
+		if n < 0 {
+			n = utf8.RuneLen(utf8.RuneError)
+		}
+		if i+1 == len(rs) || rs[i+1] < utf8.RuneSelf || r < 0x20 || r == 0x7f {
+			off += n
+			i++
+			continue
+		}
+		if s == "" {
+			s = string(rs)
+		}
+		c, w := ansi.FirstGraphemeCluster(s[off:], ansi.GraphemeWidth)
+		k := utf8.RuneCountInString(c)
+		if k > 1 && (ws[i] == 2 || strings.ContainsRune(c, '️')) {
+			ws[i] = w
+		} else {
+			for j := i + 1; j < i+k; j++ {
+				ws[j] = runeWidth(rs[j])
+			}
+		}
+		off += len(c)
+		i += k
+	}
+	return ws
+}
+
 // displayRune returns what is actually written for r.
 func displayRune(r rune) string {
 	switch {
@@ -35,20 +75,21 @@ func displayRune(r rune) string {
 }
 
 // textWidth is the display width of a string that may contain escape
-// sequences (prompts).
+// sequences (prompts), measured by grapheme cluster like terminals draw
+// it (☁️ takes two cells).
 func textWidth(s string) int {
-	return ansi.StringWidthWc(s)
+	return ansi.StringWidth(s)
 }
 
 // cutWidth returns the part of an escape-containing string between
 // display columns left and right. Escape sequences before left are kept,
 // so the styles in effect carry over.
 func cutWidth(s string, left, right int) string {
-	// Not ansi.CutWc: it cuts the left side with TruncateWc instead of
-	// TruncateLeftWc and so returns the first columns again.
-	s = ansi.TruncateWc(s, right, "")
+	// Not ansi.Cut: its WcWidth variant cuts the left side with Truncate
+	// instead of TruncateLeft and so returns the first columns again.
+	s = ansi.Truncate(s, right, "")
 	if left > 0 {
-		s = ansi.TruncateLeftWc(s, left, "")
+		s = ansi.TruncateLeft(s, left, "")
 	}
 	return s
 }
@@ -65,15 +106,16 @@ func truncateWidth(s string, w int) string {
 	if plainWidth(s) <= w {
 		return s
 	}
+	rs := []rune(s)
+	ws := widths(rs)
 	var b strings.Builder
 	n := 0
-	for _, r := range s {
-		rw := runeWidth(r)
-		if n+rw > w-1 {
+	for i, r := range rs {
+		if n+ws[i] > w-1 {
 			break
 		}
 		b.WriteString(displayRune(r))
-		n += rw
+		n += ws[i]
 	}
 	b.WriteString("…")
 	return b.String()
@@ -94,8 +136,8 @@ func printable(s string) string {
 
 func plainWidth(s string) int {
 	n := 0
-	for _, r := range s {
-		n += runeWidth(r)
+	for _, w := range widths([]rune(s)) {
+		n += w
 	}
 	return n
 }

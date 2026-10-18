@@ -229,8 +229,10 @@ func (s *histSearch) render(e *Editor, cols, avail int) []string {
 		}
 		w := 0
 		ri := 0
-		for _, ch := range text {
-			cw := runeWidth(ch)
+		rs := []rune(text)
+		ws := widths(rs)
+		for _, ch := range rs {
+			cw := ws[ri]
 			if w+cw > room {
 				line.WriteString("…")
 				w++

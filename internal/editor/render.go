@@ -103,6 +103,7 @@ func (e *Editor) layout(p Prompt, final bool) frame {
 		sugg = e.sugg
 	}
 	total := len(runes) + len(sugg)
+	ws := widths(append(runes[:len(runes):len(runes)], sugg...))
 	suggStyle := e.style("autosuggestion")
 	matchStyle := e.style("search_match")
 	selStyle := e.style("selection")
@@ -152,7 +153,7 @@ func (e *Editor) layout(p Prompt, final bool) frame {
 			}
 			continue
 		}
-		w := runeWidth(r)
+		w := ws[i]
 		if lb.col+w > cols {
 			lb.setStyle("")
 			newline()
@@ -160,7 +161,10 @@ func (e *Editor) layout(p Prompt, final bool) frame {
 		if i == e.pos {
 			f.row, f.col = len(f.lines), lb.col
 		}
-		lb.setStyle(st)
+		if w > 0 {
+			// (no escape sequence inside an emoji sequence)
+			lb.setStyle(st)
+		}
 		lb.text(displayRune(r), w)
 	}
 	lb.setStyle("")

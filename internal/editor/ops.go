@@ -306,10 +306,14 @@ func fnEndOfLine(e *Editor, k Key) {
 	e.update()
 }
 
+// Moving and deleting by character skips the zero-width parts of a
+// character: combining marks and the rest of an emoji sequence.
+
 func fnBackwardChar(e *Editor, k Key) {
 	if e.pos > 0 {
+		ws := widths(e.buf)
 		e.pos--
-		for e.pos > 0 && runeWidth(e.buf[e.pos]) == 0 {
+		for e.pos > 0 && ws[e.pos] == 0 {
 			e.pos--
 		}
 	}
@@ -323,8 +327,9 @@ func fnForwardChar(e *Editor, k Key) {
 		}
 		return
 	}
+	ws := widths(e.buf)
 	e.pos++
-	for e.pos < len(e.buf) && runeWidth(e.buf[e.pos]) == 0 {
+	for e.pos < len(e.buf) && ws[e.pos] == 0 {
 		e.pos++
 	}
 	e.update()
@@ -375,8 +380,9 @@ func fnAcceptSuggestion(e *Editor, k Key) {
 
 func fnDeleteChar(e *Editor, k Key) {
 	if e.pos < len(e.buf) {
+		ws := widths(e.buf)
 		end := e.pos + 1
-		for end < len(e.buf) && runeWidth(e.buf[end]) == 0 {
+		for end < len(e.buf) && ws[end] == 0 {
 			end++
 		}
 		p := e.pos
@@ -389,8 +395,9 @@ func fnBackwardDeleteChar(e *Editor, k Key) {
 	if e.pos == 0 {
 		return
 	}
+	ws := widths(e.buf)
 	start := e.pos - 1
-	for start > 0 && runeWidth(e.buf[start]) == 0 {
+	for start > 0 && ws[start] == 0 {
 		start--
 	}
 	e.deleteRange(start, e.pos)

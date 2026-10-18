@@ -27,6 +27,65 @@ func TestCutWidth(t *testing.T) {
 	}
 }
 
+func TestWidthsEmojiSequences(t *testing.T) {
+	cases := []struct {
+		s    string
+		want []int
+	}{
+		{"a❤️b", []int{1, 2, 0, 1}},
+		{"👍🏽x", []int{2, 0, 1}},
+		{"👨‍👩‍👧", []int{2, 0, 0, 0, 0}},
+		{"1️⃣", []int{2, 0, 0}},
+		{"éx", []int{1, 0, 1}},
+		{"漢字", []int{2, 2}},
+		{"a\tb\x01", []int{1, 4, 1, 2}},
+		{"\x1b👍", []int{2, 2}},
+	}
+	for _, c := range cases {
+		got := widths([]rune(c.s))
+		if sprintf("%v", got) != sprintf("%v", c.want) {
+			t.Errorf("widths(%q) = %v, want %v", c.s, got, c.want)
+		}
+	}
+	if w := textWidth("\x1b[33m☁️ aws\x1b[0m > "); w != 9 {
+		t.Errorf("prompt width %d, want 9", w)
+	}
+}
+
+// Emoji sequences take the cells terminals draw them in, and the cursor
+// moves over them as one character.
+func TestLayoutEmojiSequences(t *testing.T) {
+	e := newTestEditor(12)
+	e.buf = []rune("❤️👍🏽abcdefgh")
+	e.pos = len(e.buf)
+	f := e.layout(Prompt{Left: "> "}, false)
+	if got := plainLines(f); len(got) != 2 || got[0] != "> ❤️👍🏽abcdef" || got[1] != "gh" {
+		t.Fatalf("got %q", got)
+	}
+	if f.row != 1 || f.col != 2 {
+		t.Fatalf("cursor %d,%d", f.row, f.col)
+	}
+	e.pos = 0
+	e.call("forward-char", Key{})
+	e.call("forward-char", Key{})
+	if e.pos != 4 {
+		t.Fatalf("forward-char stopped inside an emoji sequence: pos %d", e.pos)
+	}
+	f = e.layout(Prompt{Left: "> "}, false)
+	if f.row != 0 || f.col != 6 {
+		t.Fatalf("cursor %d,%d", f.row, f.col)
+	}
+	e.call("backward-char", Key{})
+	if e.pos != 2 {
+		t.Fatalf("backward-char: pos %d", e.pos)
+	}
+	e.call("delete-char", Key{})
+	e.call("backward-delete-char", Key{})
+	if got := string(e.buf); got != "abcdefgh" {
+		t.Fatalf("deleting: %q", got)
+	}
+}
+
 // An accepted line that exactly fills the row must not leave an empty
 // row (for the cursor) between it and the command's output.
 func TestFinalLayoutExactFill(t *testing.T) {
