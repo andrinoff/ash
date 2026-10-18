@@ -19,6 +19,61 @@ func TestCommonPrefix(t *testing.T) {
 	}
 }
 
+// Page down/up move the selection a page of rows within its column; they
+// used to jump by rows*columns items and land in another column.
+func TestPagerPageKeys(t *testing.T) {
+	var items []Candidate
+	for i := 0; i < 50; i++ {
+		items = append(items, Candidate{Text: sprintf("file%02d.txt", i)})
+	}
+	e := newTestEditor(40)
+	e.rows = 12
+	e.cfg.Complete = func(buf string, cursor int) Completion {
+		return Completion{Start: 3, End: cursor, Items: items}
+	}
+	e.insert([]rune("ls file"))
+	e.complete(false) // opens the pager
+	p := e.pager
+	if p == nil {
+		t.Fatal("no pager")
+	}
+	p.render(e, e.cols, 10)
+	if p.cols != 3 || p.rows != 17 || p.visible != 5 {
+		t.Fatalf("layout %d cols %d rows %d visible", p.cols, p.rows, p.visible)
+	}
+	steps := []struct {
+		key  KeyCode
+		want int
+	}{
+		{KeyPgDn, 0}, // the first press selects the first item
+		{KeyPgDn, 5},
+		{KeyPgDn, 10},
+		{KeyPgDn, 15},
+		{KeyPgDn, 16}, // the end of the column
+		{KeyPgUp, 11},
+		{KeyPgUp, 6},
+		{KeyPgUp, 1},
+		{KeyPgUp, 0},
+	}
+	for i, s := range steps {
+		p.handle(e, Key{Code: s.key})
+		if p.selected != s.want {
+			t.Fatalf("step %d: selected %d, want %d", i, p.selected, s.want)
+		}
+	}
+	// the last column is shorter: stop at its last item
+	p.selected = 36
+	p.handle(e, Key{Code: KeyPgDn})
+	p.handle(e, Key{Code: KeyPgDn})
+	p.handle(e, Key{Code: KeyPgDn})
+	if p.selected != 49 {
+		t.Fatalf("last column: selected %d, want 49", p.selected)
+	}
+	if got := string(e.buf); got != "ls file49.txt" {
+		t.Fatalf("buffer %q", got)
+	}
+}
+
 // Completing with candidates where one is a prefix of another used to
 // panic while computing the common prefix.
 func TestCompleteNestedCandidates(t *testing.T) {

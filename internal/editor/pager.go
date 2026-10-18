@@ -111,9 +111,9 @@ func (p *pager) handle(e *Editor, k Key) bool {
 	case k.Code == KeyLeft && p.selected >= 0:
 		p.move(e, 0, -1)
 	case k.Code == KeyPgDn:
-		p.move(e, p.visible*max(p.cols, 1), 0)
+		p.page(e, 1)
 	case k.Code == KeyPgUp:
-		p.move(e, -p.visible*max(p.cols, 1), 0)
+		p.page(e, -1)
 	case k.Code == KeyEnter:
 		if p.selected >= 0 {
 			e.pager = nil
@@ -161,6 +161,24 @@ func (p *pager) move(e *Editor, d, dc int) {
 	} else {
 		p.selected = ((p.selected+d)%n + n) % n
 	}
+	p.apply(e)
+}
+
+// page moves the selection a page of rows up or down within its column,
+// stopping at the column's first and last items.
+func (p *pager) page(e *Editor, dir int) {
+	n := len(p.comp.Items)
+	if n == 0 || p.selected < 0 {
+		p.move(e, dir, 0)
+		return
+	}
+	rows := p.rows
+	if rows <= 0 {
+		rows = n
+	}
+	col, row := p.selected/rows, p.selected%rows
+	row = min(max(row+dir*max(p.visible, 1), 0), rows-1)
+	p.selected = min(col*rows+row, n-1)
 	p.apply(e)
 }
 
