@@ -19,6 +19,30 @@ func TestCommonPrefix(t *testing.T) {
 	}
 }
 
+// Tabs and escape characters in candidates are drawn the way their width
+// is counted (caret notation, spaces), not written raw to the terminal.
+func TestPagerControlCharacters(t *testing.T) {
+	e := newTestEditor(30)
+	p := &pager{comp: Completion{Items: []Candidate{
+		{Text: "a", Display: "tab\there", Description: "desc\twith\ttabs and more text"},
+		{Text: "b", Display: "esc\x1b[31mred", Description: "x"},
+	}}, selected: -1}
+	for _, l := range p.render(e, 30, 10) {
+		plain := stripANSI(l)
+		for _, r := range plain {
+			if r < 0x20 {
+				t.Fatalf("raw control character in pager line %q", l)
+			}
+		}
+		if w := plainWidth(plain); w >= 30 {
+			t.Fatalf("pager line %q is %d wide", plain, w)
+		}
+	}
+	if got := truncateWidth("a\tb", 4); plainWidth(got) > 4 {
+		t.Fatalf("truncateWidth: %q", got)
+	}
+}
+
 // Page down/up move the selection a page of rows within its column; they
 // used to jump by rows*columns items and land in another column.
 func TestPagerPageKeys(t *testing.T) {

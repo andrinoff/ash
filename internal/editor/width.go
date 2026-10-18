@@ -62,7 +62,7 @@ func truncateWidth(s string, w int) string {
 	if w <= 0 {
 		return ""
 	}
-	if runewidth.StringWidth(s) <= w {
+	if plainWidth(s) <= w {
 		return s
 	}
 	var b strings.Builder
@@ -76,6 +76,19 @@ func truncateWidth(s string, w int) string {
 		n += rw
 	}
 	b.WriteString("…")
+	return b.String()
+}
+
+// printable returns s as the editor draws it: control characters in
+// caret notation and tabs as spaces, so plainWidth is its real width.
+func printable(s string) string {
+	if strings.IndexFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f }) < 0 {
+		return s
+	}
+	var b strings.Builder
+	for _, r := range s {
+		b.WriteString(displayRune(r))
+	}
 	return b.String()
 }
 

@@ -225,8 +225,9 @@ func (p *pager) render(e *Editor, cols, avail int) []string {
 	descs := make([]string, n)
 	widest := 0
 	for i, it := range items {
-		labels[i] = it.Label()
-		descs[i] = strings.ReplaceAll(it.Description, "\n", " ")
+		// drawn as the widths below count them: no raw tabs or escapes
+		labels[i] = printable(it.Label())
+		descs[i] = printable(strings.ReplaceAll(it.Description, "\n", " "))
 		w := plainWidth(labels[i])
 		if descs[i] != "" {
 			w += 3 + plainWidth(descs[i])
