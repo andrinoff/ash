@@ -395,8 +395,9 @@ func ParseKeySpec(spec string) ([]string, error) {
 	if spec == "" {
 		return nil, errorf("empty key")
 	}
-	// legacy/raw byte sequences
-	if strings.ContainsAny(spec, "\x1b\\") || (len(spec) == 1 && spec[0] < 0x20) || spec[0] < 0x20 || spec[0] == 0x7f {
+	// legacy/raw byte sequences: "\e[A", "\cx", raw control characters
+	// (but "ctrl-\" is a key name)
+	if spec[0] == '\\' || strings.ContainsRune(spec, 0x1b) || spec[0] < 0x20 || spec[0] == 0x7f {
 		raw := unescapeKey(spec)
 		var out []string
 		b := []byte(raw)
