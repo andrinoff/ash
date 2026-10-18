@@ -245,7 +245,17 @@ func (e *Editor) viKey(k Key) bool {
 			switch r {
 			case 'd':
 				e.kill.push(string(e.buf[start:end]))
+				// the line goes with its line break
+				if end < len(e.buf) {
+					end++
+				} else if start > 0 {
+					start--
+				}
 				e.deleteRange(start, end)
+				e.pos, _ = e.lineBounds()
+				for e.pos < len(e.buf) && (e.buf[e.pos] == ' ' || e.buf[e.pos] == '\t') {
+					e.pos++
+				}
 			case 'c':
 				e.kill.push(string(e.buf[start:end]))
 				e.deleteRange(start, end)
@@ -328,12 +338,7 @@ func (e *Editor) viKey(k Key) bool {
 		}
 		e.setViMode("insert")
 	case 'A':
-		e.pos = len(e.buf)
-		for i := e.pos - 1; i >= 0; i-- {
-			if e.buf[i] == '\n' {
-				break
-			}
-		}
+		_, e.pos = e.lineBounds()
 		e.setViMode("insert")
 	case 'x':
 		end := min(e.pos+count, len(e.buf))

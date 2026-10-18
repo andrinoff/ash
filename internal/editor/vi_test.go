@@ -138,6 +138,31 @@ func TestViEscapeMovesLeft(t *testing.T) {
 	}
 }
 
+// A and dd act on the cursor's line of a multi-line command.
+func TestViLineCommands(t *testing.T) {
+	cases := []struct {
+		buf  string
+		pos  int
+		keys string
+		want string
+		at   int
+	}{
+		{"for i in 1 2\necho $i\nend", 14, "AX\x1b", "for i in 1 2\necho $iX\nend", 20},
+		{"for i in 1 2\n  echo $i\nend", 15, "dd", "for i in 1 2\nend", 13},
+		{"one\n  two", 6, "dd", "one", 0},
+		{"a\n\nb", 2, "dd", "a\nb", 2},
+		{"one", 1, "dd", "", 0},
+		{"one two", 1, "AX\x1b", "one twoX", 7},
+	}
+	for _, c := range cases {
+		e := viEditor(c.buf, c.pos)
+		viKeys(e, c.keys)
+		if got := string(e.buf); got != c.want || e.pos != c.at {
+			t.Errorf("%q at %d, %q: got %q at %d, want %q at %d", c.buf, c.pos, c.keys, got, e.pos, c.want, c.at)
+		}
+	}
+}
+
 func TestViRepeatTill(t *testing.T) {
 	// ; after t must not get stuck in front of the character
 	e := viEditor("a.b.c.d", 0)
