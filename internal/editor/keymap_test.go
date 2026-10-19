@@ -36,6 +36,20 @@ func TestUnfinishedChordKeepsKeys(t *testing.T) {
 	}
 }
 
+// A paste right after a key that may start a binding goes after that key.
+func TestPasteAfterPendingKey(t *testing.T) {
+	e := newTestEditor(80)
+	e.keymap = "vi"
+	if err := e.Bind("insert", "j,k", "vi-normal", ""); err != nil {
+		t.Fatal(err)
+	}
+	typeKeys(e, "aj")
+	e.handleKey(Key{Paste: "foo"})
+	if got := string(e.buf); got != "ajfoo" || len(e.pendingKeys) != 0 {
+		t.Fatalf("buf %q pending %v", got, e.pendingKeys)
+	}
+}
+
 // A bound prefix of a longer binding runs when the next key doesn't
 // continue it (ctrl-x is copy-commandline, ctrl-x ctrl-e edits).
 func TestUnfinishedChordRunsPrefixBinding(t *testing.T) {

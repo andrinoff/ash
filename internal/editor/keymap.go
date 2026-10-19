@@ -282,6 +282,10 @@ func shellQuote(s string) string {
 func (e *Editor) handleKey(k Key) {
 	e.message = ""
 	if k.Paste != "" {
+		if len(e.pendingKeys) > 0 {
+			// keys typed before the paste come first
+			e.flushChord()
+		}
 		if e.search != nil {
 			// pasted into the search query, not the previewed line
 			e.search.handle(e, k)
