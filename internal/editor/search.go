@@ -178,7 +178,14 @@ func (s *histSearch) render(e *Editor, cols, avail int) []string {
 	match := e.style("search_match")
 	selBg := e.style("pager_selected_background")
 	var out []string
-	q := string(s.query)
+	// A query too long for the line scrolls to keep the cursor in view
+	// and is cut on the right: the line must not wrap.
+	room := cols - 1 - plainWidth(label)
+	from := 0
+	for from < s.qpos && plainWidth(string(s.query[from:s.qpos])) >= room {
+		from++
+	}
+	q := truncateWidth(string(s.query[from:]), room)
 	head := prog + label + reset + q
 	count := ""
 	switch n := len(s.results); {
@@ -194,7 +201,7 @@ func (s *histSearch) render(e *Editor, cols, avail int) []string {
 		head += strings.Repeat(" ", pad) + prog + count + reset
 	}
 	out = append(out, head)
-	s.cursorCol = plainWidth(label) + plainWidth(string(s.query[:s.qpos]))
+	s.cursorCol = plainWidth(label) + plainWidth(string(s.query[from:s.qpos]))
 	maxRows := avail - 1
 	if maxRows > 10 {
 		maxRows = 10

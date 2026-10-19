@@ -1,6 +1,9 @@
 package editor
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func searchEditor(hist fakeHist) *Editor {
 	e := newTestEditor(80)
@@ -33,6 +36,28 @@ func TestUndoAfterHistorySearch(t *testing.T) {
 	e.call("redo", Key{})
 	if got := string(e.buf); got != "echo hello world" {
 		t.Fatalf("redo: %q", got)
+	}
+}
+
+// A query longer than the line scrolls instead of wrapping the line.
+func TestHistorySearchLongQuery(t *testing.T) {
+	e := searchEditor(fakeHist{"git status"})
+	e.call("history-pager", Key{})
+	e.handleKey(Key{Paste: strings.Repeat("x", 100) + "END"})
+	lines := e.search.render(e, 40, 10)
+	if w := plainWidth(stripANSI(lines[0])); w >= 40 {
+		t.Fatalf("query line is %d wide in 40 columns: %q", w, stripANSI(lines[0]))
+	}
+	if c := e.search.cursorCol; c >= 40 || !strings.HasSuffix(stripANSI(lines[0]), "END") {
+		t.Fatalf("cursor col %d, line %q", c, stripANSI(lines[0]))
+	}
+	// with the cursor moved to the start, the start of the query shows
+	for range 103 {
+		e.handleKey(Key{Code: KeyLeft})
+	}
+	lines = e.search.render(e, 40, 10)
+	if got := stripANSI(lines[0]); !strings.HasPrefix(got, "history: xxx") || plainWidth(got) >= 40 || e.search.cursorCol != 9 {
+		t.Fatalf("line %q cursor %d", got, e.search.cursorCol)
 	}
 }
 
