@@ -25,9 +25,9 @@ func (e *Editor) setViMode(m string) {
 	}
 	prev := e.viMode
 	e.viMode = m
-	if m == "default" && prev == "insert" && e.pos > 0 && e.buf[e.pos-1] != '\n' {
-		// like vi, leaving insert mode steps back onto the character
-		// before the cursor (but not onto the previous line)
+	if m == "default" && (prev == "insert" || prev == "replace") && e.pos > 0 && e.buf[e.pos-1] != '\n' {
+		// like vi, leaving insert (or replace) mode steps back onto the
+		// character before the cursor (but not onto the previous line)
 		e.pos--
 	}
 	if m == "visual" {
@@ -302,6 +302,7 @@ func (e *Editor) viKey(k Key) bool {
 			for i := a; i <= b; i++ {
 				e.buf[i] = toggleCase(e.buf[i])
 			}
+			e.pos = a
 			e.edited()
 			e.setViMode("default")
 			return true

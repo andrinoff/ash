@@ -12,14 +12,19 @@ func viEditor(buf string, pos int) *Editor {
 	return e
 }
 
-// viKeys feeds keys through the normal key dispatch; ESC is the escape key.
+// viKeys feeds keys through the normal key dispatch; ESC is the escape key
+// and other control characters are ctrl keys.
 func viKeys(e *Editor, keys string) {
 	for _, r := range keys {
-		if r == 0x1b {
+		switch {
+		case r == 0x1b:
 			e.handleKey(Key{Code: KeyEscape})
-			continue
+		case r < 0x20:
+			k, _, _ := decodeKey([]byte{byte(r)}, true)
+			e.handleKey(k)
+		default:
+			e.handleKey(Key{Rune: r})
 		}
-		e.handleKey(Key{Rune: r})
 	}
 }
 
@@ -160,6 +165,25 @@ func TestViLineCommands(t *testing.T) {
 		if got := string(e.buf); got != c.want || e.pos != c.at {
 			t.Errorf("%q at %d, %q: got %q at %d, want %q at %d", c.buf, c.pos, c.keys, got, e.pos, c.want, c.at)
 		}
+	}
+}
+
+// The cursor stays on the text after R and goes to the start of the
+// selection after visual ~, as in vi.
+func TestViCursorAfterReplaceAndToggle(t *testing.T) {
+	e := viEditor("abc", 1)
+	viKeys(e, "R12\x1b")
+	if got := string(e.buf); got != "a12" || e.pos != 2 {
+		t.Fatalf("R12<esc>: %q at %d, want a12 at 2", got, e.pos)
+	}
+	viKeys(e, "x")
+	if got := string(e.buf); got != "a1" {
+		t.Fatalf("x after R: %q", got)
+	}
+	e = viEditor("abc def", 4)
+	viKeys(e, "ve~")
+	if got := string(e.buf); got != "abc DEF" || e.pos != 4 || e.viMode != "default" {
+		t.Fatalf("ve~: %q at %d (%s)", got, e.pos, e.viMode)
 	}
 }
 
