@@ -242,6 +242,14 @@ func decodeCSI(buf []byte, final bool) (Key, int, bool) {
 		return Key{}, 0, true
 	}
 	fin := buf[i]
+	if fin < 0x40 || fin > 0x7e {
+		// Not a final byte: the sequence was cut short (alt-[, then a
+		// key). Leave that byte for the next key instead of eating it.
+		if i == 2 {
+			return Key{Rune: '[', Mod: ModAlt, Raw: "\x1b["}, 2, false
+		}
+		return Key{Junk: true}, i, false
+	}
 	n := i + 1
 	params := string(buf[2:i])
 	raw := string(buf[:n])

@@ -72,6 +72,37 @@ func TestParseKeySpecBackslash(t *testing.T) {
 	}
 }
 
+// A CSI sequence cut short by a byte that can't end it leaves that byte
+// to be decoded as the next key: alt-[ then Enter used to swallow Enter.
+func TestDecodeInterruptedCSI(t *testing.T) {
+	cases := map[string][]string{
+		"\x1b[\r":         {"alt-[", "enter"},
+		"\x1b[\x1b[A":     {"alt-[", "up"},
+		"\x1b[1;5\x1b[B":  {"", "down"},
+		"\x1b[é":          {"alt-[", "é"},
+		"\x1b[1;5C\x1b[D": {"ctrl-right", "left"},
+	}
+	for in, want := range cases {
+		b := []byte(in)
+		var got []string
+		for len(b) > 0 {
+			k, n, more := decodeKey(b, false)
+			if more || n == 0 {
+				t.Fatalf("%q: stuck at %q", in, b)
+			}
+			if k.Junk {
+				got = append(got, "")
+			} else {
+				got = append(got, k.Name())
+			}
+			b = b[n:]
+		}
+		if sprintf("%q", got) != sprintf("%q", want) {
+			t.Errorf("%q: got %q, want %q", in, got, want)
+		}
+	}
+}
+
 // ctrl-_ (and ctrl-/, which terminals send as the same byte) is undo.
 func TestCtrlUnderscoreUndoes(t *testing.T) {
 	e := newTestEditor(80)
