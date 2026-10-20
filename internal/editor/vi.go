@@ -657,8 +657,15 @@ func (e *Editor) textObject(kind, obj rune) (int, int, bool) {
 			}
 		}
 		if kind == 'a' {
-			for b < len(e.buf) && e.buf[b] == ' ' {
+			// the blanks after the word, or before it if there are none
+			end := b
+			for b < len(e.buf) && (e.buf[b] == ' ' || e.buf[b] == '\t') {
 				b++
+			}
+			if b == end && in(e.buf[p]) {
+				for a > 0 && (e.buf[a-1] == ' ' || e.buf[a-1] == '\t') {
+					a--
+				}
 			}
 		}
 		return a, b, true

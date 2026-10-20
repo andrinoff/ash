@@ -187,6 +187,32 @@ func TestViCursorAfterReplaceAndToggle(t *testing.T) {
 	}
 }
 
+// aw takes the blanks after the word, or the ones before it when the word
+// ends the line, so daw on the last argument leaves no trailing space.
+func TestViAroundWord(t *testing.T) {
+	cases := []struct {
+		buf  string
+		pos  int
+		keys string
+		want string
+	}{
+		{"echo hello", 7, "daw", "echo"},
+		{"echo hello world", 7, "daw", "echo world"},
+		{"echo hello  world", 7, "daw", "echo world"},
+		{"echo hello", 1, "daw", "hello"},
+		{"ls -la\t", 4, "daW", "ls "},
+		{"ls -la\t", 4, "daw", "ls -"},
+		{"a b.c", 3, "daW", "a"},
+	}
+	for _, c := range cases {
+		e := viEditor(c.buf, c.pos)
+		viKeys(e, c.keys)
+		if got := string(e.buf); got != c.want {
+			t.Errorf("%q at %d, %q: got %q, want %q", c.buf, c.pos, c.keys, got, c.want)
+		}
+	}
+}
+
 func TestViRepeatTill(t *testing.T) {
 	// ; after t must not get stuck in front of the character
 	e := viEditor("a.b.c.d", 0)
