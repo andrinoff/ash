@@ -614,7 +614,10 @@ func (e *Editor) SetBuffer(buf string, cursor int) {
 		cursor = 0
 	}
 	e.pos = len([]rune(buf[:cursor]))
-	e.update()
+	// An edit from outside ends any run of repeated commands (yank-pop,
+	// yank-last-arg, token search), whose saved offsets no longer apply.
+	e.lastCmd = ""
+	e.edited()
 }
 
 // QueueFunctions schedules named editor functions (commandline -f).

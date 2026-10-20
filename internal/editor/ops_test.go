@@ -5,6 +5,33 @@ import (
 	"testing"
 )
 
+// A key binding that replaces the command line (commandline -r) between
+// two presses of a repeating command must not leave it stale offsets:
+// yank-last-arg used to slice past the end of the new, shorter line.
+func TestRepeatAfterExternalEdit(t *testing.T) {
+	for _, fn := range []string{"yank-last-arg", "history-token-search-backward", "yank-pop"} {
+		e := newTestEditor(80)
+		e.cfg.History = fakeHist{"git commit --amend so", "ls /usr/local/bin/something", "echo so so"}
+		e.cfg.RunCommand = func(string) { e.SetBuffer("", 0) }
+		if err := e.Bind("default", "ctrl-g", "commandline -r ''", ""); err != nil {
+			t.Fatal(err)
+		}
+		e.kill.push("one")
+		e.kill.push("two")
+		e.insert([]rune("echo some long text here so"))
+		if fn == "yank-pop" {
+			e.call("yank", Key{})
+		} else {
+			e.call(fn, Key{})
+		}
+		e.handleKey(Key{Rune: 'g', Mod: ModCtrl})
+		e.call(fn, Key{})
+		if fn == "yank-pop" && len(e.buf) != 0 {
+			t.Errorf("yank-pop after the line was replaced: %q", string(e.buf))
+		}
+	}
+}
+
 // `read` (Simple) accepts whatever was typed: text that would be an
 // unfinished command, like an apostrophe, must not turn Enter into a
 // newline.
