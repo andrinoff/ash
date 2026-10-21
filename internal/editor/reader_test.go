@@ -89,7 +89,10 @@ func TestReaderStopReturnsUnclaimedInput(t *testing.T) {
 	rd := startReader(int(r.Fd()))
 	rd.ask(1)
 	w.WriteString("xy")
-	time.Sleep(50 * time.Millisecond)
+	// wait for the answer (a fixed sleep can be too short on a busy machine)
+	for deadline := time.Now().Add(5 * time.Second); len(rd.data) == 0 && time.Now().Before(deadline); {
+		time.Sleep(time.Millisecond)
+	}
 	if left := rd.stop(); string(left) != "x" {
 		t.Fatalf("left %q", left)
 	}
