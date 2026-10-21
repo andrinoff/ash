@@ -55,6 +55,15 @@ func Size(fd int) (int, int) {
 	return 80, 24
 }
 
+// Pending returns the number of input bytes waiting to be read on fd.
+func Pending(fd int) int {
+	n, err := unix.IoctlGetInt(fd, ioctlInputPending)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
 // Foreground returns the foreground process group of the terminal.
 func Foreground(fd int) (int, error) {
 	return unix.IoctlGetInt(fd, unix.TIOCGPGRP)

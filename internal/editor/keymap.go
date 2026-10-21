@@ -470,12 +470,14 @@ func (e *Editor) queryCursor() (cursorPos, bool) {
 		if pos, ok := e.extractCPR(); ok {
 			return pos, true
 		}
+		e.reader.ask(1)
 		select {
-		case data, ok := <-e.reader.data:
+		case d, ok := <-e.reader.data:
 			if !ok {
 				return cursorPos{}, false
 			}
-			e.input = append(e.input, data...)
+			e.reader.asked = false
+			e.input = append(e.input, d.b...)
 		case <-deadline:
 			return cursorPos{}, false
 		}

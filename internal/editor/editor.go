@@ -271,8 +271,12 @@ func (e *Editor) ReadLine(o ReadOpts) (string, error) {
 	}
 	e.setCursorShape()
 	e.processInput(false)
+	waiting := false // more input is already there: draw once it's handled
 	for !e.done {
-		e.render()
+		if !waiting {
+			e.render()
+		}
+		e.reader.ask(e.readSize())
 		var escC, chordC <-chan time.Time
 		if e.escTimer != nil {
 			escC = e.escTimer.C
@@ -283,12 +287,14 @@ func (e *Editor) ReadLine(o ReadOpts) (string, error) {
 		select {
 		case r := <-e.promptCh:
 			e.setPrompt(r)
-		case data, ok := <-e.reader.data:
+		case d, ok := <-e.reader.data:
 			if !ok {
 				e.finish("", ErrEOF)
 				break
 			}
-			e.input = append(e.input, data...)
+			e.reader.asked = false
+			waiting = d.more
+			e.input = append(e.input, d.b...)
 			e.processInput(false)
 		case <-escC:
 			e.escTimer = nil
@@ -506,56 +512,100 @@ func escDelay(input []byte) time.Duration {
 	return escTimeout
 }
 
+// readSize is how much to read from the terminal next: a byte at a time,
+// so that input typed after the key that ends the line stays in the
+// terminal for the command that runs next (`cat`, a password prompt), as
+// with other shells; a bracketed paste in bulk.
+func (e *Editor) readSize() int {
+	if bytes.HasPrefix(e.input, []byte("\x1b[200~")) {
+		return 64 << 10
+	}
+	return 1
+}
+
 // ttyReader reads the terminal in a goroutine that can be stopped
-// without losing or stealing bytes.
+// without losing or stealing bytes. It reads only when asked, and no
+// more than asked for.
 type ttyReader struct {
 	fd     int
-	data   chan []byte
+	want   chan int
+	data   chan ttyData
+	asked  bool // a request is outstanding (editor goroutine only)
 	stopR  *os.File
 	stopW  *os.File
+	quit   chan struct{}
 	done   chan struct{}
 	stopMu sync.Once
 }
 
+type ttyData struct {
+	b    []byte
+	more bool // more input was already waiting
+}
+
 func startReader(fd int) *ttyReader {
-	r := &ttyReader{fd: fd, data: make(chan []byte, 16), done: make(chan struct{})}
+	r := &ttyReader{fd: fd, want: make(chan int, 1), data: make(chan ttyData, 1),
+		quit: make(chan struct{}), done: make(chan struct{})}
 	r.stopR, r.stopW, _ = os.Pipe()
 	go r.loop()
 	return r
 }
 
+// ask requests up to n bytes, unless a request is already outstanding.
+// The answer arrives on data; whoever receives it clears asked.
+func (r *ttyReader) ask(n int) {
+	if !r.asked {
+		r.asked = true
+		r.want <- n
+	}
+}
+
 func (r *ttyReader) loop() {
 	defer close(r.done)
-	buf := make([]byte, 4096)
+	var buf []byte
 	for {
-		fds := []unix.PollFd{
-			{Fd: int32(r.fd), Events: unix.POLLIN},
-			{Fd: int32(r.stopR.Fd()), Events: unix.POLLIN},
+		var n int
+		select {
+		case n = <-r.want:
+		case <-r.quit:
+			return
 		}
-		_, err := unix.Poll(fds, -1)
-		if err != nil {
-			if err == unix.EINTR {
+		if len(buf) < n {
+			buf = make([]byte, n)
+		}
+		for {
+			fds := []unix.PollFd{
+				{Fd: int32(r.fd), Events: unix.POLLIN},
+				{Fd: int32(r.stopR.Fd()), Events: unix.POLLIN},
+			}
+			_, err := unix.Poll(fds, -1)
+			if err != nil {
+				if err == unix.EINTR {
+					continue
+				}
+				close(r.data)
+				return
+			}
+			if fds[1].Revents != 0 {
+				return
+			}
+			if fds[0].Revents&unix.POLLNVAL != 0 {
+				close(r.data)
+				return
+			}
+			if fds[0].Revents&(unix.POLLIN|unix.POLLHUP|unix.POLLERR) == 0 {
 				continue
 			}
-			close(r.data)
-			return
-		}
-		if fds[1].Revents != 0 {
-			return
-		}
-		if fds[0].Revents&unix.POLLNVAL != 0 {
-			close(r.data)
-			return
-		}
-		if fds[0].Revents&(unix.POLLIN|unix.POLLHUP|unix.POLLERR) != 0 {
-			n, err := unix.Read(r.fd, buf)
-			if n > 0 {
-				b := make([]byte, n)
-				copy(b, buf[:n])
-				// stop() drains the channel, so this never blocks forever
-				r.data <- b
+			m, err := unix.Read(r.fd, buf[:n])
+			if m > 0 {
+				b := make([]byte, m)
+				copy(b, buf[:m])
+				avail := term.Pending(r.fd)
+				// one answer per request: data never holds more than one
+				r.data <- ttyData{b, avail > 0}
+				break
 			}
-			if n == 0 || err != nil && err != unix.EINTR && err != unix.EAGAIN {
+			if m == 0 || err != nil && err != unix.EINTR && err != unix.EAGAIN {
 				close(r.data)
 				return
 			}
@@ -565,36 +615,26 @@ func (r *ttyReader) loop() {
 
 // stop ends the reader and returns any bytes it read but nobody consumed.
 func (r *ttyReader) stop() []byte {
-	r.stopMu.Do(func() { r.stopW.Write([]byte{0}) })
+	r.stopMu.Do(func() {
+		close(r.quit)
+		r.stopW.Write([]byte{0})
+	})
+	<-r.done
 	var left []byte
 	for {
 		select {
-		case b, ok := <-r.data:
-			if !ok {
-				<-r.done
-				r.stopR.Close()
-				r.stopW.Close()
-				return left
+		case d, ok := <-r.data:
+			if ok {
+				left = append(left, d.b...)
+				continue
 			}
-			left = append(left, b...)
-		case <-r.done:
-			for {
-				select {
-				case b, ok := <-r.data:
-					if !ok {
-						r.stopR.Close()
-						r.stopW.Close()
-						return left
-					}
-					left = append(left, b...)
-				default:
-					r.stopR.Close()
-					r.stopW.Close()
-					return left
-				}
-			}
+		default:
 		}
+		break
 	}
+	r.stopR.Close()
+	r.stopW.Close()
+	return left
 }
 
 // Buffer returns the current command line and cursor (byte offset).

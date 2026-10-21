@@ -8,4 +8,5 @@ const (
 	ioctlGetTermios      = unix.TCGETS
 	ioctlSetTermios      = unix.TCSETS
 	ioctlSetTermiosDrain = unix.TCSETSW
+	ioctlInputPending    = unix.TIOCINQ
 )
