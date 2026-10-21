@@ -1,10 +1,45 @@
 package editor
 
 import (
+	"io"
 	"os"
 	"testing"
 	"time"
 )
+
+// Drawing waits while more input is already waiting, but when a command
+// run by a key binding reads that input itself (`read` with the answer
+// typed ahead), nothing more comes: the line must be drawn now, not left
+// stale until the next key.
+func TestDrawWhenBindingTakesWaitingInput(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	e := newTestEditor(80)
+	e.fd = int(r.Fd())
+	e.reader = &ttyReader{asked: true}
+	w.WriteString("abc")
+	if !e.handleInput(ttyData{[]byte("x"), true}) {
+		t.Fatal("more input is waiting: drawing should wait for it")
+	}
+	functions["test-read-tty"] = func(e *Editor, k Key) {
+		io.ReadFull(r, make([]byte, 3))
+	}
+	defer delete(functions, "test-read-tty")
+	if err := e.Bind("default", "ctrl-o", "test-read-tty", ""); err != nil {
+		t.Fatal(err)
+	}
+	e.reader.asked = true
+	if e.handleInput(ttyData{[]byte{0x0f}, true}) {
+		t.Fatal("the binding read the waiting input: the line must be drawn now")
+	}
+	if string(e.buf) != "x" || e.reader.asked {
+		t.Fatalf("buf %q asked %v", string(e.buf), e.reader.asked)
+	}
+}
 
 // The reader takes only the input it is asked for. Bytes typed after the
 // key that ends the line stay in the terminal, for the command that runs

@@ -292,10 +292,7 @@ func (e *Editor) ReadLine(o ReadOpts) (string, error) {
 				e.finish("", ErrEOF)
 				break
 			}
-			e.reader.asked = false
-			waiting = d.more
-			e.input = append(e.input, d.b...)
-			e.processInput(false)
+			waiting = e.handleInput(d)
 		case <-escC:
 			e.escTimer = nil
 			e.processInput(true)
@@ -311,6 +308,18 @@ func (e *Editor) ReadLine(o ReadOpts) (string, error) {
 	e.finalRender()
 	e.resetCursorShape()
 	return e.result, e.err
+}
+
+// handleInput handles input from the terminal. It reports whether more
+// input is already waiting, so that drawing can wait until that is handled
+// too. A command run by a key binding (`read`, the external editor) may
+// have read the waiting input itself: then nothing more is coming and the
+// line must be drawn now.
+func (e *Editor) handleInput(d ttyData) bool {
+	e.reader.asked = false
+	e.input = append(e.input, d.b...)
+	e.processInput(false)
+	return d.more && term.Pending(e.fd) > 0
 }
 
 // readNested reads a line for a command that a key binding runs while a
