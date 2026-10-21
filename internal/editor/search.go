@@ -102,6 +102,9 @@ func (s *histSearch) close(e *Editor, keep bool) {
 		// undo goes back to the line from before the search
 		e.pushUndoState([]rune(s.saved), s.savedPos)
 	}
+	if e.keymap == "vi" {
+		e.clampNormal() // opened with / in normal mode: stay on a character
+	}
 	e.update()
 }
 

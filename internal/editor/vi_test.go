@@ -213,6 +213,24 @@ func TestViAroundWord(t *testing.T) {
 	}
 }
 
+// A line taken from the history search opened with / leaves the cursor on
+// its last character, as normal mode requires.
+func TestViHistorySearchCursor(t *testing.T) {
+	e := searchEditor(fakeHist{"git status"})
+	e.keymap = "vi"
+	e.viMode = "default"
+	viKeys(e, "/")
+	e.handleKey(Key{Paste: "git"})
+	e.handleKey(Key{Code: KeyEnter})
+	if string(e.buf) != "git status" || e.pos != 9 {
+		t.Fatalf("buf %q pos %d", string(e.buf), e.pos)
+	}
+	viKeys(e, "x")
+	if got := string(e.buf); got != "git statu" {
+		t.Fatalf("x: %q", got)
+	}
+}
+
 func TestViRepeatTill(t *testing.T) {
 	// ; after t must not get stuck in front of the character
 	e := viEditor("a.b.c.d", 0)
