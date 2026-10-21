@@ -3,6 +3,7 @@ package shell
 import (
 	"bufio"
 	"fmt"
+	"io/fs"
 	"sort"
 	"strconv"
 	"strings"
@@ -415,18 +416,44 @@ func bIsatty(sh *Shell, io *IO, args []string) int {
 	return 0
 }
 
-func bHelp(sh *Shell, io *IO, args []string) int {
-	if len(args) > 1 {
-		if d := builtinHelp[args[1]]; d != "" {
-			fmt.Fprintf(io.Out, "%s - %s\n", args[1], d)
-			return 0
+// Docs holds the markdown documentation, embedded by the main package.
+var Docs fs.FS
+
+func docTopics() []string {
+	if Docs == nil {
+		return nil
+	}
+	var out []string
+	ents, _ := fs.ReadDir(Docs, "docs")
+	for _, e := range ents {
+		if n, ok := strings.CutSuffix(e.Name(), ".md"); ok {
+			out = append(out, n)
 		}
 	}
-	fmt.Fprintln(io.Out, "ash "+Version+" - builtins:")
+	return out
+}
+
+func bHelp(sh *Shell, io *IO, args []string) int {
+	if len(args) > 1 {
+		topic := args[1]
+		if d := builtinHelp[topic]; d != "" {
+			fmt.Fprintf(io.Out, "%s - %s\n", topic, d)
+			return 0
+		}
+		if Docs != nil {
+			if b, err := fs.ReadFile(Docs, "docs/"+topic+".md"); err == nil {
+				return sh.page(io, string(b))
+			}
+		}
+		fmt.Fprintf(io.Err, "help: no builtin or topic named '%s'\n", topic)
+		return 1
+	}
+	var b strings.Builder
+	b.WriteString("ash " + Version + "\n\nBuiltins:\n")
 	names := BuiltinNames()
 	w := 0
 	for _, n := range names {
-		if len(n) > w {
+		if len(n) > w && !strings.HasPrefix(n, "_") {
 			w = len(n)
 		}
 	}
@@ -434,10 +461,27 @@ func bHelp(sh *Shell, io *IO, args []string) int {
 		if strings.HasPrefix(n, "_") {
 			continue
 		}
-		fmt.Fprintf(io.Out, "  %-*s  %s\n", w, n, builtinHelp[n])
+		fmt.Fprintf(&b, "  %-*s  %s\n", w, n, builtinHelp[n])
 	}
-	fmt.Fprintln(io.Out, "\nThe docs live in the docs/ folder of the ash repository.")
-	return 0
+	if t := docTopics(); len(t) > 0 {
+		b.WriteString("\nTopics (help TOPIC):\n  " + strings.Join(t, "  ") + "\n")
+	}
+	return sh.page(io, b.String())
+}
+
+// page shows text through $PAGER when writing to a terminal.
+func (sh *Shell) page(io *IO, text string) int {
+	if !io.Out.TTY || io.Out.File == nil {
+		io.Out.WriteString(text)
+		return 0
+	}
+	pager := sh.Get("PAGER")
+	if pager == "" {
+		pager = "less -R"
+	}
+	pio := io.clone()
+	pio.In = &Stream{R: strings.NewReader(text)}
+	return sh.RunString(pager, "", pio)
 }
 
 func bEnableTransience(sh *Shell, io *IO, args []string) int {

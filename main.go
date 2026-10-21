@@ -2,6 +2,7 @@
 package main
 
 import (
+	"embed"
 	"fmt"
 	"io"
 	"os"
@@ -24,7 +25,11 @@ const usage = `usage: ash [options] [script [args...]]
   -h, --help            show this help
 `
 
+//go:embed docs/*.md
+var docs embed.FS
+
 func main() {
+	shell.Docs = docs
 	os.Exit(run())
 }
 
