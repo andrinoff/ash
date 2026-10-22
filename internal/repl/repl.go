@@ -140,7 +140,6 @@ func (r *REPL) loop() int {
 		default:
 			return r.exit(sh.Status())
 		}
-		r.warned = false
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
@@ -154,6 +153,10 @@ func (r *REPL) loop() int {
 			}
 			return r.exit(st)
 		}
+		// Only a command in between makes the next attempt to exit warn
+		// again; resetting before running the line meant a second `exit`
+		// warned forever.
+		r.warned = false
 	}
 }
 

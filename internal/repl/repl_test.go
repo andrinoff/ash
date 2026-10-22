@@ -1,12 +1,14 @@
 package repl
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/andrinoff/ash/internal/editor"
 	"github.com/andrinoff/ash/internal/shell"
@@ -75,5 +77,70 @@ func TestPromptPlaceholderRace(t *testing.T) {
 	<-done
 	if p := r.readOpts().Placeholder; p.Left == "" {
 		t.Errorf("the rendered prompt wasn't kept as the placeholder: %+v", p)
+	}
+}
+
+// lineInput makes the editor read command lines from a pipe (it falls
+// back to plain line reading when the input isn't a terminal) and returns
+// the writing end.
+func lineInput(t *testing.T, r *REPL) *os.File {
+	t.Helper()
+	in, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { w.Close(); in.Close(); out.Close() })
+	r.ed = editor.New(in, out, r.editorConfig())
+	r.sh.Editor = r.ed
+	return w
+}
+
+// stoppedJob starts a background job and stops it (with SIGTSTP, like
+// ctrl-z would).
+func stoppedJob(t *testing.T, sh *shell.Shell) {
+	t.Helper()
+	// a process group of its own: in an orphaned group (tests may run
+	// without a terminal session) SIGTSTP would be discarded
+	sh.JobControl = true
+	run(t, sh, "sleep 100 &")
+	pid, err := strconv.Atoi(sh.Get("last_pid"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		syscall.Kill(pid, syscall.SIGKILL)
+		syscall.Kill(pid, syscall.SIGCONT)
+	})
+	syscall.Kill(pid, syscall.SIGTSTP)
+	for i := 0; !sh.StoppedJobs(); i++ {
+		if i == 500 {
+			t.Fatal("the job didn't stop")
+		}
+		time.Sleep(10 * time.Millisecond)
+		sh.NotifyJobs(io.Discard)
+	}
+}
+
+// With stopped jobs the first exit only warns; the second one exits.
+func TestExitTwiceWithStoppedJobs(t *testing.T) {
+	r := newTestREPL(t)
+	stoppedJob(t, r.sh)
+	w := lineInput(t, r)
+	done := make(chan int, 1)
+	go func() { done <- r.loop() }()
+	w.WriteString("exit 3\nexit 3\n")
+	select {
+	case st := <-done:
+		if st != 3 {
+			t.Errorf("exit status %d, want 3", st)
+		}
+	case <-time.After(5 * time.Second):
+		w.Close() // end of input exits
+		<-done
+		t.Fatal("a second exit didn't leave the shell")
 	}
 }
