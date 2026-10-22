@@ -61,6 +61,22 @@ func TestHistorySearchLongQuery(t *testing.T) {
 	}
 }
 
+// Drawing the query line takes time linear in the query's length: finding
+// where to start it measured the rest of the query once per character, so
+// a big paste into the search hung the shell for seconds per keystroke.
+func TestHistorySearchLongQueryIsLinear(t *testing.T) {
+	e := searchEditor(fakeHist{"git status"})
+	e.call("history-pager", Key{})
+	e.handleKey(Key{Paste: strings.Repeat("x", 5000)})
+	lines := e.search.render(e, 40, 10)
+	if got := stripANSI(lines[0]); !strings.HasPrefix(got, "history: xxx") || plainWidth(got) >= 40 || e.search.cursorCol != 38 {
+		t.Fatalf("line %q cursor %d", got, e.search.cursorCol)
+	}
+	if n := testing.AllocsPerRun(1, func() { e.search.render(e, 40, 10) }); n > 1000 {
+		t.Fatalf("drawing a 5000 character query made %v allocations", n)
+	}
+}
+
 // Pasting while the history search is open adds to the query.
 func TestPasteIntoHistorySearch(t *testing.T) {
 	e := searchEditor(fakeHist{"git status", "echo hello world", "ls -la"})

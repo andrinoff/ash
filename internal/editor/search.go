@@ -184,9 +184,12 @@ func (s *histSearch) render(e *Editor, cols, avail int) []string {
 	// A query too long for the line scrolls to keep the cursor in view
 	// and is cut on the right: the line must not wrap.
 	room := cols - 1 - plainWidth(label)
-	from := 0
-	for from < s.qpos && plainWidth(string(s.query[from:s.qpos])) >= room {
-		from++
+	// (walk back from the cursor once: a big paste makes a long query)
+	ws := widths(s.query)
+	from, w := s.qpos, 0
+	for from > 0 && w+ws[from-1] < room {
+		from--
+		w += ws[from]
 	}
 	q := truncateWidth(string(s.query[from:]), room)
 	head := prog + label + reset + q
