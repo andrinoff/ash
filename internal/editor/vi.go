@@ -25,9 +25,8 @@ func (e *Editor) setViMode(m string) {
 	}
 	prev := e.viMode
 	e.viMode = m
-	if m == "default" && (prev == "insert" || prev == "replace") && e.pos > 0 && e.buf[e.pos-1] != '\n' {
-		// like vi, leaving insert (or replace) mode steps back onto the
-		// character before the cursor (but not onto the previous line)
+	if m == "default" && (prev == "insert" || prev == "replace") && e.pos > 0 && e.pos == len(e.buf) && e.buf[e.pos-1] != '\n' {
+		// normal mode keeps the cursor on a character
 		e.pos--
 	}
 	if m == "visual" {
@@ -46,6 +45,17 @@ func (e *Editor) setViMode(m string) {
 		e.cfg.OnKeymap(e.keymapName())
 	}
 	e.requestPrompt()
+}
+
+// fnViNormal leaves insert (or replace) mode the way escape does in vi:
+// the cursor steps back onto the character before it, but not onto the
+// previous line. A binding's -m default switches the mode without that
+// step, as in fish, where such bindings move the cursor themselves.
+func fnViNormal(e *Editor, k Key) {
+	if (e.viMode == "insert" || e.viMode == "replace") && e.pos > 0 && e.buf[e.pos-1] != '\n' {
+		e.pos--
+	}
+	e.setViMode("default")
 }
 
 func (e *Editor) setCursorShape() {
@@ -101,7 +111,7 @@ func (e *Editor) viKey(k Key) bool {
 	if e.viMode == "replace" {
 		switch {
 		case k.Code == KeyEscape:
-			e.setViMode("default")
+			fnViNormal(e, k)
 			return true
 		case k.Code == KeyBackspace:
 			if e.pos > 0 {

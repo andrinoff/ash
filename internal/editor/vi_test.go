@@ -143,6 +143,36 @@ func TestViEscapeMovesLeft(t *testing.T) {
 	}
 }
 
+// A binding that leaves insert mode with -m default moves the cursor only
+// as its functions say (fish's `bind -M insert -m default j,k
+// backward-char` moved it twice); only escape steps back by itself. At the
+// end of the line the cursor still goes onto the last character.
+func TestViModeBindingDoesNotStepBack(t *testing.T) {
+	cases := []struct {
+		fns        string
+		left, want int
+	}{
+		{"backward-char", 1, 2},
+		{"repaint-mode", 1, 3},
+		{"repaint-mode", 0, 3},
+	}
+	for _, c := range cases {
+		e := viEditor("", 0)
+		e.viMode = "insert"
+		if err := e.Bind("insert", "j,k", c.fns, "default"); err != nil {
+			t.Fatal(err)
+		}
+		viKeys(e, "abcd")
+		for i := 0; i < c.left; i++ {
+			e.handleKey(Key{Code: KeyLeft})
+		}
+		viKeys(e, "jk")
+		if string(e.buf) != "abcd" || e.viMode != "default" || e.pos != c.want {
+			t.Errorf("%s after %d left: %q in %s at %d, want %d", c.fns, c.left, string(e.buf), e.viMode, e.pos, c.want)
+		}
+	}
+}
+
 // A and dd act on the cursor's line of a multi-line command.
 func TestViLineCommands(t *testing.T) {
 	cases := []struct {

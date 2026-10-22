@@ -88,7 +88,7 @@ func init() {
 		"comment-line":                   fnCommentLine,
 		"self-insert":                    func(e *Editor, k Key) { e.selfInsert(k.Rune) },
 		"expand-abbr":                    func(e *Editor, k Key) { e.expandAbbr() },
-		"vi-normal":                      func(e *Editor, k Key) { e.setViMode("default") },
+		"vi-normal":                      fnViNormal,
 		"vi-insert":                      func(e *Editor, k Key) { e.setViMode("insert") },
 		"pager-toggle-search":            func(e *Editor, k Key) { e.complete(true) },
 		"and":                            func(e *Editor, k Key) {},
