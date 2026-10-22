@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -33,8 +34,11 @@ type REPL struct {
 	contDone bool
 	tty      bool
 	warned   bool
-	last     editor.Prompt
-	lastDir  string
+
+	// the last rendered prompt, written by the background renderer
+	lastMu  sync.Mutex
+	last    editor.Prompt
+	lastDir string
 }
 
 // Run starts an interactive session and returns the exit status.
@@ -168,8 +172,11 @@ func (r *REPL) readOpts() editor.ReadOpts {
 	r.fixLine = ""
 	// While a slow prompt renders, show the previous one if we're still
 	// in the same directory, otherwise the instant built-in prompt.
-	if r.last.Left != "" && r.lastDir == r.sh.Dir() {
-		o.Placeholder = r.last
+	r.lastMu.Lock()
+	last, lastDir := r.last, r.lastDir
+	r.lastMu.Unlock()
+	if last.Left != "" && lastDir == r.sh.Dir() {
+		o.Placeholder = last
 	} else {
 		o.Placeholder = builtinPrompt(r.snapshot(), "insert")
 	}
@@ -177,9 +184,12 @@ func (r *REPL) readOpts() editor.ReadOpts {
 	o.Prompt = func(km string) func() editor.Prompt {
 		render := inner(km)
 		dir := r.sh.Dir()
+		// runs in the background, possibly after the next readOpts
 		return func() editor.Prompt {
 			p := render()
+			r.lastMu.Lock()
 			r.last, r.lastDir = p, dir
+			r.lastMu.Unlock()
 			return p
 		}
 	}

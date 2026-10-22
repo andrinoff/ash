@@ -57,3 +57,23 @@ abbr -a pgid --function pg`)
 		t.Errorf("abbreviation function command ran in process group %q (ok=%v), want the shell's %q", got, ok, want)
 	}
 }
+
+// The editor renders prompts in the background, and a slow one can still
+// be rendering when the next command line's options are built (for
+// example after enter was pressed quickly). Remembering it as the next
+// placeholder must not race with that (go test -race).
+func TestPromptPlaceholderRace(t *testing.T) {
+	r := newTestREPL(t)
+	o := r.readOpts()
+	render := o.Prompt("insert")
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		render()
+	}()
+	r.readOpts()
+	<-done
+	if p := r.readOpts().Placeholder; p.Left == "" {
+		t.Errorf("the rendered prompt wasn't kept as the placeholder: %+v", p)
+	}
+}
