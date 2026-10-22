@@ -737,6 +737,13 @@ func (sh *Shell) Fork() *Shell { return sh.clone() }
 
 // CaptureFunction runs a function and returns what it printed. It reports
 // false if no such function exists.
+//
+// The function runs like a command substitution (as fish runs its
+// prompts): external commands it starts stay in the shell's process
+// group instead of being handed the terminal, because the line editor
+// may own the terminal in raw mode while prompts are rendered, and a
+// foreground job would put the terminal back into cooked mode when it
+// finished.
 func (sh *Shell) CaptureFunction(name string, args ...string) (string, bool) {
 	fn := sh.lookupFunc(name)
 	if fn == nil {
@@ -746,7 +753,9 @@ func (sh *Shell) CaptureFunction(name string, args ...string) (string, bool) {
 	io := sh.StdIO()
 	io.Out = &Stream{W: buf}
 	saved, savedPipe := sh.status, sh.pipestatus
+	sh.inSubst++
 	sh.callFunc(fn, append([]string{name}, args...), io)
+	sh.inSubst--
 	sh.status, sh.pipestatus = saved, savedPipe
 	return buf.String(), true
 }

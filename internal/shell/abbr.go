@@ -95,7 +95,12 @@ func (sh *Shell) ExpandAbbr(word string, cmdPos bool, cmd string) (string, bool)
 	}
 	if match.Function != "" {
 		buf := &lockedBuffer{}
+		// Like a command substitution: this runs while the line editor
+		// has the terminal in raw mode, so external commands must not
+		// take the terminal (and reset its modes when they finish).
+		sh.inSubst++
 		st, ok := sh.CallFunction(match.Function, []string{word}, &IO{In: &Stream{}, Out: &Stream{W: buf}, Err: sh.StdIO().Err})
+		sh.inSubst--
 		if !ok || st != 0 {
 			return "", false
 		}
