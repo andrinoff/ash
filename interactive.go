@@ -9,7 +9,5 @@ func interactiveMain(sh *shell.Shell, initCmds []string) int {
 	return repl.Run(sh, initCmds)
 }
 
-func loadConfig(sh *shell.Shell) {
-	sh.LoadUniversal()
-	repl.LoadConfig(sh)
-}
+// loadConfig reads the config for `ash -ic CMD`.
+func loadConfig(sh *shell.Shell) { repl.LoadConfig(sh) }

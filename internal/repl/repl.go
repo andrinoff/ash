@@ -371,7 +371,9 @@ func (r *REPL) handleSignals() {
 	}()
 }
 
-// LoadConfig sources the user's config (for `ash -i -c ...`).
+// LoadConfig reads the configuration of an interactive shell that doesn't
+// run the prompt loop (ash -ic CMD), like Run does before the first
+// prompt.
 func LoadConfig(sh *shell.Shell) {
 	(&REPL{sh: sh}).loadConfig()
 }

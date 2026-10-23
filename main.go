@@ -144,6 +144,10 @@ func run() int {
 			sh.SetArgs(args[1:])
 		}
 		sh.Init()
+		if interactive {
+			// set up like the interactive shell (repl.Run) would
+			sh.LoadUniversal()
+		}
 		for _, c := range initCmds {
 			sh.RunString(c, "", sh.StdIO())
 		}
