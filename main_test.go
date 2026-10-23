@@ -7,15 +7,21 @@ import (
 )
 
 // runArgs runs ash with the given arguments, with stdin away from any
-// terminal the tests run on, and a home of its own.
+// terminal the tests run on.
 func runArgs(t *testing.T, args ...string) int {
+	t.Helper()
+	return runArgv(t, append([]string{"ash"}, args...)...)
+}
+
+// runArgv is runArgs with argv[0].
+func runArgv(t *testing.T, argv ...string) int {
 	t.Helper()
 	null, err := os.Open(os.DevNull)
 	if err != nil {
 		t.Fatal(err)
 	}
 	savedArgs, savedStdin := os.Args, os.Stdin
-	os.Args, os.Stdin = append([]string{"ash"}, args...), null
+	os.Args, os.Stdin = argv, null
 	defer func() {
 		os.Args, os.Stdin = savedArgs, savedStdin
 		null.Close()
@@ -74,5 +80,23 @@ func TestInteractiveCommandReadsConfig(t *testing.T) {
 	}
 	if got, want := readFile(t, out), ".\n"; got != want {
 		t.Errorf("ash -c read the config: got %q, want %q", got, want)
+	}
+}
+
+// A login shell is recognized by the "-" that starts argv[0], which can
+// also be a path: `exec -l /usr/local/bin/ash` gives "-/usr/local/bin/ash".
+func TestLoginFromArgv0(t *testing.T) {
+	home := isolateHome(t)
+	out := filepath.Join(home, "out")
+	for argv0, want := range map[string]string{
+		"-ash":                "login\n",
+		"-/usr/local/bin/ash": "login\n",
+		"/usr/local/bin/ash":  "not\n",
+		"ash":                 "not\n",
+	} {
+		runArgv(t, argv0, "-c", "if status is-login; echo login; else; echo not; end > "+out)
+		if got := readFile(t, out); got != want {
+			t.Errorf("argv[0] %q: got %q, want %q", argv0, got, want)
+		}
 	}
 }

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/andrinoff/ash/internal/shell"
@@ -35,11 +34,13 @@ func main() {
 
 func run() int {
 	args := os.Args[1:]
+	// A login shell's argv[0] starts with "-": "-ash" from login(1), or
+	// "-/path/to/ash" from `exec -l` (how some terminals start it).
 	var (
 		command     string
 		hasCommand  bool
 		interactive bool
-		login       = strings.HasPrefix(filepath.Base(os.Args[0]), "-")
+		login       = strings.HasPrefix(os.Args[0], "-")
 		noConfig    bool
 		noExec      bool
 		initCmds    []string
