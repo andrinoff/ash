@@ -4,6 +4,7 @@ package repl
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -28,6 +30,7 @@ type REPL struct {
 	cleanup  []func()
 	sh       *shell.Shell
 	ed       *editor.Editor
+	in, out  *os.File // the terminal the editor uses
 	hist     historyBackend
 	state    promptState
 	cont     string
@@ -39,17 +42,29 @@ type REPL struct {
 	lastMu  sync.Mutex
 	last    editor.Prompt
 	lastDir string
+
+	// edMu is held while the editor reads a line, at the prompt or for
+	// the read builtin, which can run on other goroutines (in a
+	// background job or a pipeline).
+	edMu sync.Mutex
+	// inBinding is set while shell code bound to a key runs, with the
+	// editor suspended in the middle of reading a line.
+	inBinding atomic.Bool
 }
+
+// errTerminalBusy is what `read` gets when the editor is already reading
+// the prompt for the user (for example from a background job).
+var errTerminalBusy = errors.New("the terminal is busy")
 
 // Run starts an interactive session and returns the exit status.
 func Run(sh *shell.Shell, initCmds []string) int {
-	r := &REPL{sh: sh}
+	r := &REPL{sh: sh, in: os.Stdin, out: os.Stdout}
 	sh.Init()
 	r.tty = term.IsTerminal(int(os.Stdout.Fd())) && os.Getenv("TERM") != "dumb"
 
 	r.hist = openHistory(sh)
 	sh.History = r.hist
-	r.ed = editor.New(os.Stdin, os.Stdout, r.editorConfig())
+	r.ed = editor.New(r.in, r.out, r.editorConfig())
 	sh.Editor = r.ed
 	sh.SetReadLine(r.readLine)
 	shell.EditorFunctions = editor.FunctionNames()
@@ -84,6 +99,8 @@ func (r *REPL) editorConfig() editor.Config {
 		History:       r.hist,
 		SearchHistory: r.searchHistory,
 		RunCommand: func(cmd string) {
+			r.inBinding.Store(true)
+			defer r.inBinding.Store(false)
 			sh.KeepStatus(func() {
 				sh.ClearInterrupt()
 				sh.RunString(cmd, "", sh.StdIO())
@@ -91,8 +108,12 @@ func (r *REPL) editorConfig() editor.Config {
 				sh.ApplyChildActions(sh.StdIO())
 			})
 		},
-		EditCommand: r.editCommand,
-		Explain:     func(buf string) string { return sh.FormatExplain(sh.Explain(buf), true) },
+		EditCommand: func(buf string) (string, bool) {
+			r.inBinding.Store(true)
+			defer r.inBinding.Store(false)
+			return r.editCommand(buf)
+		},
+		Explain: func(buf string) string { return sh.FormatExplain(sh.Explain(buf), true) },
 		ResumeJob: func() string {
 			if id := sh.LastStoppedJob(); id > 0 {
 				return "fg %" + strconv.Itoa(id)
@@ -121,10 +142,13 @@ func (r *REPL) loop() int {
 		}
 		r.setTitle("")
 		r.reportCwd()
+		// wait for a `read` in a background job to finish with the editor
+		r.edMu.Lock()
 		if r.tty {
 			r.ed.EnsureNewline(sh.Style("pager_progress").SGR() + "⏎")
 		}
 		line, err := r.ed.ReadLine(r.readOpts())
+		r.edMu.Unlock()
 		switch err {
 		case nil:
 		case editor.ErrEOF:
@@ -275,7 +299,20 @@ func (r *REPL) importHistory() {
 }
 
 // readLine is used by the read builtin when stdin is the terminal.
+//
+// The editor reads one line at a time, so `read` must not use it while
+// the prompt is being read. Shell code bound to a key runs with the editor
+// suspended in the middle of the command line; a `read` there gets a
+// nested line of its own from the editor, which keeps the command line,
+// typeahead and kill ring. Anything else that finds the editor busy is a
+// background job trying to read the terminal while the user is at the
+// prompt, and fails like a background read of a terminal does.
 func (r *REPL) readLine(prompt, initial string) (string, error) {
+	if r.edMu.TryLock() {
+		defer r.edMu.Unlock()
+	} else if !r.inBinding.Load() {
+		return "", errTerminalBusy
+	}
 	line, err := r.ed.ReadLine(editor.ReadOpts{
 		Prompt: func(string) func() editor.Prompt {
 			return func() editor.Prompt { return editor.Prompt{Left: prompt} }

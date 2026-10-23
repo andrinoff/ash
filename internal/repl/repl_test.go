@@ -26,7 +26,8 @@ func newTestREPL(t *testing.T) *REPL {
 	sh := shell.New()
 	sh.Init()
 	r := &REPL{sh: sh, hist: openHistory(sh)}
-	r.ed = editor.New(os.Stdin, os.Stdout, r.editorConfig())
+	r.in, r.out = os.Stdin, os.Stdout
+	r.ed = editor.New(r.in, r.out, r.editorConfig())
 	return r
 }
 
@@ -94,6 +95,7 @@ func lineInput(t *testing.T, r *REPL) *os.File {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { w.Close(); in.Close(); out.Close() })
+	r.in, r.out = in, out
 	r.ed = editor.New(in, out, r.editorConfig())
 	r.sh.Editor = r.ed
 	return w
@@ -142,5 +144,51 @@ func TestExitTwiceWithStoppedJobs(t *testing.T) {
 		w.Close() // end of input exits
 		<-done
 		t.Fatal("a second exit didn't leave the shell")
+	}
+}
+
+// `read` shares the line editor with the prompt. Run from a key binding
+// (the editor is suspended in the middle of a command line) it must get
+// an editor of its own instead of taking over the suspended line, and a
+// background job must not start a second read on the editor while the
+// prompt is up.
+func TestReadWhileEditorBusy(t *testing.T) {
+	r := newTestREPL(t)
+	w := lineInput(t, r)
+	readLine := func() (string, error) {
+		type result struct {
+			line string
+			err  error
+		}
+		ch := make(chan result, 1)
+		go func() {
+			line, err := r.readLine("? ", "")
+			ch <- result{line, err}
+		}()
+		select {
+		case res := <-ch:
+			return res.line, res.err
+		case <-time.After(5 * time.Second):
+			t.Fatal("read didn't return")
+			return "", nil
+		}
+	}
+
+	w.WriteString("idle\n")
+	if line, err := readLine(); line != "idle" || err != nil {
+		t.Errorf("read at an idle editor: %q, %v", line, err)
+	}
+
+	r.edMu.Lock() // the prompt is reading a line
+	defer r.edMu.Unlock()
+	if line, err := readLine(); err == nil {
+		t.Errorf("a read from a background job while at the prompt got %q", line)
+	}
+
+	r.inBinding.Store(true)
+	defer r.inBinding.Store(false)
+	w.WriteString("bound\n")
+	if line, err := readLine(); line != "bound" || err != nil {
+		t.Errorf("read in a key binding: %q, %v", line, err)
 	}
 }
