@@ -3,12 +3,17 @@ package repl
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/andrinoff/ash/internal/editor"
+	"github.com/andrinoff/ash/internal/shell"
+	"github.com/andrinoff/ash/internal/term"
 )
 
 // session is a REPL running on a pseudo-terminal: the editor reads keys
@@ -66,6 +71,40 @@ func (p *session) waitFor(t *testing.T, text string) {
 }
 
 func (p *session) typ(keys string) { p.master.WriteString(keys) }
+
+// SIGHUP at the prompt (kill -HUP, with the terminal still there) ends
+// the session the way ctrl-d does, ash_exit handlers included, and takes
+// the terminal out of the editor's raw mode. It happens only once even if
+// the fallback timer fires too.
+func TestHangupAtPrompt(t *testing.T) {
+	r := newTestREPL(t)
+	onTerminal(t, r)
+	fd := int(r.in.Fd())
+	cooked, err := term.GetState(fd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.saved = cooked
+	term.SetStateNow(fd, term.Raw(cooked)) // as the editor has it
+	out := filepath.Join(t.TempDir(), "bye")
+	run(t, r.sh, "function bye --on-event ash_exit; echo bye >> "+shell.Quote(out)+"; end")
+	var codes []int
+	saved := exitProcess
+	exitProcess = func(code int) { codes = append(codes, code) }
+	defer func() { exitProcess = saved }()
+
+	r.hangup(true)
+	r.hangup(false)
+	if len(codes) != 1 || codes[0] != 129 {
+		t.Errorf("exit codes %v, want [129]", codes)
+	}
+	if b, _ := os.ReadFile(out); string(b) != "bye\n" {
+		t.Errorf("ash_exit handlers wrote %q, want them run once", b)
+	}
+	if st, err := term.GetState(fd); err != nil || st.Lflag&unix.ICANON == 0 || st.Lflag&unix.ECHO == 0 {
+		t.Errorf("the terminal was left in raw mode (%v)", err)
+	}
+}
 
 // `exit` in shell code bound to a key leaves the shell right away, not
 // after the next command line (which then didn't run).

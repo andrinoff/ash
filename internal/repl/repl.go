@@ -18,6 +18,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/andrinoff/ash/internal/editor"
 	"github.com/andrinoff/ash/internal/shell"
 	"github.com/andrinoff/ash/internal/syntax"
@@ -51,7 +53,13 @@ type REPL struct {
 	// inBinding is set while shell code bound to a key runs, with the
 	// editor suspended in the middle of reading a line.
 	inBinding atomic.Bool
+
+	saved   *unix.Termios // the terminal's modes when the session started
+	hupOnce sync.Once
 }
+
+// exitProcess ends the process (tests replace it).
+var exitProcess = os.Exit
 
 // errTerminalBusy is what `read` gets when the editor is already reading
 // the prompt for the user (for example from a background job).
@@ -62,6 +70,7 @@ func Run(sh *shell.Shell, initCmds []string) int {
 	r := &REPL{sh: sh, in: os.Stdin, out: os.Stdout}
 	sh.Init()
 	r.tty = term.IsTerminal(int(os.Stdout.Fd())) && os.Getenv("TERM") != "dumb"
+	r.saved, _ = term.GetState(int(r.in.Fd()))
 
 	r.hist = openHistory(sh)
 	sh.History = r.hist
@@ -356,17 +365,11 @@ func (r *REPL) handleSignals() {
 			case syscall.SIGINT:
 				sh.Interrupt()
 			case syscall.SIGHUP:
-				r.ed.Do(func() {
-					r.saveAndClose()
-					sh.HangupJobs()
-					os.Exit(129)
-				})
+				r.ed.Do(func() { r.hangup(true) })
 				// if the editor isn't running, exit from here
 				go func() {
 					time.Sleep(200 * time.Millisecond)
-					r.saveAndClose()
-					sh.HangupJobs()
-					os.Exit(129)
+					r.hangup(false)
 				}()
 			case syscall.SIGCHLD:
 				r.ed.Do(func() {
@@ -380,6 +383,38 @@ func (r *REPL) handleSignals() {
 			}
 		}
 	}()
+}
+
+// hangup ends the session on SIGHUP, once, from whichever of the editor
+// or the fallback timer gets there first. At the prompt (on the editor's
+// goroutine) it exits the way ctrl-d does, running ash_exit handlers and
+// the EXIT trap, and takes the terminal out of the editor's raw mode in
+// case it is still there (kill -HUP). Otherwise a command is running on
+// the main goroutine, so it only saves the history and hangs up the jobs.
+func (r *REPL) hangup(atPrompt bool) {
+	r.hupOnce.Do(func() {
+		status := 129
+		if atPrompt {
+			status = r.exit(status)
+			r.restoreTerminal()
+		} else {
+			r.saveAndClose()
+			r.sh.HangupJobs()
+		}
+		exitProcess(status)
+	})
+}
+
+// restoreTerminal undoes the editor's terminal setup, for leaving from
+// the middle of reading a line.
+func (r *REPL) restoreTerminal() {
+	if r.saved != nil {
+		term.SetStateNow(int(r.in.Fd()), r.saved)
+	}
+	r.out.WriteString("\x1b[?2004l") // bracketed paste off
+	if r.ed.Keymap() == "vi" {
+		r.out.WriteString("\x1b[0 q") // default cursor shape
+	}
 }
 
 // LoadConfig reads the configuration of an interactive shell that doesn't
