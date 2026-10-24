@@ -62,3 +62,46 @@ func TestUniversalChangedWithoutScope(t *testing.T) {
 		t.Fatalf("file: %q", b)
 	}
 }
+
+// set -U must keep the universal variables it didn't change: those a
+// script never loaded (ash -c, scripts) and those another running shell
+// saved after this one started.
+func TestSetUniversalKeepsOthers(t *testing.T) {
+	cfg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfg)
+	path := filepath.Join(cfg, "ash", "variables")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("- saved\x1eold\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	newShell := func(load bool) *Shell {
+		sh := New()
+		sh.Init()
+		if load {
+			sh.LoadUniversal()
+		}
+		return sh
+	}
+	set := func(sh *Shell, src string) {
+		t.Helper()
+		if st := sh.RunString(src, "", sh.StdIO()); st != 0 {
+			t.Fatalf("%q: status %d", src, st)
+		}
+	}
+
+	set(newShell(false), "set -U script yes") // like ash -c
+	a, b := newShell(true), newShell(true)    // two interactive shells
+	set(a, "set -U froma 1")
+	set(b, "set -U fromb 2")
+
+	sh := newShell(true)
+	var got []string
+	for _, n := range []string{"saved", "script", "froma", "fromb"} {
+		got = append(got, n+"="+sh.Get(n))
+	}
+	if g, want := strings.Join(got, " "), "saved=old script=yes froma=1 fromb=2"; g != want {
+		t.Errorf("got %s, want %s", g, want)
+	}
+}
