@@ -243,6 +243,24 @@ func TestTitleArguments(t *testing.T) {
 	}
 }
 
+// The editor marks every accepted line as a command that started (OSC
+// 133;C), so each one must be marked finished, empty ones included.
+func TestEmptyLineMarkedFinished(t *testing.T) {
+	r := newTestREPL(t)
+	w := lineInput(t, r)
+	written := terminalOutput(t, r)
+	w.WriteString("\n   \ntrue\n")
+	w.Close()
+	r.loop()
+	out := written()
+	if n := strings.Count(out, "\x1b]133;D\x07"); n != 2 {
+		t.Errorf("%d unnumbered 133;D marks, want 2 for the empty lines: %q", n, out)
+	}
+	if n := strings.Count(out, "\x1b]133;D;0\x07"); n != 1 {
+		t.Errorf("%d 133;D;0 marks, want 1 for true: %q", n, out)
+	}
+}
+
 // starship's continuation prompt (prompt --continuation) is used for the
 // second and later lines of a command.
 func TestStarshipContinuation(t *testing.T) {

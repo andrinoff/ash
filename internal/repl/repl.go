@@ -166,6 +166,11 @@ func (r *REPL) loop() int {
 			return r.exit(sh.Status())
 		}
 		if strings.TrimSpace(line) == "" {
+			if r.tty {
+				// the editor marked the accepted line as a command that
+				// started (OSC 133;C); mark it finished
+				r.out.WriteString("\x1b]133;D\x07")
+			}
 			continue
 		}
 		r.runLine(line)
@@ -236,7 +241,7 @@ func (r *REPL) runLine(line string) {
 	dur := time.Since(start)
 	sh.SetCmdDuration(dur)
 	if r.tty {
-		os.Stdout.WriteString("\x1b]133;D;" + strconv.Itoa(status) + "\x07")
+		r.out.WriteString("\x1b]133;D;" + strconv.Itoa(status) + "\x07")
 		r.notifyLong(line, status, dur)
 	}
 	sh.ApplyChildActions(sh.StdIO())
@@ -281,7 +286,7 @@ func (r *REPL) notifyLong(line string, status int, dur time.Duration) {
 		}
 		return r
 	}, msg)
-	os.Stdout.WriteString("\x1b]9;" + msg + "\x07")
+	r.out.WriteString("\x1b]9;" + msg + "\x07")
 }
 
 // importHistory brings in fish (or zsh, or bash) history the first time
@@ -486,7 +491,7 @@ func (r *REPL) reportCwd() {
 	}
 	host, _ := os.Hostname()
 	u := url.URL{Scheme: "file", Host: host, Path: r.sh.Dir()}
-	os.Stdout.WriteString("\x1b]7;" + u.String() + "\x1b\\")
+	r.out.WriteString("\x1b]7;" + u.String() + "\x1b\\")
 }
 
 func tildePath(p, home string) string {
