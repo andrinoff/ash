@@ -376,6 +376,10 @@ type Stream struct {
 	W      io.Writer
 	R      io.Reader
 	TTY    bool
+	// Inherited is set on the shell's own standard input. Builtins that
+	// read stdin when given no arguments (count, string, path) only do so
+	// when input was piped or redirected to them, like fish.
+	Inherited bool
 	broken *atomic.Bool
 	closed bool
 }
@@ -467,11 +471,19 @@ func (o *IO) setFd(n int, s *Stream) {
 	}
 }
 
+// ReadsInput reports whether a builtin given no arguments should read
+// its input: stdin must be piped or redirected, not the shell's own.
+func (s *Stream) ReadsInput() bool {
+	return s != nil && !s.TTY && !s.Inherited && !s.closed && (s.File != nil || s.R != nil)
+}
+
 // StdIO returns the shell's top-level streams.
 func (sh *Shell) StdIO() *IO {
 	tty := sh.shared.ttyFd >= 0
+	in := fileStream(sh.Stdin, tty && term.IsTerminal(int(sh.Stdin.Fd())))
+	in.Inherited = true
 	return &IO{
-		In:  fileStream(sh.Stdin, tty && term.IsTerminal(int(sh.Stdin.Fd()))),
+		In:  in,
 		Out: fileStream(sh.Stdout, tty && term.IsTerminal(int(sh.Stdout.Fd()))),
 		Err: fileStream(sh.Stderr, tty && term.IsTerminal(int(sh.Stderr.Fd()))),
 	}
