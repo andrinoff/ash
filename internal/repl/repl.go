@@ -223,12 +223,17 @@ func (r *REPL) notifyLong(line string, status int, dur time.Duration) {
 
 // readLine is used by the read builtin when stdin is the terminal.
 func (r *REPL) readLine(prompt string) (string, error) {
-	return r.ed.ReadLine(editor.ReadOpts{
+	line, err := r.ed.ReadLine(editor.ReadOpts{
 		Prompt: func(string) func() editor.Prompt {
 			return func() editor.Prompt { return editor.Prompt{Left: prompt} }
 		},
 		Simple: true,
 	})
+	if err == editor.ErrInterrupt {
+		// ctrl-c in `read` stops the whole command, like in bash
+		r.sh.Interrupt()
+	}
+	return line, err
 }
 
 func (r *REPL) notifyJobs() {
