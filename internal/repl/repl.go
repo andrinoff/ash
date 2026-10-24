@@ -108,6 +108,10 @@ func (r *REPL) editorConfig() editor.Config {
 				sh.ResetControl()
 				sh.ApplyChildActions(sh.StdIO())
 			})
+			if exit, _ := sh.ShouldExit(); exit {
+				// leave now, not after the next line (which wouldn't run)
+				r.ed.QueueFunctions("exit")
+			}
 		},
 		EditCommand: func(buf string) (string, bool) {
 			r.inBinding.Store(true)
@@ -156,6 +160,7 @@ func (r *REPL) loop() int {
 			if sh.StoppedJobs() && !r.warned {
 				r.warned = true
 				fmt.Fprintln(os.Stderr, "ash: there are stopped jobs; press ctrl-d again to exit (they will be hung up)")
+				sh.ResetControlAll() // an exit from a key binding, too
 				continue
 			}
 			return r.exit(sh.Status())
