@@ -206,6 +206,43 @@ func fakeStarship(t *testing.T, r *REPL) {
 	r.sh.SetPromptProvider("starship")
 }
 
+// terminalOutput sends what the REPL writes to the terminal to a file,
+// and returns a function that reads what was written so far.
+func terminalOutput(t *testing.T, r *REPL) func() string {
+	t.Helper()
+	f, err := os.CreateTemp(t.TempDir(), "out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.Close() })
+	r.out, r.tty = f, true
+	return func() string {
+		b, err := os.ReadFile(f.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.Truncate(0)
+		f.Seek(0, 0)
+		return string(b)
+	}
+}
+
+// fish_title gets the running command as $argv[1], and no arguments at
+// the prompt.
+func TestTitleArguments(t *testing.T) {
+	r := newTestREPL(t)
+	written := terminalOutput(t, r)
+	run(t, r.sh, `function fish_title; echo (count $argv) $argv; end`)
+	r.setTitle("")
+	if got, want := written(), "\x1b]2;0\x07"; got != want {
+		t.Errorf("at the prompt: %q, want %q", got, want)
+	}
+	r.setTitle("make test")
+	if got, want := written(), "\x1b]2;1 make test\x07"; got != want {
+		t.Errorf("running a command: %q, want %q", got, want)
+	}
+}
+
 // starship's continuation prompt (prompt --continuation) is used for the
 // second and later lines of a command.
 func TestStarshipContinuation(t *testing.T) {

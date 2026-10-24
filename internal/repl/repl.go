@@ -444,8 +444,14 @@ func (r *REPL) setTitle(cmd string) {
 	}
 	sh := r.sh
 	var title string
+	// like fish: the running command is $argv[1], and at the prompt
+	// there are no arguments (functions test `set -q argv[1]`)
+	var args []string
+	if cmd != "" {
+		args = []string{cmd}
+	}
 	for _, fn := range []string{"ash_title", "fish_title"} {
-		if out, ok := sh.CaptureFunction(fn, cmd); ok {
+		if out, ok := sh.CaptureFunction(fn, args...); ok {
 			title = strings.TrimSpace(out)
 			goto set
 		}
@@ -469,7 +475,7 @@ set:
 		}
 		return r
 	}, title)
-	os.Stdout.WriteString("\x1b]2;" + title + "\x07")
+	r.out.WriteString("\x1b]2;" + title + "\x07")
 }
 
 // reportCwd tells the terminal our directory (OSC 7), so new tabs and
