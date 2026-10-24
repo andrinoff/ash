@@ -192,3 +192,26 @@ func TestReadWhileEditorBusy(t *testing.T) {
 		t.Errorf("read in a key binding: %q, %v", line, err)
 	}
 }
+
+// fakeStarship puts a starship in $PATH that prints its arguments and
+// selects it as the prompt provider.
+func fakeStarship(t *testing.T, r *REPL) {
+	t.Helper()
+	dir := t.TempDir()
+	script := "#!/bin/sh\nprintf '[%s]' \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "starship"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(t, r.sh, "set -gx PATH "+shell.Quote(dir)+" $PATH")
+	r.sh.SetPromptProvider("starship")
+}
+
+// starship's continuation prompt (prompt --continuation) is used for the
+// second and later lines of a command.
+func TestStarshipContinuation(t *testing.T) {
+	r := newTestREPL(t)
+	fakeStarship(t, r)
+	if got, want := r.readOpts().Continuation, "[prompt][--continuation]"; got != want {
+		t.Errorf("continuation %q, want %q", got, want)
+	}
+}

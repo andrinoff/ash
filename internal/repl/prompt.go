@@ -162,15 +162,20 @@ func (r *REPL) starship(ps promptState, keymap string) (editor.Prompt, bool) {
 	return editor.Prompt{Left: left, Right: strings.TrimRight(right, "\n")}, true
 }
 
-// continuation returns the prompt for the second and later lines.
+// continuation returns the prompt for the second and later lines. It is
+// computed once per prompt provider. readOpts asks for it before the first
+// prompt is rendered, so it can't use r.state, which is still empty then.
 func (r *REPL) continuation() string {
-	if r.contDone {
+	star := ""
+	if r.sh.PromptProvider() == "starship" {
+		star, _ = r.sh.LookPath("starship")
+	}
+	if r.contDone && r.contFor == star {
 		return r.cont
 	}
-	r.contDone = true
-	ps := r.state
-	if ps.starship != "" {
-		if out, err := runStarship(ps, []string{"prompt", "--continuation"}); err == nil {
+	r.contDone, r.contFor = true, star
+	if star != "" {
+		if out, err := runStarship(r.snapshot(), []string{"prompt", "--continuation"}); err == nil {
 			r.cont = out
 			return r.cont
 		}

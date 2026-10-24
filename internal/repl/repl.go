@@ -35,6 +35,7 @@ type REPL struct {
 	state    promptState
 	cont     string
 	contDone bool
+	contFor  string // the starship the continuation came from
 	tty      bool
 	warned   bool
 
