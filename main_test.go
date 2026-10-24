@@ -16,15 +16,21 @@ func runArgs(t *testing.T, args ...string) int {
 // runArgv is runArgs with argv[0].
 func runArgv(t *testing.T, argv ...string) int {
 	t.Helper()
-	null, err := os.Open(os.DevNull)
+	return runStdin(t, os.DevNull, argv...)
+}
+
+// runStdin is runArgv with stdin read from a file.
+func runStdin(t *testing.T, stdin string, argv ...string) int {
+	t.Helper()
+	in, err := os.Open(stdin)
 	if err != nil {
 		t.Fatal(err)
 	}
 	savedArgs, savedStdin := os.Args, os.Stdin
-	os.Args, os.Stdin = argv, null
+	os.Args, os.Stdin = argv, in
 	defer func() {
 		os.Args, os.Stdin = savedArgs, savedStdin
-		null.Close()
+		in.Close()
 	}()
 	return run()
 }
@@ -97,6 +103,29 @@ func TestLoginFromArgv0(t *testing.T) {
 		runArgv(t, argv0, "-c", "if status is-login; echo login; else; echo not; end > "+out)
 		if got := readFile(t, out); got != want {
 			t.Errorf("argv[0] %q: got %q, want %q", argv0, got, want)
+		}
+	}
+}
+
+// -s reads the commands from stdin and makes all the arguments
+// positional parameters, as in `curl -fsSL URL | sh -s -- --flag`.
+func TestStdinWithArgs(t *testing.T) {
+	home := isolateHome(t)
+	out := filepath.Join(home, "out")
+	script := filepath.Join(home, "script")
+	writeFile(t, script, "echo $# $1 $2 > "+out+"\n")
+	for _, args := range [][]string{
+		{"-s", "p", "--flag"},
+		{"-s", "--", "p", "--flag"},
+		{"-s", "-", "p", "--flag"},
+		{"-", "p", "--flag"},
+	} {
+		if st := runStdin(t, script, append([]string{"ash"}, args...)...); st != 0 {
+			t.Errorf("%q: status %d", args, st)
+			continue
+		}
+		if got, want := readFile(t, out), "2 p --flag\n"; got != want {
+			t.Errorf("%q: got %q, want %q", args, got, want)
 		}
 	}
 }

@@ -43,6 +43,7 @@ func run() int {
 		login       = strings.HasPrefix(os.Args[0], "-")
 		noConfig    bool
 		noExec      bool
+		readStdin   bool // -s: commands come from stdin, all args are $1...
 		initCmds    []string
 	)
 	for len(args) > 0 {
@@ -83,6 +84,7 @@ func run() int {
 			fmt.Print(usage)
 			return 0
 		case "-s", "--stdin":
+			readStdin = true
 		case "-P", "--private":
 		default:
 			// combined short flags such as -lc or -ic
@@ -98,6 +100,8 @@ func run() int {
 						noConfig = true
 					case 'n':
 						noExec = true
+					case 's':
+						readStdin = true
 					case 'c':
 						if len(args) == 0 {
 							fmt.Fprintln(os.Stderr, "ash: -c needs an argument")
@@ -132,6 +136,9 @@ func run() int {
 		sh.LoginSetup()
 	}
 	sh.NoConfig = noConfig
+	if readStdin && len(args) > 0 && args[0] == "-" {
+		args = args[1:]
+	}
 	stdinTTY := term.IsTerminal(int(os.Stdin.Fd()))
 	if !hasCommand && len(args) == 0 && stdinTTY {
 		interactive = true
@@ -160,7 +167,7 @@ func run() int {
 		}
 		status := sh.RunString(command, "", sh.StdIO())
 		return finish(sh, status)
-	case len(args) > 0 && args[0] != "-":
+	case len(args) > 0 && args[0] != "-" && !readStdin:
 		script := args[0]
 		sh.SetArg0(script)
 		sh.SetArgs(args[1:])
@@ -179,10 +186,16 @@ func run() int {
 		status := sh.RunFile(script, nil, sh.StdIO())
 		return finish(sh, status)
 	case interactive:
+		if readStdin {
+			sh.SetArgs(args)
+		}
 		return interactiveMain(sh, initCmds)
 	default:
-		// Commands on stdin (e.g. starship's custom modules, `curl | ash`).
-		if len(args) > 1 {
+		// Commands on stdin (e.g. starship's custom modules, `curl | ash`,
+		// `curl | ash -s -- args`).
+		if readStdin {
+			sh.SetArgs(args)
+		} else if len(args) > 1 {
 			sh.SetArgs(args[1:])
 		}
 		sh.Init()
