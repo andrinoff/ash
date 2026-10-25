@@ -58,7 +58,8 @@ type Config struct {
 	Incomplete    func(buf string) bool
 	ExpandAbbr    func(buf string, cursor int) (string, int, bool)
 	History       HistorySource
-	SearchHistory func(query string, limit int) []SearchResult
+	SearchHistory func(query, scope string, limit int) []SearchResult
+	SearchScopes  func() []string
 	RunCommand    func(cmd string)
 	EditCommand   func(buf string) (string, bool)
 	Style         func(role string) string

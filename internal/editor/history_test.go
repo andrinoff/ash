@@ -18,7 +18,7 @@ func (h foldHist) Search(q string, prefix bool) []string {
 // `read` (Simple) has no history: up, ctrl-r and friends don't bring
 // back shell commands.
 func TestSimpleHasNoHistory(t *testing.T) {
-	e := searchEditor(fakeHist{"secret shell command"})
+	e := histSearchEditor(fakeHist{"secret shell command"})
 	e.opts.Simple = true
 	for _, fn := range []string{"up-or-search", "history-search-backward", "history-prefix-search-backward",
 		"beginning-of-history", "history-token-search-backward", "yank-last-arg", "history-pager"} {

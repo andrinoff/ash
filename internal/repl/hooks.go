@@ -93,7 +93,7 @@ func (r *REPL) suggest(buf string) string {
 	return s
 }
 
-func (r *REPL) searchHistory(query string, limit int) []editor.SearchResult {
+func (r *REPL) searchHistory(query, scope string, limit int) []editor.SearchResult {
 	return r.hist.Fuzzy(query, limit, r.sh.HomeDir())
 }
 

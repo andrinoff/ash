@@ -5,12 +5,39 @@ import (
 	"unicode"
 )
 
+// The scopes of the history search. Config.SearchScopes lists the ones the
+// shell offers, in the order Ctrl-R cycles through them, and
+// Config.SearchHistory gets the current one with each query.
+const (
+	ScopeAll        = "all"        // every command
+	ScopeDirectory  = "directory"  // commands run in the current directory
+	ScopeRepository = "repository" // commands run anywhere in the current repository
+	ScopeFailed     = "failed"     // commands that failed
+)
+
+// scopeLabel is what the search header calls a scope. ScopeAll goes
+// without saying.
+func scopeLabel(scope string) string {
+	switch scope {
+	case ScopeAll:
+		return ""
+	case ScopeDirectory:
+		return "this directory"
+	case ScopeRepository:
+		return "this repository"
+	}
+	return scope
+}
+
 // histSearch is the incremental history search opened with Ctrl-R. The
 // selected entry is previewed in the command line; Enter keeps it for
-// editing, Escape restores what was there.
+// editing, Escape restores what was there. Ctrl-R again switches to the
+// next scope.
 type histSearch struct {
 	query     []rune
 	qpos      int
+	scopes    []string // what Ctrl-R cycles through
+	scope     int      // the current scope, an index into scopes
 	results   []SearchResult
 	selected  int
 	scroll    int
@@ -25,15 +52,37 @@ func fnHistoryPager(e *Editor, k Key) {
 		return
 	}
 	if e.search != nil {
-		e.search.move(e, 1)
+		e.search.nextScope(e)
 		return
 	}
 	s := &histSearch{saved: string(e.buf), savedPos: e.pos}
 	s.query = []rune(strings.TrimSpace(string(e.buf)))
 	s.qpos = len(s.query)
+	if e.cfg.SearchHistory != nil && e.cfg.SearchScopes != nil {
+		s.scopes = e.cfg.SearchScopes()
+	}
 	e.search = s
 	e.pager = nil
 	e.sugg = nil
+	s.refresh(e)
+}
+
+// current is the scope the search is in.
+func (s *histSearch) current() string {
+	if s.scope < len(s.scopes) {
+		return s.scopes[s.scope]
+	}
+	return ScopeAll
+}
+
+// nextScope switches to the next scope, keeping the query. With only one
+// scope it moves down the list instead.
+func (s *histSearch) nextScope(e *Editor) {
+	if len(s.scopes) < 2 {
+		s.move(e, 1)
+		return
+	}
+	s.scope = (s.scope + 1) % len(s.scopes)
 	s.refresh(e)
 }
 
@@ -41,7 +90,7 @@ func (s *histSearch) refresh(e *Editor) {
 	q := string(s.query)
 	s.results = nil
 	if e.cfg.SearchHistory != nil {
-		s.results = e.cfg.SearchHistory(q, 500)
+		s.results = e.cfg.SearchHistory(q, s.current(), 500)
 	} else {
 		for _, h := range e.cfg.History.Search(q, false) {
 			r := SearchResult{Text: h}
@@ -117,9 +166,11 @@ func (s *histSearch) handle(e *Editor, k Key) {
 		s.close(e, true)
 	case k.Code == KeyEscape, name == "ctrl-g", name == "ctrl-c":
 		s.close(e, false)
-	case k.Code == KeyDown, name == "ctrl-n", name == "ctrl-r", name == "ctrl-s" && false:
+	case name == "ctrl-r":
+		s.nextScope(e)
+	case k.Code == KeyDown, name == "ctrl-n":
 		s.move(e, 1)
-	case k.Code == KeyUp, name == "ctrl-p", name == "ctrl-s", k.Code == KeyTab && k.Mod == ModShift:
+	case k.Code == KeyUp, name == "ctrl-p", k.Code == KeyTab && k.Mod == ModShift:
 		s.move(e, -1)
 	case k.Code == KeyPgDn:
 		s.move(e, 10)
@@ -177,6 +228,9 @@ func (s *histSearch) handle(e *Editor, k Key) {
 // render draws the query line and the matching entries.
 func (s *histSearch) render(e *Editor, cols, avail int) []string {
 	label := "history: "
+	if l := scopeLabel(s.current()); l != "" {
+		label = "history [" + l + "]: "
+	}
 	prog := e.style("pager_progress")
 	match := e.style("search_match")
 	selBg := e.style("pager_selected_background")
