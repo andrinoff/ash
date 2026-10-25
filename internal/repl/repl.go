@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -18,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"golang.org/x/sys/unix"
 
 	"github.com/andrinoff/ash/internal/editor"
@@ -182,7 +182,7 @@ func (r *REPL) loop() int {
 			if r.tty {
 				// the editor marked the accepted line as a command that
 				// started (OSC 133;C); mark it finished
-				r.out.WriteString("\x1b]133;D\x07")
+				r.out.WriteString(ansi.FinalTermCmdFinished())
 			}
 			continue
 		}
@@ -254,7 +254,7 @@ func (r *REPL) runLine(line string) {
 	dur := time.Since(start)
 	sh.SetCmdDuration(dur)
 	if r.tty {
-		r.out.WriteString("\x1b]133;D;" + strconv.Itoa(status) + "\x07")
+		r.out.WriteString(ansi.FinalTermCmdFinished(strconv.Itoa(status)))
 		r.notifyLong(line, status, dur)
 	}
 	sh.ApplyChildActions(sh.StdIO())
@@ -299,7 +299,7 @@ func (r *REPL) notifyLong(line string, status int, dur time.Duration) {
 		}
 		return r
 	}, msg)
-	r.out.WriteString("\x1b]9;" + msg + "\x07")
+	r.out.WriteString(ansi.Notify(msg))
 }
 
 // importHistory brings in fish (or zsh, or bash) history the first time
@@ -410,9 +410,9 @@ func (r *REPL) restoreTerminal() {
 	if r.saved != nil {
 		term.SetStateNow(int(r.in.Fd()), r.saved)
 	}
-	r.out.WriteString("\x1b[?2004l") // bracketed paste off
+	r.out.WriteString(ansi.ResetModeBracketedPaste)
 	if r.ed.Keymap() == "vi" {
-		r.out.WriteString("\x1b[0 q") // default cursor shape
+		r.out.WriteString(ansi.SetCursorStyle(0)) // the default shape
 	}
 }
 
@@ -519,7 +519,7 @@ set:
 		}
 		return r
 	}, title)
-	r.out.WriteString("\x1b]2;" + title + "\x07")
+	r.out.WriteString(ansi.SetWindowTitle(title))
 }
 
 // reportCwd tells the terminal our directory (OSC 7), so new tabs and
@@ -529,8 +529,7 @@ func (r *REPL) reportCwd() {
 		return
 	}
 	host, _ := os.Hostname()
-	u := url.URL{Scheme: "file", Host: host, Path: r.sh.Dir()}
-	r.out.WriteString("\x1b]7;" + u.String() + "\x1b\\")
+	r.out.WriteString(ansi.NotifyWorkingDirectory(host, r.sh.Dir()))
 }
 
 func tildePath(p, home string) string {
