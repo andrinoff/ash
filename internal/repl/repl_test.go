@@ -61,6 +61,23 @@ abbr -a pgid --function pg`)
 	}
 }
 
+// The transient prompt function gets the last command's status (as
+// starship's --status and friends), also when a prompt function, not
+// starship, drew the prompt.
+func TestTransientPromptArguments(t *testing.T) {
+	r := newTestREPL(t)
+	sh := r.sh
+	run(t, sh, `function fish_prompt; echo '> '; end
+function ash_transient_prompt; echo $argv; end
+enable_transience`)
+	sh.RunString("true | false", "", sh.StdIO())
+	r.promptFunc()("insert")() // the editor draws the prompt
+	p, ok := r.transient("ls")
+	if !ok || !strings.Contains(p.Left, " --status=1 --pipestatus=0 1 ") {
+		t.Errorf("transient prompt %q (%v), want --status=1 --pipestatus=0 1", p.Left, ok)
+	}
+}
+
 // Expanding an abbreviation with --function runs the function while the
 // user types; $status must still be the last command's (the prompt, a
 // repaint and the command line being typed can all look at it).

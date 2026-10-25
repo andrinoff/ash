@@ -77,7 +77,6 @@ func (r *REPL) promptFunc() func(keymap string) func() editor.Prompt {
 			}
 		}
 		ps := r.snapshot()
-		r.state = ps
 		return func() editor.Prompt { return r.renderPrompt(ps, keymap) }
 	}
 }
@@ -190,8 +189,8 @@ func (r *REPL) transient(line string) (editor.Prompt, bool) {
 	if !sh.Transient() {
 		return editor.Prompt{}, false
 	}
-	ps := r.state
-	args := r.starshipArgs(ps, "insert")
+	// the last command's status and so on, whoever drew the prompt
+	args := r.starshipArgs(r.snapshot(), "insert")
 	var leftName, rightName string
 	for _, n := range []string{"ash_transient_prompt", "starship_transient_prompt_func"} {
 		if sh.Function(n) != nil {

@@ -34,7 +34,6 @@ type REPL struct {
 	ed       *editor.Editor
 	in, out  *os.File // the terminal the editor uses
 	hist     historyBackend
-	state    promptState
 	cont     string
 	contDone bool
 	contFor  string // the starship the continuation came from
