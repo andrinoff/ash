@@ -61,6 +61,17 @@ abbr -a pgid --function pg`)
 	}
 }
 
+// A right prompt function is used even without a left prompt function,
+// next to the built-in prompt.
+func TestRightPromptAlone(t *testing.T) {
+	r := newTestREPL(t)
+	run(t, r.sh, `function fish_right_prompt; echo RIGHT; end`)
+	p := r.promptFunc()("insert")()
+	if p.Right != "RIGHT" || !strings.Contains(p.Left, "❯") {
+		t.Errorf("prompt %+v, want the built-in left prompt and RIGHT on the right", p)
+	}
+}
+
 // The transient prompt function gets the last command's status (as
 // starship's --status and friends), also when a prompt function, not
 // starship, drew the prompt.

@@ -77,6 +77,17 @@ func (r *REPL) promptFunc() func(keymap string) func() editor.Prompt {
 			}
 		}
 		ps := r.snapshot()
+		// a right prompt function alone still goes on the right, next to
+		// starship's or the built-in left prompt (as with fish's default)
+		for _, n := range []string{"ash_right_prompt", "fish_right_prompt"} {
+			if right, ok := sh.CaptureFunction(n); ok {
+				return func() editor.Prompt {
+					p := r.renderPrompt(ps, keymap)
+					p.Right = trimPrompt(right)
+					return p
+				}
+			}
+		}
 		return func() editor.Prompt { return r.renderPrompt(ps, keymap) }
 	}
 }
