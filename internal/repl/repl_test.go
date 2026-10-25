@@ -61,6 +61,22 @@ abbr -a pgid --function pg`)
 	}
 }
 
+// Expanding an abbreviation with --function runs the function while the
+// user types; $status must still be the last command's (the prompt, a
+// repaint and the command line being typed can all look at it).
+func TestAbbrFunctionKeepsStatus(t *testing.T) {
+	r := newTestREPL(t)
+	sh := r.sh
+	run(t, sh, `function f; echo expanded; end; abbr -a xx --function f`)
+	sh.RunString("false | true | false", "", sh.StdIO())
+	if got, _, ok := r.expandAbbr("xx", 2); !ok || got != "expanded" {
+		t.Fatalf("expansion %q, %v", got, ok)
+	}
+	if st, ps := sh.Status(), sh.PipeStatus(); st != 1 || len(ps) != 3 || ps[0] != 1 || ps[1] != 0 {
+		t.Errorf("status %d, pipestatus %v after expanding; want 1, [1 0 1]", st, ps)
+	}
+}
+
 // The editor renders prompts in the background, and a slow one can still
 // be rendering when the next command line's options are built (for
 // example after enter was pressed quickly). Remembering it as the next

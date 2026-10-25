@@ -99,7 +99,9 @@ func (sh *Shell) ExpandAbbr(word string, cmdPos bool, cmd string) (string, bool)
 		// has the terminal in raw mode, so external commands must not
 		// take the terminal (and reset its modes when they finish).
 		sh.inSubst++
+		saved, savedPipe := sh.status, sh.pipestatus // $status is the last command's
 		st, ok := sh.CallFunction(match.Function, []string{word}, &IO{In: &Stream{}, Out: &Stream{W: buf}, Err: sh.StdIO().Err})
+		sh.status, sh.pipestatus = saved, savedPipe
 		sh.inSubst--
 		if !ok || st != 0 {
 			return "", false
