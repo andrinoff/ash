@@ -372,16 +372,16 @@ func (sh *Shell) interrupted() bool { return sh.shared.intr.Load() }
 // Stream is one end of a command's standard I/O. Builtins read and write
 // through it; external commands need File, which is created on demand.
 type Stream struct {
-	File   *os.File
-	W      io.Writer
-	R      io.Reader
-	TTY    bool
+	File *os.File
+	W    io.Writer
+	R    io.Reader
+	TTY  bool
 	// Inherited is set on the shell's own standard input. Builtins that
 	// read stdin when given no arguments (count, string, path) only do so
 	// when input was piped or redirected to them, like fish.
 	Inherited bool
-	broken *atomic.Bool
-	closed bool
+	broken    *atomic.Bool
+	closed    bool
 }
 
 func fileStream(f *os.File, tty bool) *Stream {
