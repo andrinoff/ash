@@ -56,9 +56,38 @@ is in it, Tab works. Nothing gets run just to find out.
 | `ctrl-r` | search history interactively |
 
 In the `ctrl-r` search, type to narrow the list (it matches letters in
-order, so `gpu` finds `git push -u origin main`), use the arrows or `ctrl-r`
-again to move, `enter` or `tab` to put the command on the line for editing,
-and `escape` to cancel.
+order, so `gpu` finds `git push -u origin main`), use the arrows or
+`ctrl-p`/`ctrl-n` to move, `enter` or `tab` to put the command on the line
+for editing, and `escape` to cancel.
+
+ash saves every command with the directory it ran in and its exit status,
+so the search can narrow to what you ran here. Press `ctrl-r` again to go
+to the next scope. The header shows which one you're in:
+
+| header | lists |
+|---|---|
+| `history:` | everything |
+| `history [this directory]:` | commands run in the current directory |
+| `history [this repository]:` | commands run anywhere in the current git repository |
+| `history [failed]:` | commands that failed |
+
+After `failed` it starts over. Outside a repository the repository scope is
+skipped. ash finds the repository by looking for `.git` in the directory
+and its parents, without running git. What you typed stays when the scope
+changes. Only the last run of each command is kept, so a command belongs to
+the directory you last ran it in, and counts as failed if it failed that
+time. Commands imported from another shell have no directory or status, so
+they only show up under everything.
+
+To start the search in another scope, set `ash_history_scope`:
+
+```sh
+set -U ash_history_scope directory    # or repository, failed
+```
+
+`history --here` and `history --failed` print the same lists. They combine
+with each other and with a search: `history --here --failed make` shows the
+make commands that failed in this directory.
 
 `history browse` is the same search with more room: every command comes
 with the directory it ran in and how long ago, and the ones that failed
