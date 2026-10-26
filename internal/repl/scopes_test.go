@@ -1,6 +1,7 @@
 package repl
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/andrinoff/ash/internal/editor"
+	"github.com/andrinoff/ash/internal/history"
 	"github.com/andrinoff/ash/internal/shell"
 )
 
@@ -266,6 +268,55 @@ func TestHistoryHere(t *testing.T) {
 		io := &shell.IO{In: &shell.Stream{R: strings.NewReader("")}, Out: &shell.Stream{W: &out}, Err: &shell.Stream{W: &errs}}
 		if st := r.sh.RunString("history "+tt.args, "", io); st != 0 || out.String() != tt.want || errs.Len() > 0 {
 			t.Errorf("history %s: %q (stderr %q, status %d), want %q", tt.args, out.String(), errs.String(), st, tt.want)
+		}
+	}
+}
+
+// BenchmarkSearchHistory measures what a keystroke in the ctrl-r search
+// costs in each scope: searching 100k commands and making up to 500 rows.
+func BenchmarkSearchHistory(b *testing.B) {
+	home, err := filepath.EvalSymlinks(b.TempDir())
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Chdir(home)
+	b.Setenv("HOME", home)
+	b.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	b.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+	b.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	repo := filepath.Join(home, "src", "ash")
+	mkdirs(b, home, "src/ash/.git", "src/ash/internal", "notes")
+	// A fifth of the commands ran in repo, two fifths in the repository,
+	// and a seventh failed.
+	dirs := []string{repo, filepath.Join(repo, "internal"), filepath.Join(home, "notes"), home, "/tmp"}
+	verbs := []string{"git status", "go test ./...", "make", "docker compose up", "kubectl get pods", "ls -la"}
+	h := &storeHistory{history.Open("")}
+	when := time.Now().Add(-time.Hour)
+	for i := 0; i < 100_000; i++ {
+		e := history.Entry{Cmd: fmt.Sprintf("%s %d", verbs[i%len(verbs)], i), Dir: dirs[i%len(dirs)], When: when}
+		if i%7 == 0 {
+			e.Status = 1
+		}
+		h.Store.Add(e)
+	}
+	sh := shell.New()
+	sh.Init()
+	r := &REPL{sh: sh, hist: h}
+	if st := sh.RunString("cd "+shell.Quote(repo), "", sh.StdIO()); st != 0 {
+		b.Fatal("cd failed")
+	}
+	for _, scope := range []string{"all", "directory", "repository", "failed"} {
+		for _, q := range []string{"", "gst"} {
+			name := scope + "/" + q
+			if q == "" {
+				name = scope + "/empty"
+			}
+			b.Run(name, func(b *testing.B) {
+				b.ReportAllocs()
+				for i := 0; i < b.N; i++ {
+					r.searchHistory(q, scope, 500)
+				}
+			})
 		}
 	}
 }
