@@ -44,6 +44,7 @@ type REPL struct {
 	lastMu  sync.Mutex
 	last    editor.Prompt
 	lastDir string
+	repos   repoCache // repositories found for the history search
 
 	// edMu is held while the editor reads a line, at the prompt or for
 	// the read builtin, which can run on other goroutines (in a
@@ -107,6 +108,7 @@ func (r *REPL) editorConfig() editor.Config {
 		ExpandAbbr:    r.expandAbbr,
 		History:       r.hist,
 		SearchHistory: r.searchHistory,
+		SearchScopes:  r.searchScopes,
 		RunCommand: func(cmd string) {
 			r.inBinding.Store(true)
 			defer r.inBinding.Store(false)
@@ -264,6 +266,7 @@ func (r *REPL) runLine(line string) {
 	if !r.secret(line) {
 		r.hist.Add(line, dir, start, status, dur)
 	}
+	r.repos.forget() // the command may have made or removed a repository
 	sh.RunPostExec(line, status, dur)
 	sh.Emit("ash_postexec", line)
 	if sh.Status() != status {

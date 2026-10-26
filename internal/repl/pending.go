@@ -16,7 +16,7 @@ type historyBackend interface {
 	editor.HistorySource
 	Add(cmd, dir string, when time.Time, status int, dur time.Duration)
 	Suggest(prefix, dir string) string
-	Fuzzy(q string, limit int, home string) []editor.SearchResult
+	Fuzzy(q string, limit int, keep func(history.Entry) bool, where func(dir string) string) []editor.SearchResult
 	Close()
 }
 
@@ -34,13 +34,16 @@ func (h *storeHistory) Add(cmd, dir string, when time.Time, status int, dur time
 	h.Store.Add(history.Entry{Cmd: cmd, When: when, Dir: dir, Status: status, Duration: dur})
 }
 
-func (h *storeHistory) Fuzzy(q string, limit int, home string) []editor.SearchResult {
-	ms := h.Store.Fuzzy(q, limit)
+// Fuzzy is the ctrl-r search over the commands keep accepts, or all of
+// them if keep is nil. where shows the directory a command ran in next to
+// it; nil leaves the directory out.
+func (h *storeHistory) Fuzzy(q string, limit int, keep func(history.Entry) bool, where func(dir string) string) []editor.SearchResult {
+	ms := h.Store.FuzzyFilter(q, limit, keep)
 	out := make([]editor.SearchResult, len(ms))
 	for i, m := range ms {
 		info := relTime(m.When)
-		if m.Dir != "" {
-			info += "  " + shortDir(m.Dir, home)
+		if m.Dir != "" && where != nil {
+			info += "  " + where(m.Dir)
 		}
 		if m.Status != 0 {
 			info = "✗ " + info

@@ -3,11 +3,13 @@ package repl
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/andrinoff/ash/internal/editor"
+	"github.com/andrinoff/ash/internal/history"
 	"github.com/andrinoff/ash/internal/shell"
 )
 
@@ -93,8 +95,41 @@ func (r *REPL) suggest(buf string) string {
 	return s
 }
 
+// searchHistory is the ctrl-r search: the commands that match query in
+// scope, best first.
 func (r *REPL) searchHistory(query, scope string, limit int) []editor.SearchResult {
-	return r.hist.Fuzzy(query, limit, r.sh.HomeDir())
+	dir, home := r.sh.Dir(), r.sh.HomeDir()
+	var keep func(history.Entry) bool
+	where := func(d string) string { return shortDir(d, home) }
+	switch scope {
+	case editor.ScopeDirectory:
+		keep, where = history.InDir(dir), nil // they all ran here
+	case editor.ScopeRepository:
+		root := r.repos.root(dir)
+		if root == "" {
+			return nil
+		}
+		keep = history.Under(root)
+		where = func(d string) string { return repoDir(d, root) }
+	case editor.ScopeFailed:
+		keep = history.Failed
+	}
+	return r.hist.Fuzzy(query, limit, keep, where)
+}
+
+// searchScopes lists the scopes ctrl-r cycles through in the history
+// search, with the repository only inside one. The search starts in
+// $ash_history_scope if that's one of them.
+func (r *REPL) searchScopes() []string {
+	scopes := []string{editor.ScopeAll, editor.ScopeDirectory}
+	if r.repos.root(r.sh.Dir()) != "" {
+		scopes = append(scopes, editor.ScopeRepository)
+	}
+	scopes = append(scopes, editor.ScopeFailed)
+	if i := slices.Index(scopes, r.sh.Get("ash_history_scope")); i > 0 {
+		scopes = slices.Concat(scopes[i:], scopes[:i])
+	}
+	return scopes
 }
 
 // editCommand opens the command line in $VISUAL or $EDITOR.
