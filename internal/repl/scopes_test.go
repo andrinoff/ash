@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -240,6 +241,32 @@ func TestSearchHistoryScopes(t *testing.T) {
 	}
 	if got := rows(r.searchHistory("", "directory", 10)); !reflect.DeepEqual(got, []string{"make | ✗ now", "vim todo.md | now"}) {
 		t.Errorf("directory scope in %s: %q", notes, got)
+	}
+}
+
+// TestHistoryHere runs history --here and --failed on ash's own history.
+func TestHistoryHere(t *testing.T) {
+	r := newScopesREPL(t)
+	home := r.sh.HomeDir()
+	mkdirs(t, home, "a", "b")
+	now := time.Now()
+	r.hist.Add("ls", filepath.Join(home, "a"), now, 0, 0)
+	r.hist.Add("make", filepath.Join(home, "b"), now, 2, 0)
+	r.hist.Add("make test", filepath.Join(home, "a"), now, 1, 0)
+	r.hist.Add("git status", filepath.Join(home, "a"), now, 0, 0)
+	r.cd(t, filepath.Join(home, "a"))
+	for _, tt := range []struct{ args, want string }{
+		{"--here", "git status\nmake test\nls\n"},
+		{"--failed", "make test\nmake\n"},
+		{"--here --failed", "make test\n"},
+		{"--here -n 1", "git status\n"},
+		{"--failed mak", "make test\nmake\n"},
+	} {
+		var out, errs strings.Builder
+		io := &shell.IO{In: &shell.Stream{R: strings.NewReader("")}, Out: &shell.Stream{W: &out}, Err: &shell.Stream{W: &errs}}
+		if st := r.sh.RunString("history "+tt.args, "", io); st != 0 || out.String() != tt.want || errs.Len() > 0 {
+			t.Errorf("history %s: %q (stderr %q, status %d), want %q", tt.args, out.String(), errs.String(), st, tt.want)
+		}
 	}
 }
 

@@ -63,6 +63,21 @@ func (h *storeHistory) EachRecent(f func(cmd string, when time.Time, dir string,
 	}
 }
 
+// The history builtin's --here and --failed need Filter.
+var _ shell.HistoryFilter = (*storeHistory)(nil)
+
+// Filter returns the commands whose last run keep accepts, given the
+// directory it ran in and its exit status, newest first, and at most n of
+// them if n > 0.
+func (h *storeHistory) Filter(keep func(dir string, status int) bool, n int) []string {
+	ms := h.Store.FuzzyFilter("", n, func(e history.Entry) bool { return keep(e.Dir, e.Status) })
+	out := make([]string, len(ms))
+	for i := range ms {
+		out[i] = ms[i].Cmd
+	}
+	return out
+}
+
 func (h *storeHistory) Close() {}
 
 func (r *REPL) highlight(buf string) []string { return r.sh.Highlight(buf) }

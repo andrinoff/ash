@@ -7,6 +7,14 @@ import (
 	"strings"
 )
 
+// HistoryFilter is a History that remembers the directory and exit status
+// of each command, for history --here and --failed.
+type HistoryFilter interface {
+	// Filter returns the commands whose last run keep accepts, newest
+	// first, and at most n of them if n > 0.
+	Filter(keep func(dir string, status int) bool, n int) []string
+}
+
 func bHistory(sh *Shell, io *IO, args []string) int {
 	if sh.History == nil {
 		fmt.Fprintln(io.Err, "history: not available in this shell")
@@ -30,6 +38,7 @@ func bHistory(sh *Shell, io *IO, args []string) int {
 	max := 0
 	prefix, exact := false, false
 	reverse := false
+	here, failed := false, false
 	var terms []string
 	for i := 0; i < len(a); i++ {
 		switch o := a[i]; {
@@ -47,12 +56,20 @@ func bHistory(sh *Shell, io *IO, args []string) int {
 		case o == "-c" || o == "--contains":
 		case o == "-R" || o == "--reverse":
 			reverse = true
+		case o == "--here":
+			here = true
+		case o == "--failed":
+			failed = true
 		case o == "-C" || o == "--case-sensitive", o == "-z" || o == "--null", o == "-t" || o == "--show-time":
 		case strings.HasPrefix(o, "-") && len(o) > 1 && isAllDigits(o[1:]):
 			max, _ = strconv.Atoi(o[1:])
 		default:
 			terms = append(terms, o)
 		}
+	}
+	if (here || failed) && sub != "search" {
+		fmt.Fprintf(io.Err, "history %s: --here and --failed only work when listing commands\n", sub)
+		return 2
 	}
 	switch sub {
 	case "clear", "clear-session":
@@ -93,13 +110,37 @@ func bHistory(sh *Shell, io *IO, args []string) int {
 		max, _ = strconv.Atoi(terms[0])
 		terms = nil
 	}
+	var hf HistoryFilter
+	var keep func(dir string, status int) bool
+	if here || failed {
+		var ok bool
+		if hf, ok = sh.History.(HistoryFilter); !ok {
+			fmt.Fprintln(io.Err, "history: this history doesn't know where commands ran or how they ended")
+			return 1
+		}
+		cwd := sh.Dir()
+		keep = func(dir string, status int) bool {
+			return (!here || dir == cwd) && (!failed || status != 0)
+		}
+	}
 	var entries []string
 	if len(terms) == 0 {
-		entries = sh.History.Recent(max)
+		if keep != nil {
+			entries = hf.Filter(keep, max)
+		} else {
+			entries = sh.History.Recent(max)
+		}
 	} else {
+		var only map[string]bool
+		if keep != nil {
+			only = map[string]bool{}
+			for _, e := range hf.Filter(keep, 0) {
+				only[e] = true
+			}
+		}
 		for _, t := range terms {
 			for _, e := range sh.History.Search(t, prefix) {
-				if exact && e != t {
+				if exact && e != t || only != nil && !only[e] {
 					continue
 				}
 				entries = append(entries, e)
