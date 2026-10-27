@@ -85,9 +85,10 @@ To start the search in another scope, set `ash_history_scope`:
 set -U ash_history_scope directory    # or repository, failed
 ```
 
-`history --here` and `history --failed` print the same lists. They combine
-with each other and with a search: `history --here --failed make` shows the
-make commands that failed in this directory.
+Outside the search, `history --here` lists the commands run in the current
+directory and `history --failed` the ones that failed. They combine with
+each other and with a search: `history --here --failed make` shows the make
+commands that failed here.
 
 `history browse` is the same search with more room: every command comes
 with the directory it ran in and how long ago, and the ones that failed
