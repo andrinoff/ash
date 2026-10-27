@@ -225,27 +225,65 @@ func (s *histSearch) handle(e *Editor, k Key) {
 	}
 }
 
-// render draws the query line and the matching entries.
-func (s *histSearch) render(e *Editor, cols, avail int) []string {
-	label := "history: "
+// header lays out the query line in cols columns, keeping the last one
+// free for the cursor: the label, which on a narrow screen is just the
+// scope's name, and the query, scrolled to keep the cursor in view. It
+// returns the label, the query as drawn, their width, and the cursor's
+// column.
+func (s *histSearch) header(cols int) (label, query string, width, cursor int) {
+	maxLabel := max(cols-11, cols/2) // leave the query 10 columns, or half
+	label = "history: "
 	if l := scopeLabel(s.current()); l != "" {
 		label = "history [" + l + "]: "
+		if plainWidth(label) > cols-21 {
+			label = ""
+			if name := truncateWidth(s.current(), maxLabel-4); name != "" {
+				label = "[" + name + "]: "
+			}
+		}
 	}
+	if plainWidth(label) > maxLabel {
+		label = ""
+	}
+	lw := plainWidth(label)
+	room := cols - 1 - lw
+	before, at := 0, 0 // the widths of the query before the cursor and under it
+	for _, r := range s.query[:s.qpos] {
+		before += runeWidth(r)
+	}
+	if s.qpos < len(s.query) {
+		at = runeWidth(s.query[s.qpos])
+	}
+	var b strings.Builder
+	w, i := 0, 0
+	if before+at > room {
+		b.WriteString("…") // for what scrolled off the front
+		w = 1
+		for i < s.qpos && w+before+at > room {
+			before -= runeWidth(s.query[i])
+			i++
+		}
+	}
+	cursor = lw + w + before
+	for ; i < len(s.query); i++ {
+		cw := runeWidth(s.query[i])
+		if w+cw > room {
+			break
+		}
+		b.WriteString(displayRune(s.query[i]))
+		w += cw
+	}
+	return label, b.String(), lw + w, cursor
+}
+
+// render draws the query line and the matching entries. No line is wider
+// than the screen: one that wrapped would throw off the redraw.
+func (s *histSearch) render(e *Editor, cols, avail int) []string {
 	prog := e.style("pager_progress")
 	match := e.style("search_match")
 	selBg := e.style("pager_selected_background")
 	var out []string
-	// A query too long for the line scrolls to keep the cursor in view
-	// and is cut on the right: the line must not wrap.
-	room := cols - 1 - plainWidth(label)
-	// (walk back from the cursor once: a big paste makes a long query)
-	ws := widths(s.query)
-	from, w := s.qpos, 0
-	for from > 0 && w+ws[from-1] < room {
-		from--
-		w += ws[from]
-	}
-	q := truncateWidth(string(s.query[from:]), room)
+	label, q, headW, cursor := s.header(cols)
 	head := prog + label + reset + q
 	count := ""
 	switch n := len(s.results); {
@@ -256,12 +294,11 @@ func (s *histSearch) render(e *Editor, cols, avail int) []string {
 	default:
 		count = itoa(s.selected+1) + "/" + itoa(n)
 	}
-	headW := plainWidth(label) + plainWidth(q)
 	if pad := cols - headW - plainWidth(count) - 1; pad > 1 {
 		head += strings.Repeat(" ", pad) + prog + count + reset
 	}
 	out = append(out, head)
-	s.cursorCol = plainWidth(label) + plainWidth(string(s.query[from:s.qpos]))
+	s.cursorCol = cursor
 	maxRows := avail - 1
 	if maxRows > 10 {
 		maxRows = 10
@@ -285,7 +322,7 @@ func (s *histSearch) render(e *Editor, cols, avail int) []string {
 			line.WriteString("  ")
 		}
 		text := strings.ReplaceAll(r.Text, "\n", "⏎")
-		info := r.Info
+		info := truncateWidth(r.Info, cols-15) // leave the command 10 columns
 		room := cols - 3
 		if info != "" {
 			room -= plainWidth(info) + 2

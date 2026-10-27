@@ -71,6 +71,9 @@ to the next scope. The header shows which one you're in:
 | `history [this repository]:` | commands run anywhere in the current git repository |
 | `history [failed]:` | commands that failed |
 
+On a narrow screen the header shows just the scope's name, like
+`[repository]:`.
+
 After `failed` it starts over. Outside a repository the repository scope is
 skipped. ash finds the repository by looking for `.git` in the directory
 and its parents, without running git. What you typed stays when the scope

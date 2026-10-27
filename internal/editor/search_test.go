@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -71,7 +72,10 @@ func TestHistorySearchLongQueryIsLinear(t *testing.T) {
 	e.call("history-pager", Key{})
 	e.handleKey(Key{Paste: strings.Repeat("x", 5000)})
 	lines := e.search.render(e, 40, 10)
-	if got := stripANSI(lines[0]); !strings.HasPrefix(got, "history: xxx") || plainWidth(got) >= 40 || e.search.cursorCol != 38 {
+	// the start scrolls off (marked with …) and the cursor stays in view,
+	// right after the last character of the query
+	got := stripANSI(lines[0])
+	if !strings.HasPrefix(got, "history: …xxx") || plainWidth(got) >= 40 || e.search.cursorCol != plainWidth(strings.TrimRight(got, " ")) {
 		t.Fatalf("line %q cursor %d", got, e.search.cursorCol)
 	}
 	if n := testing.AllocsPerRun(1, func() { e.search.render(e, 40, 10) }); n > 1000 {
@@ -289,5 +293,115 @@ func TestSearchHistorySourceFallback(t *testing.T) {
 	e.handleKey(keyCtrlR)
 	if got := string(e.buf); got != "git push" || e.search.current() != ScopeAll {
 		t.Errorf("ctrl-r: previewing %q in scope %q", got, e.search.current())
+	}
+}
+
+// runeAt returns the rune of a plain line that starts at column col, or 0
+// if none does.
+func runeAt(line string, col int) rune {
+	w := 0
+	for _, r := range line {
+		if w == col {
+			return r
+		}
+		if w += runeWidth(r); w > col {
+			break
+		}
+	}
+	return 0
+}
+
+// TestSearchNarrowHeader checks the query line where the whole label
+// doesn't fit: it shows just the scope's name, and a long query scrolls.
+func TestSearchNarrowHeader(t *testing.T) {
+	tests := []struct {
+		cols         int
+		scope, query string
+		want         string
+	}{
+		{80, ScopeRepository, "gst", "history [this repository]: gst"},
+		{48, ScopeRepository, "gst", "history [this repository]: gst"},
+		{47, ScopeRepository, "gst", "[repository]: gst"},
+		{47, ScopeDirectory, "gst", "history [this directory]: gst"},
+		{30, ScopeDirectory, "gst", "[directory]: gst"},
+		{30, ScopeFailed, "gst", "[failed]: gst"},
+		{30, ScopeAll, "gst", "history: gst"},
+		{30, ScopeAll, "git commit -m 'fix the header'", "history: …-m 'fix the header'"},
+		{20, ScopeRepository, "gst", "[repos…]: gst"},
+		{16, ScopeAll, "gst", "gst"},
+	}
+	for _, tt := range tests {
+		e := newTestEditor(tt.cols)
+		e.cfg.SearchHistory = func(string, string, int) []SearchResult { return nil }
+		e.cfg.SearchScopes = func() []string { return []string{tt.scope} }
+		e.insert([]rune(tt.query))
+		e.handleKey(keyCtrlR)
+		lines, col := searchView(t, e)
+		if head := strings.TrimRight(strings.TrimSuffix(lines[0], "no matches"), " "); head != tt.want || col != len([]rune(tt.want)) {
+			t.Errorf("%d columns, %s: %q with the cursor at %d, want %q", tt.cols, tt.scope, lines[0], col, tt.want)
+		}
+	}
+}
+
+// TestSearchMultilineQuery checks that a query taken from a command line
+// of several lines stays on the query line.
+func TestSearchMultilineQuery(t *testing.T) {
+	e, _ := searchEditor(ScopeAll)
+	e.insert([]rune("for f in *\n\techo $f\nend"))
+	e.handleKey(keyCtrlR)
+	lines, col := searchView(t, e)
+	if want := "history: for f in *^J    echo $f^Jend"; !strings.HasPrefix(lines[0], want+" ") || col != len(want) {
+		t.Errorf("header %q with the cursor at %d, want %q and %d", lines[0], col, want, len(want))
+	}
+}
+
+// TestSearchFitsTheScreen checks that no line of the search is wider than
+// the screen, whatever the width, scope and query: a line that wrapped
+// would throw off the redraw. The cursor must stay on the query too.
+func TestSearchFitsTheScreen(t *testing.T) {
+	long := strings.Repeat("make test ", 12) + "日本語"
+	results := []SearchResult{
+		{Text: "git commit -m " + long, Info: "✗ 12d  ~/src/ash/internal/history"},
+		{Text: "ls", Info: "now"},
+	}
+	for _, cols := range []int{8, 13, 20, 30, 40, 47, 48, 60, 80, 200} {
+		for _, scope := range []string{ScopeAll, ScopeDirectory, ScopeRepository, ScopeFailed, "a scope with a long name"} {
+			for _, q := range []string{"", "gst", long, "日本語の" + long} {
+				query := []rune(q)
+				for _, left := range []int{0, 1, 5, len(query)} {
+					if left > len(query) {
+						continue
+					}
+					e := newTestEditor(cols)
+					e.cfg.SearchHistory = func(string, string, int) []SearchResult { return results }
+					e.cfg.SearchScopes = func() []string { return []string{scope} }
+					e.insert(query)
+					e.handleKey(keyCtrlR)
+					for range left {
+						e.handleKey(Key{Code: KeyLeft})
+					}
+					lines, col := searchView(t, e)
+					name := fmt.Sprintf("%d columns, %s, %d runes, cursor %d from the end", cols, scope, len(query), left)
+					for _, l := range lines {
+						if plainWidth(l) > cols {
+							t.Errorf("%s: %q is %d columns wide", name, l, plainWidth(l))
+						}
+					}
+					if col > cols-1 {
+						t.Errorf("%s: the cursor is at column %d", name, col)
+					}
+					if cols < 30 {
+						continue // too narrow to promise more
+					}
+					qpos := len(query) - left
+					if qpos < len(query) && runeAt(lines[0], col) != query[qpos] {
+						t.Errorf("%s: the cursor is on %q in %q, want %q", name, runeAt(lines[0], col), lines[0], query[qpos])
+					}
+					if qpos > 0 && runeAt(lines[0], col-runeWidth(query[qpos-1])) != query[qpos-1] {
+						t.Errorf("%s: %q isn't before the cursor (%d) in %q", name, query[qpos-1], col, lines[0])
+					}
+				}
+			}
+		}
 	}
 }
