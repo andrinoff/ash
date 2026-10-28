@@ -140,12 +140,12 @@ func (p *profiler) register(stmts []*syntax.Stmt, name, src string) {
 		e := &profEntry{name: name, src: src, pos: st.Pos, end: st.End}
 		p.stmts[st] = e
 		p.entries = append(p.entries, e)
+		// The conditions of an if are left out: their time is the if's
+		// own, on the same line.
 		switch c := st.Cmd.(type) {
 		case *syntax.IfClause:
-			p.register(c.Cond, name, src)
 			p.register(c.Then, name, src)
 			for _, el := range c.Elifs {
-				p.register(el.Cond, name, src)
 				p.register(el.Then, name, src)
 			}
 			p.register(c.Else, name, src)

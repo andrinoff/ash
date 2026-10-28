@@ -181,7 +181,6 @@ echo 'set -g p 1' | source
 		"~/config.ash", "~/other.ash", "stdin",
 		"~/config.ash:1 set -g x 1",
 		"~/config.ash:2 if test -n \"$D\" …",
-		"~/config.ash:2 test -n \"$D\"",
 		"~/config.ash:3 sleep 0.03",
 		"~/config.ash:4 source $D/other.ash",
 		"~/other.ash:1 set -g o 1",
