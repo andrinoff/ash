@@ -25,7 +25,7 @@ func (sh *Shell) RunString(src, file string, io *IO) int {
 	prev := sh.curSrc
 	sh.curSrc = src
 	defer func() { sh.curSrc = prev }()
-	return sh.runStmts(f.Stmts, io)
+	return sh.runTop(f.Stmts, io, file, src, false)
 }
 
 // RunFile runs a script file in the current shell (like source).
@@ -43,6 +43,9 @@ func (sh *Shell) RunFile(path string, args []string, io *IO) int {
 		} else {
 			src = ""
 		}
+	}
+	if sh.prof.p != nil {
+		defer sh.profFile(path)()
 	}
 	f, err := parse(src, path)
 	if err != nil {
@@ -63,7 +66,7 @@ func (sh *Shell) RunFile(path string, args []string, io *IO) int {
 	prev := sh.curSrc
 	sh.curSrc = src
 	defer func() { sh.curSrc = prev }()
-	status := sh.runStmts(f.Stmts, io)
+	status := sh.runTop(f.Stmts, io, path, src, true)
 	if sh.ctrl == ctrlReturn {
 		sh.ctrl = ctrlNone
 		status = sh.status
@@ -94,7 +97,11 @@ func (sh *Shell) runStmts(stmts []*syntax.Stmt, io *IO) int {
 			}
 			break
 		}
-		sh.runStmt(st, io)
+		if sh.prof.p != nil {
+			sh.profStmt(st, io)
+		} else {
+			sh.runStmt(st, io)
+		}
 		if !sh.subshell && sh.shared.traps.has.Load() {
 			// run handlers for trapped signals between commands
 			sh.runPendingTraps(io)

@@ -63,6 +63,9 @@ func bSource(sh *Shell, io *IO, args []string) int {
 			file = "stdin"
 		}
 	}
+	if sh.prof.p != nil {
+		defer sh.profFile(name)()
+	}
 	f, err := parse(src, file)
 	if err != nil {
 		fmt.Fprint(io.Err, "source: "+FormatParseError(src, name, err))
@@ -81,9 +84,9 @@ func bSource(sh *Shell, io *IO, args []string) int {
 	sh.curSrc = src
 	var status int
 	if strings.HasSuffix(file, ".fish") {
-		status = sh.inBlockScope(func() int { return sh.runStmts(f.Stmts, io) })
+		status = sh.inBlockScope(func() int { return sh.runTop(f.Stmts, io, name, src, true) })
 	} else {
-		status = sh.runStmts(f.Stmts, io)
+		status = sh.runTop(f.Stmts, io, name, src, true)
 	}
 	sh.curSrc = prev
 	if len(args) > 2 {

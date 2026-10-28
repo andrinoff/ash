@@ -116,6 +116,8 @@ type Shell struct {
 
 	exitTrap *string // a subshell's own trap ... EXIT
 
+	prof profHook // ash --profile; zero unless profiling
+
 	startTime time.Time
 	rand      *rand.Rand
 
