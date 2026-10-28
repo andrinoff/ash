@@ -16,6 +16,7 @@ it accepts both sets of options.
 | `builtin NAME` | run a builtin, skipping functions |
 | `type [-t\|-p\|-q\|-a] NAME` | say what NAME is: alias, function, builtin, keyword or file |
 | `time CMD` | (a keyword) how long CMD took |
+| `cached [--ttl TIME] [--watch FILE] [--dir] CMD` | run CMD once and print its kept output after that; `--list` and `--clear` manage the cache. See [config.md](config.md#keeping-startup-fast) |
 | `exit [N]`, `return [N]`, `break [N]`, `continue [N]` | the usual |
 | `true`, `false`, `:` | |
 

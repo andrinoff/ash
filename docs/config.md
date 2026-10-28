@@ -169,8 +169,98 @@ ash -l                login shell
 ash -N                skip the config
 ash -C 'cmd'          run cmd before the config
 ash -n script.ash     only check the syntax
+ash --profile         time each line of the config (see below)
 ```
 
 `ash` without arguments and a non-terminal stdin reads the whole of stdin
 and runs it, which is what starship's custom modules expect when
 `STARSHIP_SHELL` points at ash.
+
+## Keeping startup fast
+
+With an empty config, ash shows its first prompt about 3ms after it
+starts (measured on an M4 Max). What a config adds to that usually comes
+from a line or two that run another program.
+
+### Finding the slow lines
+
+`ash --profile` times each statement of the config and prints a report
+once the first prompt is on the screen. Here it is for a config that sets
+up Homebrew and Go:
+
+```
+$ ash --profile
+ash: profile, slowest first
+  where             self     total  statement
+  config.ash:1   15.45ms   15.45ms  eval "$(brew shellenv)"
+  config.ash:2    6.57ms    6.57ms  export GOPATH="$(go env GOPATH)"
+  config.ash:6    0.02ms    0.02ms  abbr -a gs git status
+  config.ash:5    0.02ms    0.02ms  integrate zoxide
+  config.ash:3    0.02ms    0.02ms  add_path $GOPATH/bin
+  config.ash:4    0.01ms    0.05ms  if status is-interactive …
+  config.ash      0.03ms   22.11ms  (whole file)
+ash: config took 22.15ms, first prompt at 24.79ms
+```
+
+Two lines take 22ms. Everything else takes a tenth of a millisecond.
+
+`self` is the time of the statement itself, and `total` adds what it ran:
+the statements in an `if` block, or a file it sourced. Rows are sorted by
+`self`, so the line to fix is at the top, and each file comes after with
+its total. Statements inside a top-level `if`, `switch` or `begin` block
+get rows of their own; a loop or a function call is one row. The report
+lists the ten slowest statements and adds up the rest.
+
+Times count from when the process started. On Linux they count from when
+ash's own code starts, which leaves out a millisecond or two.
+
+If a terminal starts the shell for you and you can't add a flag, set
+`ASH_PROFILE=1` in its environment. ash takes the variable out of its own
+environment, so the programs and shells it starts don't print reports
+too.
+
+Scripts can be profiled the same way: `ash --profile build.ash` and
+`ash --profile -c '...'` print the report when they exit.
+
+### Caching slow commands
+
+`brew shellenv` and `go env GOPATH` print the same thing every time.
+`cached` runs a command once, keeps what it printed, and prints that on
+later calls:
+
+```sh
+eval "$(cached brew shellenv)"
+export GOPATH="$(cached go env GOPATH)"
+```
+
+With that, the same config takes 0.21ms and the first prompt is up at
+2.78ms instead of 24.79ms. A hit costs about 0.05ms, where running the
+commands took 15ms and 6ms.
+
+`cached` runs the command again when
+
+- the entry is older than its TTL: 24 hours unless you pass `--ttl`, as
+  in `--ttl 1h` or `--ttl 7d`,
+- a file given with `--watch` changed, as in
+  `cached --dir --watch go.mod go list -m`,
+- the program changed, say after `brew upgrade` (ash compares its
+  modification time and size), or the function was redefined,
+- `$PATH` is different, or with `--dir`, the directory is.
+
+`cached --list` shows what is cached, `cached --clear` forgets all of it,
+and `cached --clear brew shellenv` forgets one command. The entries are
+files in `~/.cache/ash/cached`.
+
+Only the output and the exit status are kept, so a hit doesn't repeat
+anything else the command did. Cache commands that print code for you to
+`eval` or `source`. Don't cache ones that start something, like
+`ssh-agent -s`, or functions that set variables themselves.
+
+Two more things keep startup short:
+
+- `integrate starship` instead of `starship init fish | source`, and the
+  same for the other tools in [integrations.md](integrations.md). They're
+  built in, so nothing runs at startup.
+- A function you only need now and then can go in
+  `~/.config/ash/functions/NAME.ash`, which is read the first time you
+  call it.

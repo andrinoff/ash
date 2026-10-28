@@ -182,6 +182,11 @@ eval "$(ssh-agent -s)"
 source ~/.cargo/env
 ```
 
+These run at every startup. When one is slow and prints the same thing
+each time, `eval "$(cached brew shellenv)"` runs it once and reuses the
+output (see [config.md](config.md#keeping-startup-fast)). `ssh-agent`
+starts an agent, so leave that one alone.
+
 And fish-flavoured ones often work too, with `| source`, since ash reads
 fish syntax. When a tool's `init` script leans on internals ash doesn't
 have, a binding and a function usually do the job:
