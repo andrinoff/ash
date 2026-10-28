@@ -30,9 +30,19 @@ const usage = `usage: ash [options] [script [args...]]
 //go:embed docs/*.md
 var docs embed.FS
 
-// started is as close to the start of the process as Go code gets;
-// --profile measures from here.
+// started is as close to the start of the process as Go code gets.
 var started = time.Now()
+
+// profileStart is where --profile measures from: when the process started
+// if the system can say, else started. The kernel's time is when the
+// process forked, so it is only used when the exec followed right away,
+// not for a shell that ran `exec ash`.
+func profileStart() time.Time {
+	if t, ok := processStart(); ok && !t.After(started) && started.Sub(t) < time.Second {
+		return t
+	}
+	return started
+}
 
 func main() {
 	shell.Docs = docs
@@ -149,7 +159,7 @@ func run() int {
 
 	sh := shell.New()
 	if profile {
-		sh.StartProfile(started)
+		sh.StartProfile(profileStart())
 	}
 	sh.Login = login
 	if login {
