@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/andrinoff/ash/internal/shell"
 	"github.com/andrinoff/ash/internal/term"
@@ -20,12 +21,18 @@ const usage = `usage: ash [options] [script [args...]]
   -N, --no-config       don't read config files
   -C, --init-command C  run C before the config
   -n, --no-execute      only check the syntax of a script
+      --profile         time each statement of the config (or script)
+                        and print a report to stderr
   -v, --version         print the version
   -h, --help            show this help
 `
 
 //go:embed docs/*.md
 var docs embed.FS
+
+// started is as close to the start of the process as Go code gets;
+// --profile measures from here.
+var started = time.Now()
 
 func main() {
 	shell.Docs = docs
@@ -45,7 +52,15 @@ func run() int {
 		noExec      bool
 		readStdin   bool // -s: commands come from stdin, all args are $1...
 		initCmds    []string
+		profile     bool
 	)
+	// ASH_PROFILE=1 is --profile for when you can't pass flags (a
+	// terminal's shell setting). It is taken out of the environment so the
+	// programs and shells this one starts don't print reports too.
+	if v, ok := os.LookupEnv("ASH_PROFILE"); ok {
+		profile = v != "" && v != "0"
+		os.Unsetenv("ASH_PROFILE")
+	}
 	for len(args) > 0 {
 		a := args[0]
 		if a == "--" {
@@ -72,6 +87,8 @@ func run() int {
 			noConfig = true
 		case "-n", "--no-execute":
 			noExec = true
+		case "--profile":
+			profile = true
 		case "-C", "--init-command":
 			if len(args) > 0 {
 				initCmds = append(initCmds, args[0])
@@ -131,6 +148,9 @@ func run() int {
 	}
 
 	sh := shell.New()
+	if profile {
+		sh.StartProfile(started)
+	}
 	sh.Login = login
 	if login {
 		sh.LoginSetup()
@@ -165,6 +185,7 @@ func run() int {
 		if noExec {
 			return checkSyntax(command, "")
 		}
+		sh.ProfileAs("-c")
 		status := sh.RunString(command, "", sh.StdIO())
 		return finish(sh, status)
 	case len(args) > 0 && args[0] != "-" && !readStdin:
@@ -230,6 +251,9 @@ func finish(sh *shell.Shell, status int) int {
 	sh.RunExitTrap()
 	if exit, st := sh.ShouldExit(); exit {
 		status = st
+	}
+	if p := sh.StopProfile(); p != nil {
+		p.WriteReport(os.Stderr, "exit", time.Since(p.Start))
 	}
 	return status
 }

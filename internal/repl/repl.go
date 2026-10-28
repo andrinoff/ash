@@ -44,7 +44,8 @@ type REPL struct {
 	lastMu  sync.Mutex
 	last    editor.Prompt
 	lastDir string
-	repos   repoCache // repositories found for the history search
+	repos   repoCache      // repositories found for the history search
+	prof    *shell.Profile // --profile: reported once the first prompt is up
 
 	// edMu is held while the editor reads a line, at the prompt or for
 	// the read builtin, which can run on other goroutines (in a
@@ -78,7 +79,17 @@ func Run(sh *shell.Shell, initCmds []string) int {
 	sh.Editor = r.ed
 	sh.SetReadLine(r.readLine)
 	shell.EditorFunctions = editor.FunctionNames()
-	shell.ExecHook = func() { r.saveAndClose() }
+	shell.ExecHook = func() {
+		// the config may exec tmux before there is a prompt
+		p := sh.StopProfile()
+		if p == nil {
+			p, r.prof = r.prof, nil
+		}
+		if p != nil {
+			p.WriteReport(os.Stderr, "exec", time.Since(p.Start))
+		}
+		r.saveAndClose()
+	}
 
 	r.handleSignals()
 	r.importHistory()
@@ -91,6 +102,7 @@ func Run(sh *shell.Shell, initCmds []string) int {
 	if !sh.NoConfig {
 		r.loadConfig()
 	}
+	r.prof = sh.StopProfile()
 	if exit, st := sh.ShouldExit(); exit {
 		return r.exit(st)
 	}
@@ -162,8 +174,15 @@ func (r *REPL) loop() int {
 		if r.tty {
 			r.ed.EnsureNewline(sh.Style("pager_progress").SGR() + "⏎")
 		}
+		if r.prof != nil {
+			r.queueProfile()
+		}
 		line, err := r.ed.ReadLine(r.readOpts())
 		r.edMu.Unlock()
+		if r.prof != nil {
+			// typed-ahead input ended the line before the queued report ran
+			r.printProfile(false)
+		}
 		switch err {
 		case nil:
 		case editor.ErrEOF:
@@ -305,6 +324,33 @@ func (r *REPL) notifyLong(line string, status int, dur time.Duration) {
 	r.out.WriteString(ansi.Notify(msg))
 }
 
+// queueProfile has the --profile report printed once the first prompt is
+// on the screen: functions passed to the editor's Do run after it draws,
+// so the time taken there is when the prompt appeared.
+func (r *REPL) queueProfile() {
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		// no line editor; the prompt is printed next
+		r.printProfile(false)
+		return
+	}
+	r.ed.Do(func() { r.printProfile(true) })
+}
+
+func (r *REPL) printProfile(inEditor bool) {
+	p := r.prof
+	if p == nil {
+		return
+	}
+	r.prof = nil
+	var b strings.Builder
+	p.WriteReport(&b, "first prompt", time.Since(p.Start))
+	if inEditor && term.IsTerminal(int(os.Stderr.Fd())) {
+		r.ed.Notify(b.String()) // above the prompt, which is then redrawn
+		return
+	}
+	os.Stderr.WriteString(b.String())
+}
+
 // importHistory brings in fish (or zsh, or bash) history the first time
 // ash runs, in the background so startup doesn't wait for it.
 func (r *REPL) importHistory() {
@@ -429,6 +475,7 @@ func LoadConfig(sh *shell.Shell) {
 // loadConfig sources conf.d/*.ash then config.ash.
 func (r *REPL) loadConfig() {
 	sh := r.sh
+	defer sh.ProfilePhase("config")()
 	dir := sh.ConfigDir()
 	files, _ := filepath.Glob(filepath.Join(dir, "conf.d", "*.ash"))
 	sort.Strings(files)
@@ -463,6 +510,11 @@ func (r *REPL) greet() {
 
 func (r *REPL) exit(status int) int {
 	sh := r.sh
+	if p := r.prof; p != nil {
+		// the config exited before there was a prompt
+		r.prof = nil
+		p.WriteReport(os.Stderr, "exit", time.Since(p.Start))
+	}
 	sh.Emit("ash_exit")
 	sh.RunExitTrap()
 	r.saveAndClose()
