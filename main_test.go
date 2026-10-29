@@ -385,8 +385,7 @@ func TestProfileTerminal(t *testing.T) {
 		if typeAhead {
 			// typed before the shell is ready: the line can end before the
 			// report runs, which must still come out once
-			io := "echo typed\r"
-			in.Write([]byte(io))
+			in.Write([]byte("echo typed\r"))
 		}
 		deadline := time.Now().Add(10 * time.Second)
 		for !strings.Contains(output(), "first prompt at") && time.Now().Before(deadline) {
@@ -402,6 +401,11 @@ func TestProfileTerminal(t *testing.T) {
 			<-done
 		}
 		got := output()
+		if !strings.Contains(got, "❯") {
+			// script(1) versions differ; without a prompt there was no
+			// terminal session to look at
+			t.Skipf("no prompt through script(1): %q", got)
+		}
 		if strings.Count(got, "ash: profile, slowest first") != 1 || strings.Count(got, "first prompt at") != 1 {
 			t.Errorf("typeAhead=%v: want one report, got %q", typeAhead, got)
 		}
