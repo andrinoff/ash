@@ -119,6 +119,9 @@ func (sh *Shell) runTop(stmts []*syntax.Stmt, io *IO, name, src string, file boo
 func (p *profiler) add(stmts []*syntax.Stmt, cur *profEntry, name, src string, file bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.stmts == nil {
+		return // stopped since the caller looked
+	}
 	if !file {
 		if cur != nil {
 			// eval, a trap or a hook inside a timed statement: it's part

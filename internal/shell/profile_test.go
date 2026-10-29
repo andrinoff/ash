@@ -293,6 +293,22 @@ func TestProfileBackgroundAfterStop(t *testing.T) {
 	if len(p.items) != n {
 		t.Error("the profile changed after it was stopped")
 	}
+
+	// stopping while a job keeps sourcing files
+	pt = newProfTest(t)
+	f = pt.write("loop.ash", "set -g x 1\n")
+	pt.sh.ProfileAs("-c")
+	pt.sh.RunString("for i in (seq 300); source "+f+"; end &", "", pt.io)
+	time.Sleep(time.Millisecond)
+	prof := pt.sh.prof.p
+	pt.stop()
+	pt.sh.RunString("wait", "", pt.io)
+	// a job that saw the profiler running just before it stopped
+	file, err := parse("set -g y 1", "late.ash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prof.add(file.Stmts, nil, "late.ash", "set -g y 1", true)
 }
 
 func TestProfText(t *testing.T) {
