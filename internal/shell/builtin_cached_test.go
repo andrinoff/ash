@@ -349,6 +349,12 @@ func TestCachedFunctionsAndBuiltins(t *testing.T) {
 	ct.expect("cached count; echo $n", "call 11\n11\n", 0, 0)
 	ct.expect("cached printf '%s-' a b", "a-b-", 0, 0)
 	ct.expect("cached printf '%s-' a b", "a-b-", 0, 0)
+
+	// a job the function leaves running writes after cached returned: it
+	// still reaches stdout, but isn't part of the entry
+	ct.run("function bg; begin; sleep 0.05; echo late; end &; echo now; end")
+	ct.expect("cached bg; wait", "now\nlate\n", 0, 0)
+	ct.expect("cached bg; wait", "now\n", 0, 0)
 }
 
 func TestCachedBadEntries(t *testing.T) {

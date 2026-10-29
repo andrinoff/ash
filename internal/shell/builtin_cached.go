@@ -181,15 +181,16 @@ func (sh *Shell) runCached(io *IO, dir string, o *cachedOpts) int {
 	cio := io.clone()
 	cio.Out = &Stream{W: tee}
 	status := sh.dispatch(o.command, cio, nil, false, nil)
+	out, complete := tee.take()
 	// Keep only complete runs: not 126/127 (couldn't run), not killed by a
 	// signal or ctrl-c, not cut short by a closed stdout, and not exit or
 	// return, which a replay couldn't repeat.
-	if status >= 126 || sh.interrupted() || sh.ctrl != ctrlNone || tee.over || tee.err != nil {
+	if status >= 126 || sh.interrupted() || sh.ctrl != ctrlNone || !complete {
 		return status
 	}
 	e := &cacheEntry{
 		created: now, ttl: o.ttl, status: status, command: o.command,
-		dir: wd, ident: ident, watch: watch, out: tee.buf.Bytes(),
+		dir: wd, ident: ident, watch: watch, out: out,
 	}
 	if err := writeCacheEntry(dir, file, e); err != nil {
 		fmt.Fprintf(io.Err, "cached: %s\n", errText(err))
@@ -277,18 +278,19 @@ func cachedKey(command []string, path, dir string) string {
 
 // cacheTee passes a command's output through while keeping a copy.
 type cacheTee struct {
-	mu   sync.Mutex
-	out  io.Writer
-	buf  bytes.Buffer
-	max  int
-	over bool  // more than max: not cached
-	err  error // writing through failed: the output is incomplete
+	mu    sync.Mutex
+	out   io.Writer
+	buf   bytes.Buffer
+	max   int
+	over  bool  // more than max: not cached
+	err   error // writing through failed: the output is incomplete
+	taken bool
 }
 
 func (t *cacheTee) Write(p []byte) (int, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if !t.over {
+	if !t.over && !t.taken {
 		if t.buf.Len()+len(p) > t.max {
 			t.over = true
 			t.buf = bytes.Buffer{}
@@ -301,6 +303,16 @@ func (t *cacheTee) Write(p []byte) (int, error) {
 		t.err = err
 	}
 	return n, err
+}
+
+// take returns what was kept, and whether it is the whole output. A
+// background job the command left behind can still write through, but
+// is no longer kept.
+func (t *cacheTee) take() ([]byte, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.taken = true
+	return t.buf.Bytes(), !t.over && t.err == nil
 }
 
 // The entry file: a header of "key value" lines, a blank line, then the
