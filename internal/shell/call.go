@@ -171,6 +171,12 @@ func (sh *Shell) runExternal(args []string, io *IO, tmp []tmpVar, extraFds []*os
 	var status int
 	if ownGroup {
 		status = sh.foregroundJob(j, false)
+		if j.state() == procStopped {
+			// ctrl-z: the job keeps its end of any output pipe (cached
+			// captures stdout through one), so the copiers finish when
+			// it does, after fg. Waiting for them here would hang.
+			return status
+		}
 	} else {
 		sh.waitJob(j)
 		status = sh.finishJob(j)

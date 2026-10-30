@@ -361,6 +361,42 @@ func TestCachedBrokenPipe(t *testing.T) {
 	}
 }
 
+// ctrl-z on `cached CMD` at the prompt stops CMD, which still holds its
+// end of the output pipe. The shell must come back to the prompt and fg
+// must bring the output back.
+func TestCachedStopped(t *testing.T) {
+	ct := newCacheTest(t)
+	// SIGTSTP, as ctrl-z sends (Go's BSD wait status reads a SIGSTOP stop
+	// as a continue)
+	ct.tool("pause", `kill -TSTP $$; echo resumed`)
+	ct.sh.JobControl = true
+	out := &lockedBuffer{}
+	io := &IO{In: &Stream{}, Out: &Stream{W: out}, Err: &Stream{W: &lockedBuffer{}}}
+	done := make(chan int, 1)
+	go func() { done <- ct.sh.RunString("cached pause", "test", io) }()
+	select {
+	case st := <-done:
+		if st < 128 {
+			t.Errorf("status %d for a stopped command", st)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("cached waited for a stopped job")
+	}
+	if es := ct.entries(); len(es) != 0 {
+		t.Errorf("a stopped run was cached: %q", es)
+	}
+	if st := ct.sh.RunString("fg", "test", io); st != 0 {
+		t.Errorf("fg: status %d", st)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for out.String() != "resumed\n" && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := out.String(); got != "resumed\n" {
+		t.Errorf("output after fg: %q", got)
+	}
+}
+
 func TestCachedFunctionsAndBuiltins(t *testing.T) {
 	ct := newCacheTest(t)
 	ct.run("set -g n 0; function count; set -g n (math $n + 1); echo call $n; end")
