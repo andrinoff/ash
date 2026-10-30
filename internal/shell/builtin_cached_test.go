@@ -498,13 +498,16 @@ func TestParseTTL(t *testing.T) {
 		"2w":     14 * 24 * time.Hour,
 		"1w2d3h": 9*24*time.Hour + 3*time.Hour,
 		"0":      0,
+		"15000w": 15000 * 7 * 24 * time.Hour,
 	} {
 		got, err := parseTTL(in)
 		if err != nil || got != want {
 			t.Errorf("parseTTL(%q) = %v, %v; want %v", in, got, err, want)
 		}
 	}
-	for _, in := range []string{"", "d", "abc", "-1h", "-2d", "1h2d", "7", "3d2w", "1dd"} {
+	for _, in := range []string{"", "d", "abc", "-1h", "-2d", "1h2d", "7", "3d2w", "1dd",
+		// not finite, or more than a Duration holds
+		"infd", "nanw", "1e300d", "300000d", "15000w2000d", "15200w10000h"} {
 		if d, err := parseTTL(in); err == nil {
 			t.Errorf("parseTTL(%q) = %v, want an error", in, d)
 		}
@@ -518,6 +521,8 @@ func TestCachedUsage(t *testing.T) {
 		"cached --ttl":           2,
 		"cached --ttl soon true": 2,
 		"cached --watch":         2,
+		"cached --watch '' true": 2,
+		"cached --watch= true":   2,
 		"cached --bogus true":    2,
 		"cached --dir":           2,
 	} {

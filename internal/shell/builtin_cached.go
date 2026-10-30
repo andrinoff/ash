@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -106,6 +107,11 @@ func bCached(sh *Shell, io *IO, args []string) int {
 		case a == "--watch" || strings.HasPrefix(a, "--watch="):
 			v, ok := value(&i, "--watch")
 			if !ok {
+				return 2
+			}
+			if v == "" {
+				// absPath would make it the current directory
+				fmt.Fprintln(io.Err, "cached: --watch: empty file name")
 				return 2
 			}
 			o.watch = append(o.watch, sh.absPath(v))
@@ -581,7 +587,10 @@ func parseTTL(s string) (time.Duration, error) {
 			continue
 		}
 		n, err := strconv.ParseFloat(rest[:i], 64)
-		if err != nil || n < 0 {
+		// !(n >= 0) is also true for NaN; a Duration ends at about 292
+		// years, and converting a larger float (or Inf) to one is
+		// undefined
+		if err != nil || !(n >= 0) || n*float64(u.d) >= math.MaxInt64 {
 			return 0, bad
 		}
 		total += time.Duration(n * float64(u.d))
@@ -595,6 +604,9 @@ func parseTTL(s string) (time.Duration, error) {
 		total += d
 	} else if rest == s {
 		return 0, bad
+	}
+	if total < 0 {
+		return 0, bad // the parts added up to more than a Duration holds
 	}
 	return total, nil
 }
