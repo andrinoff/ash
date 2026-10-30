@@ -180,6 +180,11 @@ func (sh *Shell) runCached(io *IO, dir string, o *cachedOpts) int {
 	tee := &cacheTee{out: io.Out, max: cachedMaxOutput}
 	cio := io.clone()
 	cio.Out = &Stream{W: tee}
+	if io.Out != nil {
+		// so a function writing to a closed pipe stops, as it does
+		// without cached
+		cio.Out.broken = io.Out.broken
+	}
 	status := sh.dispatch(o.command, cio, nil, false, nil)
 	out, complete := tee.take()
 	// Keep only complete runs: not 126/127 (couldn't run), not killed by a

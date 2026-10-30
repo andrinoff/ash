@@ -339,6 +339,28 @@ func TestCachedNotKept(t *testing.T) {
 	}
 }
 
+// A function that writes forever must stop when its reader goes away, as
+// it does without cached.
+func TestCachedBrokenPipe(t *testing.T) {
+	ct := newCacheTest(t)
+	done := make(chan string, 1)
+	go func() {
+		out, _, _ := ct.run("function forever; while true; echo y; end; end; cached forever | head -n 1")
+		done <- out
+	}()
+	select {
+	case out := <-done:
+		if out != "y\n" {
+			t.Errorf("output %q", out)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("cached kept running after head exited")
+	}
+	if es := ct.entries(); len(es) != 0 {
+		t.Errorf("a run cut short was cached: %q", es)
+	}
+}
+
 func TestCachedFunctionsAndBuiltins(t *testing.T) {
 	ct := newCacheTest(t)
 	ct.run("set -g n 0; function count; set -g n (math $n + 1); echo call $n; end")
