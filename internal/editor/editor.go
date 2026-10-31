@@ -70,6 +70,11 @@ type Config struct {
 	// job ("fg %2"), or "" if there is none; ctrl-z runs it on an empty
 	// line.
 	ResumeJob func() string
+	// Preview returns a short description of what the word at the cursor
+	// (a byte offset) expands to, shown under the command line, or "".
+	// It runs in a goroutine once typing pauses, never more than one
+	// call at a time.
+	Preview func(buf string, cursor int) string
 }
 
 // ReadOpts configures one ReadLine call.
@@ -146,6 +151,7 @@ type Editor struct {
 	pager     *pager
 	search    *histSearch
 	quoted    bool
+	pv        previewState
 
 	// key bindings
 	keymap   string // "emacs" or "vi"
@@ -224,6 +230,7 @@ func (e *Editor) ReadLine(o ReadOpts) (string, error) {
 	e.lastArg = lastArgNav{}
 	e.pager, e.search = nil, nil
 	e.message = ""
+	e.previewReset()
 	e.queued = nil
 	e.pendingKeys = nil
 	if e.keymap == "vi" {
@@ -278,12 +285,15 @@ func (e *Editor) ReadLine(o ReadOpts) (string, error) {
 			e.render()
 		}
 		e.reader.ask(e.readSize())
-		var escC, chordC <-chan time.Time
+		var escC, chordC, previewC <-chan time.Time
 		if e.escTimer != nil {
 			escC = e.escTimer.C
 		}
 		if e.chordTimer != nil {
 			chordC = e.chordTimer.C
+		}
+		if e.pv.armed {
+			previewC = e.pv.timer.C
 		}
 		select {
 		case r := <-e.promptCh:
@@ -300,6 +310,9 @@ func (e *Editor) ReadLine(o ReadOpts) (string, error) {
 		case <-chordC:
 			e.chordTimer = nil
 			e.flushChord()
+		case <-previewC:
+			e.pv.armed = false
+			e.runPreview()
 		case <-winch:
 			e.resize()
 		case f := <-e.async:

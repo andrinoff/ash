@@ -191,6 +191,11 @@ func (e *Editor) layout(p Prompt, final bool) frame {
 		return f
 	}
 
+	// Right under the command line: what the word at the cursor expands to.
+	if e.pv.text != "" && e.search == nil && e.pager == nil && !e.opts.Simple {
+		f.add(e.previewLine(cols), 0)
+	}
+
 	// Below the command line: history search, pager, messages.
 	avail := e.rows - len(f.lines)
 	if avail < 3 {
@@ -238,6 +243,7 @@ func (e *Editor) render() {
 		e.recalc = false
 		e.requestPrompt()
 	}
+	e.previewCheck()
 	f := e.layout(e.prompt, false)
 	e.draw(f)
 }
