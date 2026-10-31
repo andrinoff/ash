@@ -258,6 +258,13 @@ anything else the command did. Cache commands that print code for you to
 `eval` or `source`. Don't cache ones that start something, like
 `ssh-agent -s`, or functions that set variables themselves.
 
+A failure is kept too. If `brew shellenv` fails once, every start gets
+that failure back until the TTL runs out or you run
+`cached --clear brew shellenv`. Exit statuses from 126 up are not kept:
+those come from commands that couldn't run, or that ctrl-c or a signal
+ended. Variables other than `$PATH` are not part of the entry either:
+`GOOS=linux cached go env GOOS` prints whatever was cached first.
+
 Two more things keep startup short:
 
 - `integrate starship` instead of `starship init fish | source`, and the
