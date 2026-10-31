@@ -226,6 +226,53 @@ echo 'set -g p 1' | source
 	}
 }
 
+// A file sourced again adds to the rows of its first run instead of
+// filling the report with copies of the same line. Other code under the
+// same name is not merged with it.
+func TestProfileRepeatedRuns(t *testing.T) {
+	pt := newProfTest(t)
+	pt.write("lib.ash", "set -g a 1\nsleep 0.001\n")
+	cfg := pt.write("config.ash", `for i in 1 2 3
+    source $D/lib.ash
+end
+printf 'set -g b 2\nsleep 0.002\n' > $D/lib.ash
+source $D/lib.ash
+`)
+	pt.sh.RunFile(cfg, nil, pt.io)
+	if pt.sh.Get("b") != "2" {
+		t.Fatal("the second version of lib.ash didn't run")
+	}
+	p, items := pt.stop()
+	for w, runs := range map[string]int{
+		"~/lib.ash":               4,
+		"~/lib.ash:1 set -g a 1":  3,
+		"~/lib.ash:2 sleep 0.001": 3,
+		"~/lib.ash:1 set -g b 2":  1,
+		"~/lib.ash:2 sleep 0.002": 1,
+	} {
+		if it, ok := items[w]; !ok || it.runs != runs {
+			t.Errorf("%s: %d runs, want %d; have %q", w, it.runs, runs, keys(items))
+		}
+	}
+	if len(items) != 9 {
+		t.Errorf("measured %d things, want 9: %q", len(items), keys(items))
+	}
+	var sum time.Duration
+	for _, it := range p.items {
+		sum += it.self
+	}
+	if file := items["~/config.ash"]; sum != file.total {
+		t.Errorf("self times add up to %v, the config took %v", sum, file.total)
+	}
+	var b strings.Builder
+	p.WriteReport(&b, "", 0)
+	for _, want := range []string{"  sleep 0.001 (3 runs)\n", "  (whole file, 4 runs)\n", "  sleep 0.002\n"} {
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("no %q in\n%s", want, b.String())
+		}
+	}
+}
+
 func TestProfileStrings(t *testing.T) {
 	pt := newProfTest(t)
 	// unnamed strings (traps, bindings) are not broken down by themselves

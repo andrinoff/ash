@@ -45,6 +45,17 @@ type profiler struct {
 	entries []*profEntry
 	phases  []profPhase
 	label   string // name for the next unnamed top-level string, see ProfileAs
+
+	// A file run again (sourced in a loop, say) adds to the entries of
+	// its first run rather than getting a second set of rows.
+	srcs  map[string]string        // the code each name was first registered with
+	where map[profWhere]*profEntry // statements of those first runs
+	files map[string]*profEntry
+}
+
+type profWhere struct {
+	name     string
+	pos, end int
 }
 
 // profEntry is one timed statement or file.
@@ -68,7 +79,13 @@ type profPhase struct {
 // files it runs, until StopProfile. start is when ash started; the report
 // measures from there.
 func (sh *Shell) StartProfile(start time.Time) {
-	sh.prof = profHook{p: &profiler{start: start, stmts: map[*syntax.Stmt]*profEntry{}}}
+	sh.prof = profHook{p: &profiler{
+		start: start,
+		stmts: map[*syntax.Stmt]*profEntry{},
+		srcs:  map[string]string{},
+		where: map[profWhere]*profEntry{},
+		files: map[string]*profEntry{},
+	}}
 }
 
 // Profiling reports whether StartProfile is in effect.
@@ -135,28 +152,42 @@ func (p *profiler) add(stmts []*syntax.Stmt, cur *profEntry, name, src string, f
 			}
 		}
 	}
-	p.register(stmts, name, src)
+	prev, seen := p.srcs[name]
+	if !seen {
+		p.srcs[name] = src
+	}
+	p.register(stmts, name, src, !seen, seen && prev == src)
 }
 
-func (p *profiler) register(stmts []*syntax.Stmt, name, src string) {
+// register sets up entries for stmts. On the first run of name they are
+// recorded by where they are, and a later run of the same code (again)
+// adds to those.
+func (p *profiler) register(stmts []*syntax.Stmt, name, src string, first, again bool) {
 	for _, st := range stmts {
-		e := &profEntry{name: name, src: src, pos: st.Pos, end: st.End}
+		k := profWhere{name, st.Pos, st.End}
+		e := p.where[k]
+		if !again || e == nil {
+			e = &profEntry{name: name, src: src, pos: st.Pos, end: st.End}
+			p.entries = append(p.entries, e)
+			if first {
+				p.where[k] = e
+			}
+		}
 		p.stmts[st] = e
-		p.entries = append(p.entries, e)
 		// The conditions of an if are left out: their time is the if's
 		// own, on the same line.
 		switch c := st.Cmd.(type) {
 		case *syntax.IfClause:
-			p.register(c.Then, name, src)
+			p.register(c.Then, name, src, first, again)
 			for _, el := range c.Elifs {
-				p.register(el.Then, name, src)
+				p.register(el.Then, name, src, first, again)
 			}
-			p.register(c.Else, name, src)
+			p.register(c.Else, name, src, first, again)
 		case *syntax.Block:
-			p.register(c.Stmts, name, src)
+			p.register(c.Stmts, name, src, first, again)
 		case *syntax.CaseClause:
 			for _, it := range c.Items {
-				p.register(it.Body, name, src)
+				p.register(it.Body, name, src, first, again)
 			}
 		}
 	}
@@ -188,12 +219,18 @@ func (sh *Shell) profStmt(st *syntax.Stmt, io *IO) {
 // returns the function that stops it.
 func (sh *Shell) profFile(name string) func() {
 	p := sh.prof.p
-	if p.stopped.Load() {
-		return noop
-	}
-	e := &profEntry{name: name, file: true}
 	p.mu.Lock()
-	p.entries = append(p.entries, e)
+	if p.stmts == nil {
+		p.mu.Unlock()
+		return noop // stopped
+	}
+	e := p.files[name]
+	if e == nil {
+		// one row for each file, however often it runs
+		e = &profEntry{name: name, file: true}
+		p.files[name] = e
+		p.entries = append(p.entries, e)
+	}
 	p.mu.Unlock()
 	parent := sh.prof.cur
 	sh.prof.cur = e
@@ -228,6 +265,7 @@ type profItem struct {
 	src         string
 	pos, end    int
 	file        bool
+	runs        int // shown when more than one
 	total, self time.Duration
 }
 
@@ -258,10 +296,10 @@ func (sh *Shell) StopProfile() *Profile {
 		}
 		prof.items = append(prof.items, profItem{
 			name: e.name, src: e.src, pos: e.pos, end: e.end, file: e.file,
-			total: e.total, self: self,
+			runs: e.runs, total: e.total, self: self,
 		})
 	}
-	p.stmts = nil
+	p.stmts, p.srcs, p.where, p.files = nil, nil, nil, nil
 	return prof
 }
 
@@ -317,10 +355,10 @@ func (p *Profile) WriteReport(w io.Writer, end string, at time.Duration) {
 		*rows = append(*rows, r)
 	}
 	for _, it := range stmts {
-		add(&top, row{p.where(it), fmtMs(it.self), fmtMs(it.total), profText(it.src, it.pos, it.end)})
+		add(&top, row{p.where(it), fmtMs(it.self), fmtMs(it.total), profText(it.src, it.pos, it.end) + runsNote(it.runs, " (", ")")})
 	}
 	for _, it := range files {
-		add(&bottom, row{p.where(it), fmtMs(it.self), fmtMs(it.total), "(whole file)"})
+		add(&bottom, row{p.where(it), fmtMs(it.self), fmtMs(it.total), "(whole file" + runsNote(it.runs, ", ", "") + ")"})
 	}
 
 	var b strings.Builder
@@ -353,6 +391,15 @@ func (p *Profile) WriteReport(w io.Writer, end string, at time.Duration) {
 		b.WriteString("ash: " + strings.Join(sum, ", ") + "\n")
 	}
 	io.WriteString(w, b.String())
+}
+
+// runsNote says how often a row's statement or file ran, when it ran more
+// than once (a file sourced in a loop): the times are the sums.
+func runsNote(runs int, before, after string) string {
+	if runs < 2 {
+		return ""
+	}
+	return before + strconv.Itoa(runs) + " runs" + after
 }
 
 // where is the file:line column: paths in the config directory are shown

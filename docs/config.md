@@ -208,8 +208,10 @@ Two lines take 22ms. Everything else takes a tenth of a millisecond.
 the statements in an `if` block, or a file it sourced. Rows are sorted by
 `self`, so the line to fix is at the top, and each file comes after with
 its total. Statements inside a top-level `if`, `switch` or `begin` block
-get rows of their own; a loop or a function call is one row. The report
-lists the ten slowest statements and adds up the rest.
+get rows of their own; a loop or a function call is one row. A file
+sourced more than once keeps one set of rows, with the times added up and
+`(3 runs)` after the statement. The report lists the ten slowest
+statements and adds up the rest.
 
 Times count from when the process started. On Linux they count from when
 ash's own code starts, which leaves out a millisecond or two.
