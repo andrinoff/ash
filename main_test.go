@@ -246,6 +246,11 @@ func TestProfileCommand(t *testing.T) {
 	if _, errs, _ := runAsh(t, home, "", nil, "-c", "true"); errs != "" {
 		t.Errorf("stderr without --profile: %q", errs)
 	}
+	// a command that doesn't parse doesn't pass its name on to the trap
+	out, errs, _ = runAsh(t, home, "", nil, "--profile", "-C", "trap 'echo bye' EXIT", "-c", "echo (")
+	if out != "bye\n" || strings.Contains(errs, "-c:") {
+		t.Errorf("stdout %q, the trap was reported as the command:\n%s", out, errs)
+	}
 }
 
 func TestProfileScript(t *testing.T) {

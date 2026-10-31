@@ -204,6 +204,8 @@ func run() int {
 		}
 		sh.ProfileAs("-c")
 		status := sh.RunString(command, "", sh.StdIO())
+		// a command that didn't parse leaves the name for the EXIT trap
+		sh.ProfileAs("")
 		return finish(sh, status)
 	case len(args) > 0 && args[0] != "-" && !readStdin:
 		script := args[0]
