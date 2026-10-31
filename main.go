@@ -160,6 +160,13 @@ func run() int {
 	sh := shell.New()
 	if profile {
 		sh.StartProfile(profileStart())
+		// a script, -c or the config of ash -i -c can end in exec; the
+		// interactive shell sets a hook of its own that reports too
+		shell.ExecHook = func() {
+			if p := sh.StopProfile(); p != nil {
+				p.WriteReport(os.Stderr, "exec", time.Since(p.Start))
+			}
+		}
 	}
 	sh.Login = login
 	if login {

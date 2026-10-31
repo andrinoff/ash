@@ -262,6 +262,19 @@ func TestProfileScript(t *testing.T) {
 		`^  ~/build\.ash +`+ms+` +`+ms+`  \(whole file\)$`,
 		`^ash: exit at `,
 	)
+
+	// wrappers end in exec, which must not lose the report
+	os.WriteFile(script, []byte("sleep 0.01\nexec /bin/echo replaced\n"), 0o755)
+	out, errs, _ := runAsh(t, home, "", nil, "--profile", script)
+	if out != "replaced\n" {
+		t.Errorf("exec output %q", out)
+	}
+	hasLines(t, errs, `^  ~/build\.ash:1 +`+ms+` +`+ms+`  sleep 0\.01$`, `^ash: exec at `+ms+`$`)
+	out, errs, _ = runAsh(t, home, "", nil, "--profile", "-c", "sleep 0.01; exec /bin/echo replaced")
+	if out != "replaced\n" {
+		t.Errorf("exec output %q", out)
+	}
+	hasLines(t, errs, `^  -c:1 +`+ms+` +`+ms+`  sleep 0\.01$`, `^ash: exec at `+ms+`$`)
 }
 
 func TestProfileEnvironment(t *testing.T) {
@@ -339,6 +352,12 @@ func TestProfileConfigExits(t *testing.T) {
 	out, errs, _ := runAsh(t, home, "", nil, "--profile", "-i")
 	if out != "replaced\n" {
 		t.Errorf("exec output %q", out)
+	}
+	hasLines(t, errs, `^  config\.ash:1 `, `^ash: exec at `+ms+`$`)
+	// ash -i -c reads the config without the interactive loop
+	out, errs, _ = runAsh(t, home, "", nil, "--profile", "-i", "-c", "echo not reached")
+	if out != "replaced\n" {
+		t.Errorf("-i -c exec output %q", out)
 	}
 	hasLines(t, errs, `^  config\.ash:1 `, `^ash: exec at `+ms+`$`)
 }
