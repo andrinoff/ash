@@ -46,6 +46,9 @@ type REPL struct {
 	lastDir string
 	repos   repoCache      // repositories found for the history search
 	prof    *shell.Profile // --profile: reported once the first prompt is up
+	// previewSh is a fork of sh for the expansion preview, which runs in
+	// the background; nil when $ash_preview is 0.
+	previewSh atomic.Pointer[shell.Shell]
 
 	// edMu is held while the editor reads a line, at the prompt or for
 	// the read builtin, which can run on other goroutines (in a
@@ -130,6 +133,8 @@ func (r *REPL) editorConfig() editor.Config {
 				sh.ResetControl()
 				sh.ApplyChildActions(sh.StdIO())
 			})
+			// a binding may have changed variables or the directory
+			r.refreshPreview()
 			if exit, _ := sh.ShouldExit(); exit {
 				// leave now, not after the next line (which wouldn't run)
 				r.ed.QueueFunctions("exit")
@@ -147,8 +152,30 @@ func (r *REPL) editorConfig() editor.Config {
 			}
 			return ""
 		},
-		Style: func(role string) string { return sh.Style(role).SGR() },
+		Style:   func(role string) string { return sh.Style(role).SGR() },
+		Preview: r.preview,
 	}
+}
+
+// preview describes what the word at the cursor expands to. The editor
+// calls it in the background, so it must not touch r.sh, which the main
+// goroutine may be changing: it works on the fork refreshPreview took.
+func (r *REPL) preview(buf string, cursor int) string {
+	if sh := r.previewSh.Load(); sh != nil {
+		return sh.PreviewWord(buf, cursor)
+	}
+	return ""
+}
+
+// refreshPreview gives the preview a fresh fork of the shell, or turns it
+// off when $ash_preview is 0. It runs on the main goroutine before each
+// prompt and after key bindings.
+func (r *REPL) refreshPreview() {
+	if r.sh.Get("ash_preview") == "0" {
+		r.previewSh.Store(nil)
+		return
+	}
+	r.previewSh.Store(r.sh.Fork())
 }
 
 func incomplete(buf string) bool {
@@ -177,6 +204,7 @@ func (r *REPL) loop() int {
 		if r.prof != nil {
 			r.queueProfile()
 		}
+		r.refreshPreview()
 		line, err := r.ed.ReadLine(r.readOpts())
 		r.edMu.Unlock()
 		if r.prof != nil {
