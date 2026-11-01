@@ -233,6 +233,60 @@ func TestPreviewWordLimits(t *testing.T) {
 	}
 }
 
+// TestPreviewWordFieldEstimate checks that a product of lists shows
+// nothing however it is spelled, and that picking a few values from a long
+// list is not mistaken for one.
+func TestPreviewWordFieldEstimate(t *testing.T) {
+	sh, _ := previewShell(t)
+	list := func(n int, f func(int) string) []string {
+		out := make([]string, n)
+		for i := range out {
+			out[i] = f(i + 1)
+		}
+		return out
+	}
+	set := func(name string, vals []string) { sh.SetVar(name, vals, setOpts{scope: setGlobal}) }
+	set("r", list(100, strconv.Itoa))
+	set("big", list(2000, strconv.Itoa))
+	set("ref", []string{"r"})
+	set("aref", []string{"r[@]"})
+	set("argv", list(100, strconv.Itoa))
+	set("ranges", list(20, func(int) string { return "1..-1" }))
+	sh.History = &integHistory{entries: list(1500, func(i int) string { return "cmd " + strconv.Itoa(i) })}
+	for _, buf := range []string{
+		"echo ${!ref}${!ref}",
+		`echo ${!ref}"${!aref}"`,
+		`echo $r"$@"`,
+		`echo $r"${r[@]}"`,
+		"echo $r[$ranges]",
+		"echo $r[$r$r]",
+	} {
+		if got := sh.PreviewWord(buf, len(buf)); got != "" {
+			t.Errorf("PreviewWord(%q) = %.40q, want nothing", buf, got)
+		}
+	}
+	for _, c := range []struct{ buf, want string }{
+		{"echo $big[1]", "1"},
+		{"echo $big[-1]", "2000"},
+		{"echo $big[2..3]", "2 values: 2 3"},
+		{"echo $big[-2..]", "2 values: 1999 2000"},
+		{"echo $big[1 3]", "2 values: 1 3"},
+		{"echo ${big[0]}", "1"},
+		{"echo $history[1]", "cmd 1"},
+		{"echo ${!ref}", "100 values: 1 2 3 "},
+		{`echo "${!ref}"`, "1 2 3 "},
+		{`echo "$big"`, "1 2 3 "},
+	} {
+		got := sh.PreviewWord(c.buf, len(c.buf))
+		if strings.HasSuffix(c.want, " ") && strings.HasPrefix(got, c.want) {
+			continue
+		}
+		if got != c.want {
+			t.Errorf("PreviewWord(%q) = %.60q, want %q", c.buf, got, c.want)
+		}
+	}
+}
+
 func TestPreviewWordOutOfTime(t *testing.T) {
 	sh, _ := previewShell(t)
 	saved := previewGlobTime

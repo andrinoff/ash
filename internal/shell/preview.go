@@ -555,28 +555,131 @@ expand:
 	return previewList(len(vals), more, "value", "values", vals)
 }
 
-// estimate guesses how many fields parts expand to: unquoted lists
-// multiply ($a$b with two long lists is their cartesian product).
+// estimate is an upper bound on the number of fields parts expand to:
+// unquoted lists multiply ($a$b with two long lists is their cartesian
+// product), and so do "$@" and "${a[@]}", which split even in quotes.
 func (pv *previewer) estimate(parts []syntax.WordPart) int {
 	n := 1
-	for _, p := range parts {
-		pe, ok := p.(*syntax.ParamExp)
-		if !ok {
-			continue
-		}
-		vals, _ := pv.sh.getVar(pe.Name)
-		k := len(vals)
-		if pe.Index != nil && pe.Index.Fish && len(pe.Index.Words) > 1 {
-			k *= len(pe.Index.Words)
-		}
+	mul := func(k int) bool {
 		if k > 1 {
 			n *= k
-			if n > previewMaxFields {
+		}
+		return n > previewMaxFields
+	}
+	for _, p := range parts {
+		switch p := p.(type) {
+		case *syntax.ParamExp:
+			if mul(pv.size(p, false)) {
 				return n
+			}
+		case *syntax.DblQuoted:
+			for _, q := range p.Parts {
+				if pe, ok := q.(*syntax.ParamExp); ok && mul(pv.size(pe, true)) {
+					return n
+				}
 			}
 		}
 	}
 	return n
+}
+
+// size is an upper bound on the number of fields pe makes: the values it
+// picks from a list, or 1 when they are joined into one string.
+func (pv *previewer) size(pe *syntax.ParamExp, quoted bool) int {
+	sh := pv.sh
+	if pe.Length {
+		return 1
+	}
+	name := pe.Name
+	split := name == "@" || pe.Op == syntax.OpPrefixNames || pe.Op == syntax.OpIndices
+	if pe.Indirect {
+		// ${!ref} expands the list ref names
+		name = sh.Get(name)
+		if i := strings.IndexByte(name, '['); i > 0 && strings.HasSuffix(name, "]") {
+			if sub := name[i+1 : len(name)-1]; sub != "@" && sub != "*" {
+				return 1
+			}
+			name = name[:i]
+			split = true
+		}
+	}
+	idx := pe.Index
+	if idx != nil && !idx.Fish {
+		if !idx.All {
+			return 1 // ${a[i]}: one element
+		}
+		split = split || !idx.Star
+	}
+	if quoted && !split {
+		return 1
+	}
+	if pe.Op == syntax.OpPrefixNames {
+		k := 0
+		for _, v := range sh.VarNames() {
+			if strings.HasPrefix(v, name) {
+				k++
+			}
+		}
+		return k
+	}
+	vals, _ := sh.getVar(name)
+	if idx != nil && idx.Fish {
+		return pv.indexSize(idx, len(vals))
+	}
+	return len(vals)
+}
+
+// indexSize is an upper bound on the number of values a fish index picks
+// from a list of n: one for each index, up to n for each range.
+func (pv *previewer) indexSize(idx *syntax.Index, n int) int {
+	k := 0
+	for _, w := range idx.Words {
+		if pv.estimate(w.Parts) > previewMaxFields {
+			return previewMaxFields + 1
+		}
+		specs, err := pv.sh.expandFields([]*syntax.Word{w}, pv.io, expNoGlob)
+		if err != nil {
+			return 1 // the expansion fails
+		}
+		for _, s := range specs {
+			for _, one := range strings.Fields(s) {
+				k += rangeSize(one, n)
+				if k > previewMaxFields {
+					return k
+				}
+			}
+		}
+	}
+	return k
+}
+
+// rangeSize is an upper bound on the number of values the fish index spec
+// one (N, N..M, ..M, N..) picks from a list of n.
+func rangeSize(one string, n int) int {
+	i := strings.Index(one, "..")
+	if i < 0 {
+		return 1
+	}
+	end := func(s string, dflt int) int {
+		if s == "" {
+			return dflt
+		}
+		v, err := strconv.Atoi(s)
+		if err != nil {
+			return dflt
+		}
+		if v < 0 {
+			v += n + 1
+		}
+		return v
+	}
+	// the expansion clamps to 1..n; clamping first keeps this from overflowing
+	clamp := func(v int) int { return max(0, min(v, n+1)) }
+	d := clamp(end(one[i+2:], n)) - clamp(end(one[:i], 1))
+	if d < 0 {
+		d = -d
+	}
+	return min(d+1, n)
 }
 
 // previewOne formats a single value.
