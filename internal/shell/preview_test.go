@@ -216,10 +216,21 @@ func TestPreviewWordLimits(t *testing.T) {
 	// substring
 	sh.SetVar("long", []string{strings.Repeat("ab", 2000)}, setOpts{scope: setGlobal})
 	sh.SetVar("short", []string{strings.Repeat("ab", 100)}, setOpts{scope: setGlobal})
-	for _, buf := range []string{"echo ${long//a*b/x}", "echo ${long//a/x}", "echo ${short//a*b/x}"} {
+	// so do long patterns: every match compares up to the whole pattern
+	sh.SetVar("as", []string{strings.Repeat("a", 1000)}, setOpts{scope: setGlobal})
+	sh.SetVar("lit", []string{strings.Repeat("a", 200) + "b"}, setOpts{scope: setGlobal})
+	sh.SetVar("star", []string{"*" + strings.Repeat("a", 200) + "b"}, setOpts{scope: setGlobal})
+	for _, buf := range []string{
+		"echo ${long//a*b/x}", "echo ${long//a/x}", "echo ${short//a*b/x}",
+		"echo ${as//$lit/x}", "echo ${as/$lit/x}", "echo ${as%%$star}", "echo ${as#$star}",
+	} {
+		start := time.Now()
 		if got := sh.PreviewWord(buf, len(buf)); got != "" {
-			t.Errorf("costly %q: %q", buf, got)
+			t.Errorf("costly %q: %.20q after %v", buf, got, time.Since(start))
 		}
+	}
+	if got := sh.PreviewWord("echo ${as//a/x}", 15); !strings.HasPrefix(got, "xxxx") {
+		t.Errorf("cheap replace in a long value: %q", got)
 	}
 	if got := sh.PreviewWord("echo ${short//a/x}", 18); !strings.HasPrefix(got, "xbxb") {
 		t.Errorf("cheap replace: %q", got)

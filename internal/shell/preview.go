@@ -24,7 +24,7 @@ const (
 	previewMaxBraces  = 50        // brace expansion alternatives
 	previewMaxFields  = 1000      // fields, e.g. from $a$b with long lists
 	previewMaxText    = 300       // bytes of preview text
-	previewMaxWork    = 2_000_000 // estimated steps (~1.5ns each) for ${x//pat/rep} and friends
+	previewMaxWork    = 1_200_000 // estimated steps (~2.5ns each) for ${x//pat/rep} and friends
 	previewMaxDepth   = 64        // quotes and brackets the word scanner follows
 )
 
@@ -344,37 +344,48 @@ func (pv *previewer) param(pe *syntax.ParamExp) {
 	}
 }
 
-// patternWork estimates the steps ${x#pat}, ${x/pat/rep} and friends take:
-// they try the pattern at every position (and ${x/...} against every
-// substring), so long values with wildcard patterns get expensive fast.
+// patternWork bounds the steps ${x#pat}, ${x/pat/rep} and friends take.
+// They match the pattern against the value from every position (${x/...}
+// against every substring), and one match costs up to a step per pattern
+// byte; with a '*' it retries from every position of the text, so it
+// costs up to the text's length times the longest stretch of the pattern
+// without a '*'.
 func (pv *previewer) patternWork(pe *syntax.ParamExp, name string) int64 {
 	vals, _ := pv.sh.getVar(name)
-	var n int64
+	var n int64 // the values joined, as path lists are
 	for _, v := range vals {
 		n += int64(len(v)) + 1
 	}
-	if pe.Arg == nil {
-		return n
+	pat := ""
+	if pe.Arg != nil {
+		var err error
+		if pat, err = pv.sh.expandPattern(pe.Arg, pv.io, false); err != nil {
+			return previewMaxWork + 1
+		}
 	}
-	pat, err := pv.sh.expandPattern(pe.Arg, pv.io, false)
-	if err != nil {
-		return previewMaxWork + 1
-	}
-	wild := hasMeta(pat)
-	if n > 1<<20 {
+	p := int64(len(pat))
+	if n > 1<<20 || p > 1<<20 {
 		return previewMaxWork + 1 // and don't overflow below
 	}
-	switch pe.Op {
-	case syntax.OpReplace, syntax.OpReplaceAll:
-		if wild {
-			return n * n * n
+	calls := n + 1
+	if pe.Op == syntax.OpReplace || pe.Op == syntax.OpReplaceAll {
+		calls = (n + 1) * (n + 2) / 2
+	}
+	per := min(p, n) + 1
+	if strings.Contains(pat, "[") {
+		per = 2*p + 1 // a bracket expression costs about two steps a byte
+	}
+	if strings.Contains(pat, "*") {
+		var run int64
+		for _, s := range strings.Split(pat, "*") {
+			run = max(run, int64(len(s)))
 		}
-		return n * n
+		per = (n+1)*(run+1) + p
 	}
-	if wild {
-		return n * n
+	if calls > previewMaxWork || per > previewMaxWork {
+		return previewMaxWork + 1
 	}
-	return n
+	return calls * per
 }
 
 // arithLit evaluates an arithmetic word (a subscript or offset) and
