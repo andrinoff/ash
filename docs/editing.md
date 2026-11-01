@@ -21,6 +21,52 @@ would `cd` into a directory that's gone.
 | `alt-→`, `alt-f` | accept the next word of it |
 | `escape` | hide it for now |
 
+## What a word expands to
+
+When the cursor is on a word the shell would expand, a dim line under the
+command line shows what it turns into. You see it before you press enter,
+not after:
+
+```
+❯ rm build/*.o
+12 matches: build/a.o build/b.o build/c.o build/d.o …
+```
+
+| you type | the line shows |
+|---|---|
+| `ls *.go` | `3 matches: lexer.go main.go parser.go` |
+| `ls *.rs` | `no matches` |
+| `echo $PATH` | `5 values: /opt/homebrew/bin /usr/local/bin /usr/bin …` |
+| `cd ~/src` | `/Users/you/src` |
+| `cp app.conf{,.bak}` | `2 values: app.conf app.conf.bak` |
+| `echo $((60 * 60 * 24))` | `86400` |
+| `echo $nope` | `(unset)` |
+| `sudo !!` | the previous command |
+
+That covers globs (`**` too), variables in all their forms (`$x`,
+`${x:-default}`, `${x%.*}`, `$list[2]`), `~` and `~user`, braces,
+arithmetic, and `!!` / `!$`. Plain words show nothing, and neither does
+quoted text like `'*.go'`. You don't have to finish a word first: `"$HOME/`
+already shows your home directory with a slash after it.
+
+The preview never runs or changes anything:
+
+- Command substitution (`$(...)`, `(...)`, backticks) and process
+  substitution (`<(...)`) show nothing. Words inside them do: with the
+  cursor on `*.go` in `echo $(ls *.go)` you see the matches.
+- `${x:=default}` shows the default without setting `x`, and `$((i++))`
+  shows the value without changing `i`.
+
+It stays out of the way. It's worked out in the background once you stop
+typing for a moment, so typing never waits for it. A glob stops after 200
+matches or a few milliseconds and says `200+ matches`, braces stop after 50
+values, and the line is hidden while the completion menu or the history
+search is open.
+
+To turn it off, put `set -g ash_preview 0` in `config.ash`. Its color is
+the `preview` role (`set -g ash_color_preview brblack --italics`); without
+one it uses the autosuggestion color.
+
 ## Completion
 
 `tab` completes the word under the cursor. If there's one match it's

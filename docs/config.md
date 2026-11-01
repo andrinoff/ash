@@ -114,7 +114,7 @@ the theme: `set -g ash_color_command blue --bold` (`fish_color_command`
 works too).
 
 Roles: `normal command keyword param option quote escape variable operator
-end redirection comment error autosuggestion valid_path selection
+end redirection comment error autosuggestion preview valid_path selection
 search_match cancel`, plus the pager's `prefix completion description
 progress selected_background selected_completion selected_description`.
 
