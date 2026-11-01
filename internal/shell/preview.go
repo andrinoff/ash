@@ -265,6 +265,11 @@ func (pv *previewer) clean(parts []syntax.WordPart) {
 func (pv *previewer) param(pe *syntax.ParamExp) {
 	sh := pv.sh
 	name := pe.Name
+	if name == "RANDOM" {
+		// reading it, even to follow ${!RANDOM}, changes the random state
+		pv.ok = false
+		return
+	}
 	if pe.Indirect {
 		ref := sh.Get(name)
 		name = ref

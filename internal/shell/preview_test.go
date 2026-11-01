@@ -315,6 +315,7 @@ func TestPreviewWordDoesNotChangeTheShell(t *testing.T) {
 		{"echo ${!ref}", ""}, // the subscript would assign
 		{"echo $RANDOM", ""},
 		{"echo $((RANDOM))", ""},
+		{"echo ${!RANDOM}", ""},
 	} {
 		if got := sh.PreviewWord(c.buf, len(c.buf)); got != c.want {
 			t.Errorf("PreviewWord(%q) = %q, want %q", c.buf, got, c.want)
@@ -347,7 +348,7 @@ func TestPreviewWordConcurrent(t *testing.T) {
 	sh, _ := previewShell(t)
 	sh.RunString(`x=hello; list=(a b c)`, "test", previewIO())
 	sh.History = &integHistory{entries: []string{"make test"}}
-	bufs := []string{"ls *.go", "echo $x", "echo $list[2]", "echo ${y:=z}", "echo $((n=1))", "cd ~/src", "echo {1..9}", "sudo !!", "echo $RANDOM"}
+	bufs := []string{"ls *.go", "echo $x", "echo $list[2]", "echo ${y:=z}", "echo $((n=1))", "cd ~/src", "echo {1..9}", "sudo !!", "echo $RANDOM", "echo ${!RANDOM}"}
 	var wg sync.WaitGroup
 	for g := 0; g < 8; g++ {
 		wg.Add(1)
