@@ -233,6 +233,20 @@ func TestPreviewWordLimits(t *testing.T) {
 	}
 }
 
+func TestPreviewWordOutOfTime(t *testing.T) {
+	sh, _ := previewShell(t)
+	saved := previewGlobTime
+	previewGlobTime = -time.Second // out of time before the first directory
+	defer func() { previewGlobTime = saved }()
+	// unknown, not "no matches" or "(empty)"
+	if got := sh.PreviewWord("ls *.go", 7); got != "" {
+		t.Errorf("glob out of time: %q", got)
+	}
+	if got := sh.PreviewWord("ls {x,*.go}", 11); got != "1+ values: x …" {
+		t.Errorf("mixed word out of time: %q", got)
+	}
+}
+
 func TestPreviewWordDoesNotChangeTheShell(t *testing.T) {
 	sh, _ := previewShell(t)
 	sh.RunString(`arr=(1 2 3); i=0; ref='arr[i++]'`, "test", previewIO())

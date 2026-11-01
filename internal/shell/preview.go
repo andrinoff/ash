@@ -20,14 +20,16 @@ import (
 // it must be cheap, it must never run code or change the shell, and
 // everything that could take long is capped.
 const (
-	previewMaxMatches = 200                  // glob matches to collect
-	previewGlobTime   = 5 * time.Millisecond // time allowed for globbing
-	previewMaxBraces  = 50                   // brace expansion alternatives
-	previewMaxFields  = 1000                 // fields, e.g. from $a$b with long lists
-	previewMaxText    = 300                  // bytes of preview text
-	previewMaxWork    = 2_000_000            // estimated steps for ${x//pat/rep} and friends
-	previewMaxDepth   = 64                   // quotes and brackets the word scanner follows
+	previewMaxMatches = 200       // glob matches to collect
+	previewMaxBraces  = 50        // brace expansion alternatives
+	previewMaxFields  = 1000      // fields, e.g. from $a$b with long lists
+	previewMaxText    = 300       // bytes of preview text
+	previewMaxWork    = 2_000_000 // estimated steps (~1.5ns each) for ${x//pat/rep} and friends
+	previewMaxDepth   = 64        // quotes and brackets the word scanner follows
 )
+
+// previewGlobTime is the time globbing may take for one preview.
+var previewGlobTime = 5 * time.Millisecond
 
 // PreviewWord describes what the word under (or just before) the cursor
 // expands to: "3 matches: a.go b.go c.go", "2 values: a b", a single value,
@@ -494,7 +496,7 @@ func (pv *previewer) fields(w *syntax.Word, glob bool) string {
 	budget := globBudget{deadline: time.Now().Add(previewGlobTime), max: previewMaxMatches}
 	// vals is what the command gets, matches only what globs matched
 	var vals, matches []string
-	plain := 0
+	plain, globs := 0, 0
 expand:
 	for _, parts := range alts {
 		if pv.estimate(parts) > previewMaxFields {
@@ -513,6 +515,7 @@ expand:
 				break expand
 			}
 			if f.glob && glob {
+				globs++
 				ms := sh.previewGlob(string(f.pat), &budget)
 				if len(ms) > 0 {
 					matches = append(matches, ms...)
@@ -530,7 +533,7 @@ expand:
 			vals = append(vals, string(f.text))
 		}
 	}
-	if plain == 0 && len(vals) > 0 {
+	if plain == 0 && globs > 0 {
 		// every field was a glob
 		switch n := len(matches); {
 		case n == 0 && more:
