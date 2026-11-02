@@ -1112,6 +1112,12 @@ var keepsCommand = map[string]bool{
 	"time": true, "begin": true,
 }
 
+// heredoc is a here-document whose body starts after the next newline.
+type heredoc struct {
+	delim string // the delimiter line
+	tabs  bool   // <<-: leading tabs don't count
+}
+
 // list scans commands in s[i:to] and returns the word at the cursor.
 func (sc *pvScanner) list(i, to int) (pvSpan, bool) {
 	s := sc.s
@@ -1119,11 +1125,22 @@ func (sc *pvScanner) list(i, to int) (pvSpan, bool) {
 	cmd := ""     // the current command's name
 	redir := false
 	redirCtx := pvArg
+	tabs := false      // the redirection is <<-
+	var docs []heredoc // here-documents whose bodies come next
 	for i < to {
 		c := s[i]
 		switch {
 		case c == ' ' || c == '\t' || c == '\r':
 			i++
+			continue
+		case c == '\n' && len(docs) > 0:
+			// the lines after it are text, not commands: nothing to preview
+			j := skipHeredocs(s, i+1, to, docs)
+			if sc.cursor > i && sc.cursor <= j {
+				return pvSpan{}, false
+			}
+			docs = docs[:0]
+			i = j
 			continue
 		case c == '\n' || c == ';' || c == '&' || c == '|' || c == ')':
 			atCmd, cmd, redir = true, "", false
@@ -1150,6 +1167,7 @@ func (sc *pvScanner) list(i, to int) (pvSpan, bool) {
 			redir, redirCtx = true, pvArg
 			if strings.HasPrefix(op, "<<") && !strings.HasPrefix(op, "<<<") {
 				redirCtx = pvSkip
+				tabs = strings.HasPrefix(op, "<<-")
 			}
 			i = j
 			continue
@@ -1180,6 +1198,9 @@ func (sc *pvScanner) list(i, to int) (pvSpan, bool) {
 		switch {
 		case redir:
 			redir = false
+			if redirCtx == pvSkip {
+				docs = append(docs, heredoc{delim: heredocDelim(w), tabs: tabs})
+			}
 		case atCmd && isAssignWord(w):
 		case atCmd:
 			cmd = w
@@ -1188,6 +1209,53 @@ func (sc *pvScanner) list(i, to int) (pvSpan, bool) {
 		i = end
 	}
 	return pvSpan{}, false
+}
+
+// heredocDelim is a here-document's delimiter word without its quotes.
+func heredocDelim(w string) string {
+	var b strings.Builder
+	for i := 0; i < len(w); i++ {
+		switch c := w[i]; c {
+		case '\'', '"':
+		case '\\':
+			if i+1 < len(w) {
+				i++
+				b.WriteByte(w[i])
+			}
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
+// skipHeredocs skips the bodies of docs, which start at i, and returns
+// where the last one's delimiter line ends (or to, if it doesn't).
+func skipHeredocs(s string, i, to int, docs []heredoc) int {
+	end := to
+	for _, d := range docs {
+		for {
+			if i >= to {
+				return to
+			}
+			eol := strings.IndexByte(s[i:to], '\n')
+			if eol < 0 {
+				eol = to
+			} else {
+				eol += i
+			}
+			line := s[i:eol]
+			if d.tabs {
+				line = strings.TrimLeft(line, "\t")
+			}
+			i = eol + 1
+			if line == d.delim {
+				end = eol
+				break
+			}
+		}
+	}
+	return end
 }
 
 // word scans the word starting at i. It returns where the word ends, what
