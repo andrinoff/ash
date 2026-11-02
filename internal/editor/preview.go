@@ -13,13 +13,14 @@ const previewDelay = 40 * time.Millisecond
 // previewState is the expansion preview: a line under the command line
 // showing what the word at the cursor expands to. The Preview hook runs in
 // a goroutine once typing pauses, one call at a time; results for an older
-// buffer are dropped. Until a new result arrives the old one stays up, so
-// the line doesn't flicker while a word is typed.
+// buffer are dropped. While the same word is edited the old result stays
+// up until the new one arrives, so the line doesn't flicker as you type.
 type previewState struct {
 	text   string // what the line shows; "" hides it
 	gen    uint64 // bumped whenever the buffer or the cursor changes
 	buf    []rune // the buffer and cursor gen stands for
 	pos    int
+	start  int         // where the word at pos starts in buf, or -1
 	valid  bool        // buf and pos are set
 	timer  *time.Timer // the pause before computing
 	armed  bool        // timer is running
@@ -42,12 +43,25 @@ func (e *Editor) previewCheck() {
 	if pv.valid && pv.pos == e.pos && runesEqual(pv.buf, e.buf) {
 		return
 	}
+	start, end := wordAt(e.buf, e.pos)
+	// the same word: it starts at the same place, after the same text
+	same := pv.valid && start >= 0 && start == pv.start && runesEqual(pv.buf[:start], e.buf[:start])
 	pv.buf = append(pv.buf[:0], e.buf...)
-	pv.pos = e.pos
+	pv.pos, pv.start = e.pos, start
 	pv.valid = true
 	pv.gen++
-	if !wordMayExpand(e.buf, e.pos) {
-		// the cursor left the word: don't keep showing its preview
+	if start < 0 || !hasExpansionRune(e.buf[start:end]) {
+		// nothing here can expand: clear the line, and don't ask
+		pv.text = ""
+		pv.queued = false
+		if pv.armed {
+			pv.timer.Stop()
+			pv.armed = false
+		}
+		return
+	}
+	if !same {
+		// the old text is about another word (or another line)
 		pv.text = ""
 	}
 	if pv.timer == nil {
@@ -166,6 +180,13 @@ func runesEqual(a, b []rune) bool {
 // and brackets keep a word together) that decides whether to clear the
 // preview at once; the Preview hook has the final say.
 func wordMayExpand(buf []rune, pos int) bool {
+	start, end := wordAt(buf, pos)
+	return start >= 0 && hasExpansionRune(buf[start:end])
+}
+
+// wordAt returns where the word under or just before the cursor starts
+// and ends in buf, the generous way wordMayExpand sees words, or -1, -1.
+func wordAt(buf []rune, pos int) (int, int) {
 	var quote rune
 	esc := false
 	depth := 0
@@ -199,14 +220,17 @@ func wordMayExpand(buf []rune, pos int) bool {
 			continue
 		}
 		if start >= 0 && pos >= start && pos <= i {
-			return hasExpansionRune(buf[start:i])
+			return start, i
 		}
 		start = -1
 		if i >= pos {
-			return false
+			return -1, -1
 		}
 	}
-	return start >= 0 && pos >= start && hasExpansionRune(buf[start:])
+	if start >= 0 && pos >= start {
+		return start, len(buf)
+	}
+	return -1, -1
 }
 
 func hasExpansionRune(word []rune) bool {

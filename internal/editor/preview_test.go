@@ -235,6 +235,50 @@ func TestPreviewScheduling(t *testing.T) {
 	}
 }
 
+// TestPreviewOtherWord: the old text stays up only while the same word is
+// edited. On another word, or another line from the history, it would be
+// about the wrong thing.
+func TestPreviewOtherWord(t *testing.T) {
+	e := newTestEditor(80)
+	e.async = make(chan func(), 64)
+	h := &previewHook{}
+	e.cfg.Preview = h.preview
+	set := func(s string, pos int) {
+		e.buf, e.pos = []rune(s), pos
+		e.previewCheck()
+	}
+	show := func(s string, pos int) {
+		t.Helper()
+		set(s, pos)
+		e.runPreview()
+		deliver(t, e)
+		if want := "preview of " + s[:pos]; e.pv.text != want {
+			t.Fatalf("text %q want %q", e.pv.text, want)
+		}
+	}
+	show("cp *.go $HOME", 7)
+	if set("cp *.go $HOME", 5); e.pv.text == "" {
+		t.Error("cleared while the cursor stayed in the word")
+	}
+	if set("cp *.go $HOME", 13); e.pv.text != "" {
+		t.Errorf("kept on another word: %q", e.pv.text)
+	}
+	show("cp *.go $HOME", 13)
+	if set("cp *.go $HOMEX", 14); e.pv.text == "" {
+		t.Error("cleared while typing the word")
+	}
+	show("cp *.go $HOMEX", 14)
+	// a line from the history whose last word starts at the same place
+	if set("rm *.gz $HOMEX", 14); e.pv.text != "" {
+		t.Errorf("kept on another line: %q", e.pv.text)
+	}
+	// a word that can't expand: cleared, and the hook isn't asked
+	show("rm *.gz $HOMEX", 14)
+	if set("rm *.gz plain", 13); e.pv.text != "" || e.pv.armed {
+		t.Errorf("plain word: text %q armed %v", e.pv.text, e.pv.armed)
+	}
+}
+
 func TestWordMayExpand(t *testing.T) {
 	cases := []struct {
 		buf  string
