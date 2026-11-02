@@ -1,8 +1,12 @@
 package editor
 
 import (
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -276,6 +280,55 @@ func TestPreviewOtherWord(t *testing.T) {
 	show("rm *.gz $HOMEX", 14)
 	if set("rm *.gz plain", 13); e.pv.text != "" || e.pv.armed {
 		t.Errorf("plain word: text %q armed %v", e.pv.text, e.pv.armed)
+	}
+}
+
+// TestRunShellRefreshesPreview: shell code run by a key binding may change
+// what the words expand to (alt-c cd's into another directory), so the
+// preview is worked out again although the line stayed the same.
+func TestRunShellRefreshesPreview(t *testing.T) {
+	inR, inW, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer inR.Close()
+	defer inW.Close()
+	out, err := os.Create(filepath.Join(t.TempDir(), "out"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer out.Close()
+	e := newTestEditor(80)
+	e.in, e.out, e.fd = inR, out, int(inR.Fd())
+	e.async = make(chan func(), 64)
+	var calls atomic.Int32
+	e.cfg.Preview = func(buf string, cursor int) string {
+		return "call " + strconv.Itoa(int(calls.Add(1)))
+	}
+	ran := false
+	e.cfg.RunCommand = func(string) { ran = true }
+
+	e.buf, e.pos = []rune("ls *.go"), 7
+	e.previewCheck()
+	e.runPreview()
+	deliver(t, e)
+	e.pv.armed = false
+	e.runShell("cd elsewhere")
+	defer func() {
+		if e.reader != nil {
+			e.reader.stop()
+		}
+	}()
+	if !ran {
+		t.Fatal("the binding didn't run")
+	}
+	if e.previewCheck(); !e.pv.armed || e.pv.text != "call 1" {
+		t.Fatalf("after the binding: armed %v text %q", e.pv.armed, e.pv.text)
+	}
+	e.runPreview()
+	deliver(t, e)
+	if e.pv.text != "call 2" {
+		t.Errorf("text %q", e.pv.text)
 	}
 }
 

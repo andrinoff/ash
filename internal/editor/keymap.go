@@ -437,6 +437,7 @@ func (e *Editor) runShell(cmd string) {
 	e.suspend()
 	e.cfg.RunCommand(cmd)
 	e.resume()
+	e.previewStale()
 	after, okAfter := e.queryCursor()
 	queued := e.queued
 	e.queued = nil

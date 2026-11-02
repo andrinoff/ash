@@ -22,6 +22,7 @@ type previewState struct {
 	pos    int
 	start  int         // where the word at pos starts in buf, or -1
 	valid  bool        // buf and pos are set
+	stale  bool        // work it out again even if buf and pos are the same
 	timer  *time.Timer // the pause before computing
 	armed  bool        // timer is running
 	busy   bool        // a Preview call is running
@@ -40,7 +41,7 @@ func (e *Editor) previewCheck() {
 		// the preview is hidden; look again when they close
 		return
 	}
-	if pv.valid && pv.pos == e.pos && runesEqual(pv.buf, e.buf) {
+	if pv.valid && !pv.stale && pv.pos == e.pos && runesEqual(pv.buf, e.buf) {
 		return
 	}
 	start, end := wordAt(e.buf, e.pos)
@@ -48,7 +49,7 @@ func (e *Editor) previewCheck() {
 	same := pv.valid && start >= 0 && start == pv.start && runesEqual(pv.buf[:start], e.buf[:start])
 	pv.buf = append(pv.buf[:0], e.buf...)
 	pv.pos, pv.start = e.pos, start
-	pv.valid = true
+	pv.valid, pv.stale = true, false
 	pv.gen++
 	if start < 0 || !hasExpansionRune(e.buf[start:end]) {
 		// nothing here can expand: clear the line, and don't ask
@@ -71,6 +72,11 @@ func (e *Editor) previewCheck() {
 	}
 	pv.armed = true
 }
+
+// previewStale has the preview worked out again although the line didn't
+// change: a key binding ran shell code, which may have changed what the
+// words expand to (alt-c cd's into another directory, say).
+func (e *Editor) previewStale() { e.pv.stale = true }
 
 // runPreview calls the Preview hook in the background for the current
 // buffer. The result comes back through the async channel.
