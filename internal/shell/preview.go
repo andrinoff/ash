@@ -452,10 +452,8 @@ func (pv *previewer) arith(expr string) (int64, bool) {
 	if strings.TrimSpace(expr) == "" {
 		return 0, true
 	}
-	p := &arithParser{sh: pv.sh, s: expr}
-	if strings.Contains(expr, "=") || strings.Contains(expr, "++") || strings.Contains(expr, "--") {
-		p.noEval = 1
-	}
+	// dry, not noEval: noEval would also hide division by zero
+	p := &arithParser{sh: pv.sh, s: expr, dry: true}
 	v, err := p.parse()
 	return v, err == nil
 }

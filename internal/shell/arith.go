@@ -24,7 +24,8 @@ type arithParser struct {
 	pos    int
 	noEval int
 	depth  int
-	nested int // recursion depth, see nest
+	nested int  // recursion depth, see nest
+	dry    bool // evaluate everything but don't assign (the expansion preview)
 }
 
 type arithErr struct{ msg string }
@@ -182,13 +183,13 @@ func (p *arithParser) getVar(name string, idx *int64) int64 {
 	if p.depth > 32 {
 		p.fail("expression recursion level exceeded")
 	}
-	sub := &arithParser{sh: p.sh, s: s, depth: p.depth + 1, noEval: p.noEval, nested: p.nested}
+	sub := &arithParser{sh: p.sh, s: s, depth: p.depth + 1, noEval: p.noEval, nested: p.nested, dry: p.dry}
 	v := sub.comma()
 	return v
 }
 
 func (p *arithParser) setVar(name string, idx *int64, v int64) {
-	if p.noEval > 0 {
+	if p.noEval > 0 || p.dry {
 		return
 	}
 	s := strconv.FormatInt(v, 10)

@@ -107,6 +107,8 @@ two"; ref=x`, "test", previewIO())
 		{"echo $((x + 1))", -1, ""},   // x holds a word, not a number
 		{"echo $((2 ** 10))", -1, ""}, // refused: big exponents loop
 		{"echo $((1 / 0))", -1, ""},
+		{"echo $((n == 21))", -1, "1"},
+		{"echo $((n / 0 == 0))", -1, ""}, // the shell fails on it too
 		// history
 		{"sudo !!", -1, "make test"},
 		{"echo !$", -1, "test"},
@@ -365,6 +367,9 @@ func TestPreviewWordDoesNotChangeTheShell(t *testing.T) {
 		{"echo ${newvar:=assigned}", "assigned"},
 		{"echo ${newvar2=assigned}", "assigned"},
 		{"echo $((m = 5))", "5"},
+		{"echo $((m = 5 / 0))", ""},
+		{"echo $((i ? 1 : 1 / 0))", ""},
+		{"echo $((i ? 1 / 0 : 2))", "2"},
 		{"echo $((k++))", "0"},
 		{"echo $((i += 2))", "2"},
 		{"echo ${arr[i++]}", "1"},
