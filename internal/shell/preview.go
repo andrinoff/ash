@@ -31,6 +31,9 @@ const (
 // previewGlobTime is the time globbing may take for one preview.
 var previewGlobTime = 5 * time.Millisecond
 
+// previewNow is the clock the glob budget reads (tests stop it at will).
+var previewNow = time.Now
+
 // PreviewWord describes what the word under (or just before) the cursor
 // expands to: "3 matches: a.go b.go c.go", "2 values: a b", a single value,
 // "(unset)". cursor is a byte offset into buf. It returns "" for words
@@ -509,7 +512,7 @@ func (pv *previewer) tilde(user string) string {
 func (pv *previewer) fields(w *syntax.Word, glob bool) string {
 	sh := pv.sh
 	alts, more := braceExpandN(w.Parts, previewMaxBraces)
-	budget := globBudget{deadline: time.Now().Add(previewGlobTime), max: previewMaxMatches}
+	budget := globBudget{deadline: previewNow().Add(previewGlobTime), max: previewMaxMatches}
 	// vals is what the command gets, matches only what globs matched
 	var vals, matches []string
 	plain, globs := 0, 0
@@ -533,14 +536,15 @@ expand:
 			if f.glob && glob {
 				globs++
 				ms := sh.previewGlob(string(f.pat), &budget)
-				if len(ms) > 0 {
-					matches = append(matches, ms...)
-					vals = append(vals, ms...)
-					continue
-				}
+				matches = append(matches, ms...)
+				vals = append(vals, ms...)
 				if budget.stopped {
+					// the walk was cut short: there may be more
 					more = true
 					break expand
+				}
+				if len(ms) > 0 {
+					continue
 				}
 				// an unmatched glob stays as it is
 			} else {
@@ -884,7 +888,7 @@ type globBudget struct {
 func (b *globBudget) done() bool {
 	if !b.stopped {
 		b.ticks++
-		if b.found > b.max || b.ticks%32 == 0 && time.Now().After(b.deadline) {
+		if b.found > b.max || b.ticks%32 == 0 && previewNow().After(b.deadline) {
 			b.stopped = true
 		}
 	}
@@ -893,7 +897,7 @@ func (b *globBudget) done() bool {
 
 // late is done, reading the clock now.
 func (b *globBudget) late() bool {
-	if !b.stopped && (b.found > b.max || time.Now().After(b.deadline)) {
+	if !b.stopped && (b.found > b.max || previewNow().After(b.deadline)) {
 		b.stopped = true
 	}
 	return b.stopped
@@ -926,7 +930,17 @@ func (sh *Shell) previewGlob(pat string, b *globBudget) []string {
 		prefix = "/"
 	}
 	var results []string
+	var seen map[string]bool
 	add := func(r string) {
+		// a path can be reached more than once (a/**/**); count it once,
+		// so the budget counts what the preview shows
+		if seen[r] {
+			return
+		}
+		if seen == nil {
+			seen = map[string]bool{}
+		}
+		seen[r] = true
 		results = append(results, r)
 		b.found++
 	}
@@ -1037,18 +1051,7 @@ func (sh *Shell) previewGlob(pat string, b *globBudget) []string {
 		}
 	}
 	walk(base, "", 0)
-	if len(results) > 1 {
-		seen := make(map[string]bool, len(results))
-		out := results[:0]
-		for _, r := range results {
-			if !seen[r] {
-				seen[r] = true
-				out = append(out, r)
-			}
-		}
-		results = out
-		sort.Slice(results, func(x, y int) bool { return naturalLess(results[x], results[y]) })
-	}
+	sort.Slice(results, func(x, y int) bool { return naturalLess(results[x], results[y]) })
 	return results
 }
 

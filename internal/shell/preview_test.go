@@ -312,6 +312,52 @@ func TestPreviewWordOutOfTime(t *testing.T) {
 	}
 }
 
+// TestPreviewWordGlobCutShort stops the glob budget's clock after more and
+// more reads: a walk that was cut short says "N+ matches", never a count
+// that looks complete.
+func TestPreviewWordGlobCutShort(t *testing.T) {
+	sh, dir := previewShell(t)
+	tree := filepath.Join(dir, "tree")
+	for i := 0; i < 10; i++ {
+		d := filepath.Join(tree, "d"+strconv.Itoa(i))
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		os.WriteFile(filepath.Join(d, "x.go"), nil, 0o644)
+	}
+	for _, f := range []string{"a.go", "b.go", "c.go"} {
+		os.WriteFile(filepath.Join(tree, f), nil, 0o644)
+	}
+	sh.dir = tree
+	const all = "13 matches: "
+	if got := sh.PreviewWord("ls **.go", 8); !strings.HasPrefix(got, all) {
+		t.Fatalf("the whole walk: %q", got)
+	}
+	saved := previewNow
+	defer func() { previewNow = saved }()
+	cut := 0
+	for reads := 1; reads < 100; reads++ {
+		n := 0
+		start := time.Now()
+		previewNow = func() time.Time {
+			if n++; n > reads {
+				return start.Add(time.Hour)
+			}
+			return start
+		}
+		switch got := sh.PreviewWord("ls **.go", 8); {
+		case got == "", strings.HasPrefix(got, all):
+		case strings.Contains(got, "+ match"):
+			cut++
+		default:
+			t.Errorf("clock stopped after %d reads: %q", reads, got)
+		}
+	}
+	if cut == 0 {
+		t.Error("no walk was cut short")
+	}
+}
+
 func TestPreviewWordDoesNotChangeTheShell(t *testing.T) {
 	sh, _ := previewShell(t)
 	sh.RunString(`arr=(1 2 3); i=0; ref='arr[i++]'`, "test", previewIO())
