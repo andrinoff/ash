@@ -36,7 +36,7 @@ not after:
 |---|---|
 | `ls *.go` | `3 matches: lexer.go main.go parser.go` |
 | `ls *.rs` | `no matches` |
-| `echo $PATH` | `5 values: /opt/homebrew/bin /usr/local/bin /usr/bin …` |
+| `echo $PATH` | `5 values: /opt/homebrew/bin /usr/local/bin /usr/bin /bin /usr/sbin` |
 | `cd ~/src` | `/Users/you/src` |
 | `cp app.conf{,.bak}` | `2 values: app.conf app.conf.bak` |
 | `echo $((60 * 60 * 24))` | `86400` |
@@ -46,8 +46,9 @@ not after:
 That covers globs (`**` too), variables in all their forms (`$x`,
 `${x:-default}`, `${x%.*}`, `$list[2]`), `~` and `~user`, braces,
 arithmetic, and `!!` / `!$`. Plain words show nothing, and neither does
-quoted text like `'*.go'`. You don't have to finish a word first: `"$HOME/`
-already shows your home directory with a slash after it.
+quoted text like `'*.go'` or the text of a here-document. You don't have to
+finish a word first: `"$HOME/` already shows your home directory with a
+slash after it.
 
 The preview never runs or changes anything:
 
@@ -59,9 +60,12 @@ The preview never runs or changes anything:
 
 It stays out of the way. It's worked out in the background once you stop
 typing for a moment, so typing never waits for it. A glob stops after 200
-matches or a few milliseconds and says `200+ matches`, braces stop after 50
-values, and the line is hidden while the completion menu or the history
-search is open.
+matches or a few milliseconds, and a `+` says there may be more:
+`200+ matches`, or `37+ matches` when time ran out first. Braces stop after
+50 values. Anything that would take long, like a product of two long lists
+or `${x//pattern/}` on a very long value, shows nothing. The line is hidden
+while the completion menu or the history search is open, and it's worked
+out again after a key binding runs, since that may have changed directory.
 
 To turn it off, put `set -g ash_preview 0` in `config.ash`. Its color is
 the `preview` role (`set -g ash_color_preview brblack --italics`); without
