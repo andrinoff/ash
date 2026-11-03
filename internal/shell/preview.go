@@ -911,12 +911,17 @@ func (sh *Shell) previewGlob(pat string, b *globBudget) []string {
 	abs := strings.HasPrefix(pat, "/")
 	segs := strings.Split(strings.TrimPrefix(pat, "/"), "/")
 	var expanded []string
+	stars := 0
 	for _, s := range segs {
 		if s != "**" {
 			if c, ok := collapseStars(s); ok {
 				expanded = append(expanded, "**", c)
+				stars++
 				continue
 			}
+		}
+		if s == "**" {
+			stars++
 		}
 		expanded = append(expanded, s)
 	}
@@ -929,16 +934,18 @@ func (sh *Shell) previewGlob(pat string, b *globBudget) []string {
 	}
 	var results []string
 	var seen map[string]bool
+	if stars > 1 {
+		seen = map[string]bool{}
+	}
 	add := func(r string) {
-		// a path can be reached more than once (a/**/**); count it once,
-		// so the budget counts what the preview shows
-		if seen[r] {
-			return
+		// with two **, a path can be reached more than once (a/**/**):
+		// count it once, so the budget counts what the preview shows
+		if seen != nil {
+			if seen[r] {
+				return
+			}
+			seen[r] = true
 		}
-		if seen == nil {
-			seen = map[string]bool{}
-		}
-		seen[r] = true
 		results = append(results, r)
 		b.found++
 	}

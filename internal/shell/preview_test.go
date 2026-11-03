@@ -443,7 +443,7 @@ func TestPreviewGlobMatchesGlob(t *testing.T) {
 	sh, dir := previewShell(t)
 	os.Symlink(filepath.Join(dir, "src"), filepath.Join(dir, "link"))
 	for _, pat := range []string{
-		"*", "*.go", ".*", "*/", "src/*", "src/*/*", "**", "**.go", "src/**/*.txt", "*/*.go",
+		"*", "*.go", ".*", "*/", "src/*", "src/*/*", "**", "**.go", "src/**/*.txt", "*/*.go", "**/**", "**/**.go",
 		"[a-b].go", "nosuch/*", "link/*", "link/**.go", dir + "/*.go", "my\\ file.txt", "a.go",
 	} {
 		want := sh.glob(pat)
