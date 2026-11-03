@@ -367,12 +367,23 @@ func TestWordMayExpand(t *testing.T) {
 // BenchmarkPreviewCheck is the preview's cost per keystroke: noticing the
 // change, the quick word check and resetting the timer.
 func BenchmarkPreviewCheck(b *testing.B) {
-	e := newTestEditor(80)
-	e.cfg.Preview = func(string, int) string { return "" }
-	e.buf = []rune("git commit -m 'a long message about the change' && ls *.go | grep -v _test " + strings.Repeat("arg ", 20))
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		e.pos = len(e.buf) - i%2 // a cursor move every time
-		e.previewCheck()
+	line := "git commit -m 'a long message about the change' && ls *.go | grep -v _test " + strings.Repeat("arg ", 20)
+	for _, c := range []struct {
+		name string
+		pos  int // the cursor moves between pos and pos-1
+	}{
+		{"plain", len(line)},                      // at the end, nothing to expand
+		{"glob", strings.Index(line, "*.go") + 3}, // the timer is reset
+	} {
+		b.Run(c.name, func(b *testing.B) {
+			e := newTestEditor(80)
+			e.cfg.Preview = func(string, int) string { return "" }
+			e.buf = []rune(line)
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				e.pos = c.pos - i%2 // a cursor move every time
+				e.previewCheck()
+			}
+		})
 	}
 }
