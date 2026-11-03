@@ -92,7 +92,7 @@ func run(mode string) {
 	switch mode {
 	case "basic":
 		hello("basic", allEvents,
-			[]string{"greet", "cat", "pwd", "fail", "slow", "crash", "act", "spawn", "rehello", "later", "noise"},
+			[]string{"greet", "cat", "pwd", "where", "getenv", "fail", "slow", "crash", "act", "spawn", "rehello", "later", "noise"},
 			[]string{"fruit", "slowfruit", "greet"})
 		serve(true)
 	case "sink":
@@ -200,9 +200,15 @@ func runCommand(id any, m obj) {
 		} else {
 			answer(id, "(no stdin)\n", "", 0)
 		}
-	case "pwd":
+	case "pwd", "where":
 		cwd, _ := m["cwd"].(string)
 		answer(id, cwd+"\n", "", 0)
+	case "getenv":
+		var out string
+		for _, a := range args {
+			out += os.Getenv(a) + "\n"
+		}
+		answer(id, out, "", 0)
 	case "fail":
 		answer(id, "", "it failed\n", 3)
 	case "slow":

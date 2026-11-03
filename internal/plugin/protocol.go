@@ -95,6 +95,8 @@ type Action struct {
 	Values []string // ActSet
 	Export bool     // ActSet
 	Text   string   // ActSegment, ActCd, ActBuffer, ActMessage
+
+	crash bool // ash's report that the plugin stopped
 }
 
 // inbound is any line a plugin writes. The keys that are present say what

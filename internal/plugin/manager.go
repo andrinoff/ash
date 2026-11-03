@@ -175,7 +175,9 @@ func (m *Manager) Load(s Spec) error {
 }
 
 // WaitReady waits until the plugin has said hello. It fails if the plugin
-// exits first or stays quiet for longer than timeout.
+// exits first or stays quiet for longer than timeout. When the plugin
+// exited, the error says how, and the exit isn't reported again in a
+// message: the caller tells the user.
 func (m *Manager) WaitReady(name string, timeout time.Duration) error {
 	p := m.get(name)
 	if p == nil {
@@ -190,9 +192,27 @@ func (m *Manager) WaitReady(name string, timeout time.Duration) error {
 		return fmt.Errorf("%w within %v", ErrNoHello, timeout)
 	}
 	if p.isDone() {
+		m.unreport(name)
 		return p.deadErr()
 	}
 	return nil
+}
+
+// unreport takes a plugin's crash report off the queue.
+func (m *Manager) unreport(name string) {
+	m.amu.Lock()
+	defer m.amu.Unlock()
+	keep := m.actions[:0]
+	for _, a := range m.actions {
+		if !a.crash || a.Plugin != name {
+			keep = append(keep, a)
+		}
+	}
+	m.actions = keep
+	if len(keep) == 0 {
+		m.woken = false
+		m.has.Store(false)
+	}
 }
 
 // Unload stops a plugin: its input is closed and its process group is
@@ -546,7 +566,7 @@ func (m *Manager) died(p *proc, how string, expected bool) {
 		if p.logPath != "" {
 			msg += "; its log is " + p.logPath
 		}
-		acts = append(acts, Action{Plugin: p.spec.Name, Kind: ActMessage, Text: msg})
+		acts = append(acts, Action{Plugin: p.spec.Name, Kind: ActMessage, Text: msg, crash: true})
 	}
 	if len(acts) > 0 {
 		m.push(nil, acts)

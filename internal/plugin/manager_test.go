@@ -124,7 +124,7 @@ func TestLoadAndList(t *testing.T) {
 		t.Fatalf("greet comes from %q", p)
 	}
 	cmds := h.m.Commands()
-	if len(cmds) != 11 || cmds[0].Name != "act" || cmds[0].Description != "the act command" || cmds[0].Plugin != "basic" {
+	if len(cmds) != 13 || cmds[0].Name != "act" || cmds[0].Description != "the act command" || cmds[0].Plugin != "basic" {
 		t.Fatalf("commands: %+v", cmds)
 	}
 	if err := h.m.Load(h.spec("basic", "basic")); !errors.Is(err, ErrLoaded) {
@@ -355,7 +355,17 @@ func TestExitBeforeHello(t *testing.T) {
 	if !errors.Is(err, ErrDead) || !strings.Contains(err.Error(), "exit status 3") {
 		t.Fatalf("got %v", err)
 	}
-	h.message("ash: plugin sh stopped (exit status 3)")
+	// the error was the report; there's no second one
+	for _, a := range h.m.Actions() {
+		if a.Kind == ActMessage {
+			t.Fatalf("reported twice: %s", a.Text)
+		}
+	}
+	// without WaitReady, the exit is reported in a message
+	if err := h.m.Load(Spec{Name: "sh2", Path: "/bin/sh", Args: []string{"sh", "-c", "exit 4"}, Dir: h.dir}); err != nil {
+		t.Fatal(err)
+	}
+	h.message("ash: plugin sh2 stopped (exit status 4)")
 	b, _ := os.ReadFile(h.info("sh").Log)
 	if !strings.Contains(string(b), "oops\n") || !strings.Contains(string(b), "exited: exit status 3") {
 		t.Fatalf("stderr and the exit go to the log: %q", b)

@@ -384,6 +384,11 @@ func (p *proc) request(ctx context.Context, key string, build func(id uint64) an
 		default:
 		}
 		p.forget(id)
+		// The process is usually gone too; wait a moment to say how.
+		select {
+		case <-p.done:
+		case <-time.After(100 * time.Millisecond):
+		}
 		return nil, p.deadErr()
 	}
 }
