@@ -46,6 +46,7 @@ type REPL struct {
 	lastDir string
 	repos   repoCache      // repositories found for the history search
 	prof    *shell.Profile // --profile: reported once the first prompt is up
+	plug    pluginState
 	// previewSh is a fork of sh for the expansion preview, which runs in
 	// the background; nil when $ash_preview is 0.
 	previewSh atomic.Pointer[shell.Shell]
@@ -109,6 +110,7 @@ func Run(sh *shell.Shell, initCmds []string) int {
 	if exit, st := sh.ShouldExit(); exit {
 		return r.exit(st)
 	}
+	r.startPlugins()
 	r.greet()
 	return r.loop()
 }
@@ -127,11 +129,13 @@ func (r *REPL) editorConfig() editor.Config {
 		RunCommand: func(cmd string) {
 			r.inBinding.Store(true)
 			defer r.inBinding.Store(false)
-			sh.KeepStatus(func() {
-				sh.ClearInterrupt()
-				sh.RunString(cmd, "", sh.StdIO())
-				sh.ResetControl()
-				sh.ApplyChildActions(sh.StdIO())
+			r.runBinding(func() {
+				sh.KeepStatus(func() {
+					sh.ClearInterrupt()
+					sh.RunString(cmd, "", sh.StdIO())
+					sh.ResetControl()
+					sh.ApplyChildActions(sh.StdIO())
+				})
 			})
 			// a binding may have changed variables or the directory
 			r.refreshPreview()
@@ -188,6 +192,7 @@ func (r *REPL) loop() int {
 	for {
 		sh.ResetControl()
 		sh.ClearInterrupt()
+		r.applyPlugins() // a safe point: no command runs
 		r.notifyJobs()
 		sh.RunPrePrompt()
 		sh.Emit("ash_prompt")
@@ -205,7 +210,10 @@ func (r *REPL) loop() int {
 			r.queueProfile()
 		}
 		r.refreshPreview()
+		r.showPluginMessages()
+		r.plug.atPrompt = true
 		line, err := r.ed.ReadLine(r.readOpts())
+		r.plug.atPrompt = false
 		r.edMu.Unlock()
 		if r.prof != nil {
 			// typed-ahead input ended the line before the queued report ran
@@ -259,7 +267,7 @@ func (r *REPL) readOpts() editor.ReadOpts {
 		Continuation: r.continuation(),
 		Transient:    r.transient,
 		MarkPrompt:   r.tty,
-		Initial:      r.sh.TakeNextBuffer(),
+		Initial:      r.nextBuffer(),
 	}
 	if o.Initial == "" {
 		o.EmptySuggestion = r.fixLine
@@ -557,6 +565,7 @@ func (r *REPL) saveAndClose() {
 	if r.hist != nil {
 		r.hist.Close()
 	}
+	r.sh.ClosePlugins()
 	for _, f := range r.cleanup {
 		f()
 	}
