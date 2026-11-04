@@ -70,9 +70,15 @@ func (pt *pluginTest) ok(src string) string {
 	return out
 }
 
+// load loads the fake plugin. In basic mode it echoes the prompt event it
+// gets with its hello; that is consumed here.
 func (pt *pluginTest) load(name, mode string) {
 	pt.t.Helper()
 	pt.ok("set -gx " + plugintest.EnvVar + " " + mode + "; plugin load -w " + name + " " + pt.cmd)
+	if mode == "basic" {
+		pt.apply(`event {"event":"prompt"`)
+		pt.seen = PluginUpdate{}
+	}
 }
 
 // apply applies plugin actions until there has been a message containing
@@ -472,6 +478,8 @@ func TestPluginAutoload(t *testing.T) {
 	if !strings.HasPrefix(out, "fake ") || strings.Count(out, "\n") != 1 {
 		t.Fatalf("plugin list: %q", out)
 	}
+	// it started after the prompt was up, and hears about that prompt
+	pt.apply(`event {"event":"prompt","cwd":` + strconv.Quote(pt.sh.Dir()) + `,"status":0,"pipestatus":[0],"duration_ms":0}`)
 	if out := pt.ok("greet auto"); out != "hello auto\n" {
 		t.Fatalf("got %q", out)
 	}

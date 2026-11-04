@@ -118,6 +118,12 @@ type Manager struct {
 
 	nextID atomic.Uint64
 
+	// The last prompt event, for plugins that say hello after it was
+	// sent. pmu also keeps a hello from slipping between recording a
+	// prompt and sending it.
+	pmu        sync.Mutex
+	lastPrompt *promptEvent
+
 	amu     sync.Mutex
 	actions []Action
 	woken   bool
@@ -330,16 +336,20 @@ func broadcast(ps []*proc, line []byte) {
 	}
 }
 
-// Prompt sends the prompt event: the shell is about to draw a prompt.
+// Prompt sends the prompt event: the shell is about to draw a prompt. The
+// event is also kept for plugins that subscribe to it later: they get it
+// with their hello, so they can fill in their prompt segments at once.
 func (m *Manager) Prompt(cwd string, status int, pipestatus []int, d time.Duration) {
-	ps := m.subscribers(EventPrompt)
-	if ps == nil {
-		return
-	}
 	if len(pipestatus) == 0 {
 		pipestatus = []int{status}
 	}
-	broadcast(ps, encode(&promptEvent{Event: EventPrompt, Cwd: cwd, Status: status, Pipestatus: pipestatus, DurationMs: d.Milliseconds()}))
+	ev := &promptEvent{Event: EventPrompt, Cwd: cwd, Status: status, Pipestatus: append([]int(nil), pipestatus...), DurationMs: d.Milliseconds()}
+	m.pmu.Lock()
+	defer m.pmu.Unlock()
+	m.lastPrompt = ev
+	if ps := m.subscribers(EventPrompt); ps != nil {
+		broadcast(ps, encode(ev))
+	}
 }
 
 // PreExec sends the preexec event: a command line is about to run.
@@ -539,11 +549,18 @@ func (m *Manager) hello(p *proc, h *Hello) {
 	if !p.setHello(clean, bits) {
 		return
 	}
+	m.pmu.Lock()
 	m.mu.Lock()
 	if m.procs[p.spec.Name] == p {
 		m.rebuildLocked()
 	}
 	m.mu.Unlock()
+	// A plugin that starts while the prompt is already up (the ones in
+	// the plugins directory always do) hears about that prompt.
+	if bits&eventBit(EventPrompt) != 0 && m.lastPrompt != nil {
+		p.post(encode(m.lastPrompt))
+	}
+	m.pmu.Unlock()
 	// Only now, so that whoever waits for it finds the commands in place.
 	p.readyOnce.Do(func() { close(p.ready) })
 }

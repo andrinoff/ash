@@ -53,13 +53,25 @@ func (sh *Shell) pluginManager() *plugin.Manager {
 	if m := sh.shared.plugins.mgr.Load(); m != nil {
 		return m
 	}
-	return sh.pluginManagerAt(filepath.Join(sh.CacheDir(), "plugins"), sh.dir)
+	return sh.pluginManagerAt(filepath.Join(sh.CacheDir(), "plugins"), sh.promptNow())
 }
 
-// pluginManagerAt creates the plugin manager, with logs in logDir and dir
-// as the current directory. It reads nothing else from the shell, so it
-// may run on another goroutine.
-func (sh *Shell) pluginManagerAt(logDir, dir string) *plugin.Manager {
+// promptState is what the prompt event reports.
+type promptState struct {
+	dir        string
+	status     int
+	pipestatus []int
+	duration   time.Duration
+}
+
+func (sh *Shell) promptNow() promptState {
+	return promptState{sh.dir, sh.status, append([]int(nil), sh.pipestatus...), sh.cmdDuration}
+}
+
+// pluginManagerAt creates the plugin manager, with logs in logDir; ps is
+// the shell's state at the last prompt. It reads nothing else from the
+// shell, so it may run on another goroutine.
+func (sh *Shell) pluginManagerAt(logDir string, ps promptState) *plugin.Manager {
 	h := &sh.shared.plugins
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -78,13 +90,11 @@ func (sh *Shell) pluginManagerAt(logDir, dir string) *plugin.Manager {
 			return ok
 		},
 	})
-	h.lastDir = dir
+	h.lastDir = ps.dir
+	// Plugins that say hello before the next prompt hear about this one.
+	m.Prompt(ps.dir, ps.status, ps.pipestatus, ps.duration)
 	// Each hook costs an atomic load when no plugin listens.
-	sh.OnPrePrompt(func(sh *Shell) {
-		if m.Wants(plugin.EventPrompt) {
-			m.Prompt(sh.dir, sh.status, sh.pipestatus, sh.cmdDuration)
-		}
-	})
+	sh.OnPrePrompt(func(sh *Shell) { m.Prompt(sh.dir, sh.status, sh.pipestatus, sh.cmdDuration) })
 	sh.OnPreExec(func(sh *Shell, line string) { m.PreExec(line, sh.dir) })
 	sh.OnPostExec(func(sh *Shell, line string, status int, d time.Duration) {
 		m.PostExec(line, status, d, sh.dir)
@@ -663,7 +673,7 @@ func (sh *Shell) SetPluginWake(f func()) { sh.shared.plugins.wake.Store(&f) }
 func (sh *Shell) AutoloadPlugins() {
 	dir := filepath.Join(sh.ConfigDir(), "plugins")
 	logDir := filepath.Join(sh.CacheDir(), "plugins")
-	cwd, env, self := sh.dir, sh.Environ(), sh.Self()
+	cwd, env, self, ps := sh.dir, sh.Environ(), sh.Self(), sh.promptNow()
 	go func() {
 		ents, err := os.ReadDir(dir)
 		if err != nil {
@@ -681,7 +691,7 @@ func (sh *Shell) AutoloadPlugins() {
 				continue
 			}
 			if m == nil {
-				m = sh.pluginManagerAt(logDir, cwd)
+				m = sh.pluginManagerAt(logDir, ps)
 			}
 			spec := plugin.Spec{Name: name, Path: path, Args: []string{path}, Dir: cwd, Env: pluginEnv(env, name)}
 			if err := startPlugin(m, spec, self); err != nil && !errors.Is(err, plugin.ErrLoaded) {

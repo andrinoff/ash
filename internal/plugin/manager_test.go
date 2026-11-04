@@ -166,6 +166,23 @@ func TestEvents(t *testing.T) {
 	}
 }
 
+func TestLatePluginHearsTheLastPrompt(t *testing.T) {
+	h := newHarness(t, Options{})
+	h.m.Prompt("/before", 2, nil, 0) // nobody listens yet
+	h.m.Prompt("/now", 1, []int{1}, 5*time.Millisecond)
+	h.load("basic", "basic")
+	want := `event {"event":"prompt","cwd":"/now","status":1,"pipestatus":[1],"duration_ms":5}`
+	if got := h.message("event "); got != want {
+		t.Fatalf("got  %s\nwant %s", got, want)
+	}
+	// a plugin that doesn't listen to prompts doesn't get it
+	h.load("spam", "spam")
+	h.m.Cd("/a", "/b")
+	if got := h.message("event "); !strings.Contains(got, `"event":"cd"`) {
+		t.Fatalf("got %s", got)
+	}
+}
+
 func TestOnlySubscribedEvents(t *testing.T) {
 	h := newHarness(t, Options{})
 	h.load("basic", "basic")
