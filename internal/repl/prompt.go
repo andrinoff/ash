@@ -28,6 +28,7 @@ type promptState struct {
 	starship   string // path to starship, "" if not used
 	session    string
 	self       string
+	segments   []shell.PluginSegment
 }
 
 func (r *REPL) snapshot() promptState {
@@ -41,6 +42,7 @@ func (r *REPL) snapshot() promptState {
 		jobs:       sh.Jobs(),
 		session:    sh.SessionKey(),
 		self:       sh.Self(),
+		segments:   sh.PluginSegments(),
 	}
 	if sh.PromptProvider() == "starship" {
 		if p, ok := sh.LookPath("starship"); ok {
@@ -125,13 +127,19 @@ func (r *REPL) starshipArgs(ps promptState, keymap string, extra ...string) []st
 	return args
 }
 
+// starshipEnv is starship's environment. Plugin segments are in it as
+// ash_plugin_NAME (only there, not in every command's environment), so
+// starship's env_var module can show them.
 func starshipEnv(ps promptState) []string {
-	env := make([]string, 0, len(ps.env)+3)
+	env := make([]string, 0, len(ps.env)+3+len(ps.segments))
 	for _, kv := range ps.env {
-		if strings.HasPrefix(kv, "STARSHIP_SHELL=") || strings.HasPrefix(kv, "STARSHIP_SESSION_KEY=") {
+		if strings.HasPrefix(kv, "STARSHIP_SHELL=") || strings.HasPrefix(kv, "STARSHIP_SESSION_KEY=") || strings.HasPrefix(kv, "ash_plugin_") {
 			continue
 		}
 		env = append(env, kv)
+	}
+	for _, s := range ps.segments {
+		env = append(env, "ash_plugin_"+s.Name+"="+s.Text)
 	}
 	return append(env, "STARSHIP_SHELL="+ps.self, "STARSHIP_SESSION_KEY="+ps.session)
 }
@@ -234,8 +242,9 @@ func (r *REPL) transient(line string) (editor.Prompt, bool) {
 }
 
 // builtinPrompt is ash's own prompt for people without starship: the
-// directory, the git branch (read from .git, no subprocess), the exit
-// status when it failed, the duration of slow commands, and a chevron.
+// directory, the git branch (read from .git, no subprocess), the segments
+// plugins set, the exit status when it failed, the duration of slow
+// commands, and a chevron.
 func builtinPrompt(ps promptState, keymap string) editor.Prompt {
 	home := ""
 	for _, kv := range ps.env {
@@ -253,6 +262,9 @@ func builtinPrompt(ps promptState, keymap string) editor.Prompt {
 	b.WriteString("\x1b[1;36m" + dir + "\x1b[0m")
 	if br := gitBranch(ps.dir); br != "" {
 		b.WriteString(" \x1b[35m" + br + "\x1b[0m")
+	}
+	for _, s := range ps.segments {
+		b.WriteString(" " + strings.ReplaceAll(s.Text, "\n", " ") + "\x1b[0m")
 	}
 	if ps.duration >= 2*time.Second {
 		b.WriteString(" \x1b[33m" + fmtDuration(ps.duration) + "\x1b[0m")
