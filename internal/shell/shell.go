@@ -175,6 +175,7 @@ type shared struct {
 	integr    *integrations
 	hooks     *hooks
 	actions   *childActions
+	plugins   pluginHost
 	ttyFd     int
 	shellPgid int
 	tmodes    atomic.Pointer[shellTmodes]

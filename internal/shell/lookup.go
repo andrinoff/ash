@@ -125,7 +125,7 @@ func (sh *Shell) HasCommand(name string) bool {
 	if sh.lookupFunc(name) != nil {
 		return true
 	}
-	if _, ok := builtins[name]; ok {
+	if _, ok := sh.builtinFunc(name); ok {
 		return true
 	}
 	_, err := sh.lookPath(name)
@@ -144,7 +144,7 @@ func (sh *Shell) CommandKind(name string) string {
 	if sh.shared.autoload.has(sh, name) {
 		return "function"
 	}
-	if _, ok := builtins[name]; ok {
+	if _, ok := sh.builtinFunc(name); ok {
 		return "builtin"
 	}
 	if _, err := sh.lookPath(name); err == nil {

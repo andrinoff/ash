@@ -312,7 +312,7 @@ func (sh *Shell) classify(e *pipeElem, call *syntax.CallExpr) {
 	if sh.lookupFunc(lit) != nil {
 		return
 	}
-	if _, isBuiltin := builtins[lit]; isBuiltin {
+	if _, isBuiltin := sh.builtinFunc(lit); isBuiltin {
 		return
 	}
 	path, err := sh.lookPath(lit)

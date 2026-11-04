@@ -302,7 +302,7 @@ func bType(sh *Shell, io *IO, args []string) int {
 					cont = report("function", fn.Src)
 				}
 			}
-			if _, ok := builtins[name]; ok && cont {
+			if _, ok := sh.builtinFunc(name); ok && cont {
 				cont = report("builtin", "")
 			}
 			if syntax.IsKeyword(name) && cont && !found {
@@ -405,7 +405,7 @@ func bCommand(sh *Shell, io *IO, args []string) int {
 					status = 0
 					continue
 				}
-				if sh.lookupFunc(n) != nil || builtins[n] != nil {
+				if _, ok := sh.builtinFunc(n); ok || sh.lookupFunc(n) != nil {
 					fmt.Fprintln(io.Out, n)
 					status = 0
 					continue
@@ -447,13 +447,13 @@ func bBuiltin(sh *Shell, io *IO, args []string) int {
 		return 0
 	case "-q", "--query":
 		for _, n := range args[2:] {
-			if _, ok := builtins[n]; ok {
+			if _, ok := sh.builtinFunc(n); ok {
 				return 0
 			}
 		}
 		return 1
 	}
-	b, ok := builtins[args[1]]
+	b, ok := sh.builtinFunc(args[1])
 	if !ok {
 		fmt.Fprintf(io.Err, "builtin: %s: not a builtin\n", args[1])
 		return 1

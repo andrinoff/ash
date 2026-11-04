@@ -111,7 +111,7 @@ func (sh *Shell) dispatch(args []string, io *IO, tmp []tmpVar, aliasOK bool, ext
 	if fn := sh.lookupFunc(name); fn != nil {
 		return sh.withTempVars(tmp, func() int { return sh.callFunc(fn, args, io) })
 	}
-	if b, ok := builtins[name]; ok {
+	if b, ok := sh.builtinFunc(name); ok {
 		return sh.withTempVars(tmp, func() int { return b(sh, io, args) })
 	}
 	return sh.runExternal(args, io, tmp, extraFds)

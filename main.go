@@ -274,5 +274,6 @@ func finish(sh *shell.Shell, status int) int {
 	if p := sh.StopProfile(); p != nil {
 		p.WriteReport(os.Stderr, "exit", time.Since(p.Start))
 	}
+	sh.ClosePlugins()
 	return status
 }
