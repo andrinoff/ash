@@ -133,9 +133,6 @@ func TestLoadAndList(t *testing.T) {
 	if err := h.m.Load(h.spec("../x", "basic")); err == nil {
 		t.Fatal("a bad name should be refused")
 	}
-	if err := h.m.Load(Spec{Name: "missing", Path: filepath.Join(h.dir, "nonexistent")}); err == nil {
-		t.Fatal("a missing program should fail to load")
-	}
 	b, err := os.ReadFile(in.Log)
 	if err != nil || !strings.Contains(string(b), "starting ") {
 		t.Fatalf("log: %q %v", b, err)
@@ -386,6 +383,56 @@ func TestExitBeforeHello(t *testing.T) {
 	b, _ := os.ReadFile(h.info("sh").Log)
 	if !strings.Contains(string(b), "oops\n") || !strings.Contains(string(b), "exited: exit status 3") {
 		t.Fatalf("stderr and the exit go to the log: %q", b)
+	}
+}
+
+func TestCouldNotStart(t *testing.T) {
+	h := newHarness(t, Options{})
+	// Load doesn't wait for the process; a failure comes later
+	if err := h.m.Load(Spec{Name: "missing", Path: filepath.Join(h.dir, "nonexistent"), Dir: h.dir}); err != nil {
+		t.Fatal(err)
+	}
+	msg := h.message("ash: plugin missing could not start: ")
+	if !strings.Contains(msg, "no such file or directory") || !strings.Contains(msg, "missing.log") {
+		t.Fatalf("message: %s", msg)
+	}
+	in := h.info("missing")
+	if in.State != Dead || in.Pid != 0 || !strings.HasPrefix(in.Exit, "could not start") {
+		t.Fatalf("info: %+v", in)
+	}
+	if err := h.m.Unload("missing"); err != nil {
+		t.Fatal(err)
+	}
+	// with WaitReady, the error is the report
+	if err := h.m.Load(Spec{Name: "nodir", Path: "/bin/sh", Dir: filepath.Join(h.dir, "nonexistent")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.m.WaitReady("nodir", 5*time.Second); err == nil || !strings.Contains(err.Error(), "could not start") {
+		t.Fatalf("got %v", err)
+	}
+	if a := h.m.Actions(); len(a) != 0 {
+		t.Fatalf("reported twice: %+v", a)
+	}
+}
+
+func TestScriptWithoutShebang(t *testing.T) {
+	h := newHarness(t, Options{})
+	script := filepath.Join(h.dir, "plain")
+	body := `printf '%s\n' '{"hello":{"name":"plain","commands":[{"name":"plaincmd"}]}}'; read line`
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.m.Load(Spec{Name: "plain", Path: script, Dir: h.dir, Shell: "/bin/sh"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.m.WaitReady("plain", 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if !h.m.HasCommand("plaincmd") {
+		t.Fatal("no command")
+	}
+	if args := h.info("plain").Args; len(args) != 1 || args[0] != script {
+		t.Fatalf("args: %q", args)
 	}
 }
 

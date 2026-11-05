@@ -201,8 +201,8 @@ func (sh *Shell) pluginLoad(io *IO, args []string) int {
 		return 127
 	}
 	m := sh.pluginManager()
-	spec := plugin.Spec{Name: name, Path: path, Args: append([]string(nil), argv...), Dir: sh.dir, Env: pluginEnv(sh.Environ(), name)}
-	if err := startPlugin(m, spec, sh.Self()); err != nil {
+	spec := plugin.Spec{Name: name, Path: path, Args: append([]string(nil), argv...), Dir: sh.dir, Env: pluginEnv(sh.Environ(), name), Shell: sh.Self()}
+	if err := m.Load(spec); err != nil {
 		if errors.Is(err, plugin.ErrLoaded) {
 			fmt.Fprintf(io.Err, "plugin: load: %s is already loaded (plugin reload %s restarts it)\n", name, name)
 		} else {
@@ -224,18 +224,6 @@ func pluginLookErr(err error) string {
 		return "permission denied"
 	}
 	return "command not found"
-}
-
-// startPlugin loads spec. A script without a #! line runs with ash, as it
-// would from the command line.
-func startPlugin(m *plugin.Manager, spec plugin.Spec, self string) error {
-	err := m.Load(spec)
-	if errors.Is(err, syscall.ENOEXEC) {
-		spec.Args = append([]string{self, spec.Path}, spec.Args[1:]...)
-		spec.Path = self
-		err = m.Load(spec)
-	}
-	return err
 }
 
 // pluginEnv is the environment a plugin starts with: the shell's, with
@@ -302,8 +290,11 @@ func (sh *Shell) pluginList(io *IO, args []string) int {
 	}
 	for _, in := range list {
 		pid, detail := strconv.Itoa(in.Pid), strings.Join(in.Events, " ")
+		if in.Pid == 0 || in.State == plugin.Dead {
+			pid = "-"
+		}
 		if in.State == plugin.Dead {
-			pid, detail = "-", in.Exit
+			detail = in.Exit
 		}
 		if in.DroppedEvents > 0 {
 			detail += fmt.Sprintf(" (%d events dropped)", in.DroppedEvents)
@@ -694,8 +685,8 @@ func (sh *Shell) AutoloadPlugins() {
 			if m == nil {
 				m = sh.pluginManagerAt(logDir, ps)
 			}
-			spec := plugin.Spec{Name: name, Path: path, Args: []string{path}, Dir: cwd, Env: pluginEnv(env, name)}
-			if err := startPlugin(m, spec, self); err != nil && !errors.Is(err, plugin.ErrLoaded) {
+			spec := plugin.Spec{Name: name, Path: path, Args: []string{path}, Dir: cwd, Env: pluginEnv(env, name), Shell: self}
+			if err := m.Load(spec); err != nil && !errors.Is(err, plugin.ErrLoaded) {
 				m.Notify(name, "ash: plugin "+name+": "+err.Error())
 			}
 		}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -47,11 +48,12 @@ type Options struct {
 
 // Spec says how to start a plugin.
 type Spec struct {
-	Name string   // what the user calls it; also names its log file
-	Path string   // the executable
-	Args []string // argv; Args[0] is what the program sees as its name
-	Dir  string   // working directory
-	Env  []string // environment
+	Name  string   // what the user calls it; also names its log file
+	Path  string   // the executable
+	Args  []string // argv; Args[0] is what the program sees as its name
+	Dir   string   // working directory
+	Env   []string // environment
+	Shell string   // runs Path if it is a script without a #! line
 }
 
 // State is where a plugin is in its life.
@@ -154,8 +156,11 @@ func New(o Options) *Manager {
 	return m
 }
 
-// Load starts a plugin. It returns as soon as the process runs; the
-// plugin's commands appear when it has said hello (see WaitReady).
+// Load starts a plugin in the background and returns at once: starting a
+// process takes a millisecond or two, which a shell's startup shouldn't
+// wait for. If the process can't be started, that is reported like a
+// crash. The plugin's commands appear when it has said hello (WaitReady
+// waits for that).
 func (m *Manager) Load(s Spec) error {
 	if !ValidName(s.Name) {
 		return fmt.Errorf("%q: not a valid plugin name (use letters, digits, '_', '-' and '.')", s.Name)
@@ -172,11 +177,9 @@ func (m *Manager) Load(s Spec) error {
 		return ErrLoaded
 	}
 	m.seq++
-	p, err := m.start(s, m.seq)
-	if err != nil {
-		return err
-	}
+	p := m.newProc(s, m.seq)
 	m.procs[s.Name] = p
+	go p.start()
 	return nil
 }
 
@@ -587,6 +590,9 @@ func (m *Manager) died(p *proc, how string, expected bool) {
 	}
 	if current && !expected {
 		msg := "ash: plugin " + p.spec.Name + " stopped (" + how + ")"
+		if strings.HasPrefix(how, "could not start") {
+			msg = "ash: plugin " + p.spec.Name + " " + how
+		}
 		if p.logPath != "" {
 			msg += "; its log is " + p.logPath
 		}

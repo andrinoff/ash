@@ -23,17 +23,18 @@ const (
 	abandonedAt = 10 * time.Second
 )
 
-// proc is one running plugin process.
+// proc is one plugin process.
 type proc struct {
-	m    *Manager
-	spec Spec
-	seq  uint64 // load order
+	m       *Manager
+	spec    Spec
+	seq     uint64 // load order
+	logPath string
 
+	// Set by start before it closes started; read only after that.
 	cmd     *exec.Cmd
-	pid     int
 	stdin   *os.File
 	stdout  *os.File
-	logPath string
+	started chan struct{} // the process runs, or couldn't be started
 
 	logMu sync.Mutex
 	log   *os.File
@@ -51,6 +52,7 @@ type proc struct {
 	lost    atomic.Uint64 // actions dropped because too many were waiting
 
 	mu       sync.Mutex
+	pid      int // 0 until it runs
 	hello    *Hello
 	events   uint8
 	pending  map[uint64]*waiter // nil once the process is gone
@@ -66,11 +68,12 @@ type waiter struct {
 	abandoned time.Time     // the requester gave up (completions only)
 }
 
-func (m *Manager) start(s Spec, seq uint64) (*proc, error) {
+func (m *Manager) newProc(s Spec, seq uint64) *proc {
 	p := &proc{
 		m:        m,
 		spec:     s,
 		seq:      seq,
+		started:  make(chan struct{}),
 		out:      make(chan []byte, m.queue),
 		quit:     make(chan struct{}),
 		wdone:    make(chan struct{}),
@@ -80,62 +83,106 @@ func (m *Manager) start(s Spec, seq uint64) (*proc, error) {
 		pending:  map[uint64]*waiter{},
 		segments: map[string]bool{},
 	}
-	p.log, p.logPath = openLog(m.opts.LogDir, s.Name)
+	if m.opts.LogDir != "" {
+		p.logPath = filepath.Join(m.opts.LogDir, s.Name+".log")
+	}
+	return p
+}
+
+// start starts the process. Load runs it in the background, because
+// starting a process takes a millisecond or two. If it fails, the plugin
+// is dead from the start, and reported like a crash.
+func (p *proc) start() {
+	defer close(p.started)
+	err := p.spawn()
+	if err == nil {
+		go p.writeLoop()
+		go p.readLoop()
+		go p.waitLoop()
+		return
+	}
+	how := "could not start: " + err.Error()
+	p.logf("%s", how)
+	p.mu.Lock()
+	p.exit = how
+	expected := p.stopping
+	p.pending = nil
+	p.mu.Unlock()
+	close(p.wdone)
+	close(p.rdone)
+	p.m.died(p, how, expected)
+	close(p.done)
+	p.closeLog()
+}
+
+func (p *proc) spawn() error {
+	s := p.spec
+	f := openLog(p.logPath)
+	p.logMu.Lock()
+	p.log = f
+	p.logMu.Unlock()
 	inR, inW, err := os.Pipe()
 	if err != nil {
-		p.closeLog()
-		return nil, err
+		return err
 	}
 	outR, outW, err := os.Pipe()
 	if err != nil {
 		inR.Close()
 		inW.Close()
-		p.closeLog()
-		return nil, err
+		return err
 	}
-	cmd := &exec.Cmd{Path: s.Path, Args: s.Args, Dir: s.Dir, Env: s.Env, Stdin: inR, Stdout: outW}
-	if p.log != nil {
-		cmd.Stderr = p.log
-	}
-	// Its own process group: ctrl-c at the prompt must not reach it, and
-	// unloading can kill whatever it started.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd := p.command(s.Path, s.Args, inR, outW)
 	p.logf("starting %s", strings.Join(s.Args, " "))
 	err = cmd.Start()
+	if errors.Is(err, syscall.ENOEXEC) && s.Shell != "" {
+		// a script without a #! line
+		cmd = p.command(s.Shell, append([]string{s.Shell, s.Path}, s.Args[1:]...), inR, outW)
+		err = cmd.Start()
+	}
 	inR.Close()
 	outW.Close()
 	if err != nil {
 		inW.Close()
 		outR.Close()
-		p.logf("%v", err)
-		p.closeLog()
-		return nil, err
+		return err
 	}
-	p.cmd, p.pid, p.stdin, p.stdout = cmd, cmd.Process.Pid, inW, outR
-	go p.writeLoop()
-	go p.readLoop()
-	go p.waitLoop()
-	return p, nil
+	p.cmd, p.stdin, p.stdout = cmd, inW, outR
+	p.mu.Lock()
+	p.pid = cmd.Process.Pid
+	p.mu.Unlock()
+	return nil
 }
 
-// openLog opens the plugin's log for appending, moving a big old one
-// aside first.
-func openLog(dir, name string) (*os.File, string) {
-	if dir == "" {
-		return nil, ""
+func (p *proc) command(path string, args []string, stdin, stdout *os.File) *exec.Cmd {
+	cmd := &exec.Cmd{Path: path, Args: args, Dir: p.spec.Dir, Env: p.spec.Env, Stdin: stdin, Stdout: stdout}
+	p.logMu.Lock()
+	if p.log != nil {
+		cmd.Stderr = p.log
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, ""
+	p.logMu.Unlock()
+	// Its own process group: ctrl-c at the prompt must not reach it, and
+	// unloading can kill whatever it started.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	return cmd
+}
+
+// openLog opens a plugin's log for appending, moving a big old one aside
+// first.
+func openLog(path string) *os.File {
+	if path == "" {
+		return nil
 	}
-	path := filepath.Join(dir, name+".log")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil
+	}
 	if st, err := os.Stat(path); err == nil && st.Size() > maxLogSize {
 		os.Rename(path, path+".old")
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 	if err != nil {
-		return nil, ""
+		return nil
 	}
-	return f, path
+	return f
 }
 
 // logf writes one line, marked as coming from ash, to the plugin's log.
@@ -173,8 +220,11 @@ func (p *proc) post(line []byte) bool {
 // quitWriter makes the writer flush what is queued, with a short
 // deadline, and close the plugin's stdin.
 func (p *proc) quitWriter() {
+	<-p.started
 	p.quitOnce.Do(func() {
-		p.stdin.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
+		if p.stdin != nil {
+			p.stdin.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
+		}
 		close(p.quit)
 	})
 }
@@ -473,10 +523,16 @@ func (p *proc) stop(grace time.Duration) {
 func (p *proc) kill() { p.signal(syscall.SIGKILL) }
 
 func (p *proc) signal(sig syscall.Signal) {
-	syscall.Kill(-p.pid, sig)
+	p.mu.Lock()
+	pid := p.pid
+	p.mu.Unlock()
+	if pid <= 0 {
+		return
+	}
+	syscall.Kill(-pid, sig)
 	if !p.isDone() {
 		// in case it moved itself to another group
-		syscall.Kill(p.pid, sig)
+		syscall.Kill(pid, sig)
 	}
 }
 
