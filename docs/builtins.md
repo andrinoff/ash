@@ -90,6 +90,7 @@ Typing a directory as a command (`..`, `~/src`, `./build/`) changes to it.
 | `history [search\|delete\|clear\|import\|browse]` | see [editing.md](editing.md) |
 | `bind`, `commandline` | key bindings and the command line, see [editing.md](editing.md) |
 | `integrate TOOL...` | hook up starship, zoxide, z, fzf, mise, direnv, atuin, or a file manager (see [integrations.md](integrations.md)) |
+| `plugin load\|list\|unload\|reload` | run plugins, programs in any language that talk to the shell, see [plugins.md](plugins.md) |
 | `theme [list\|choose NAME]` | highlighting colors |
 | `enable_transience`, `disable_transience` | the transient prompt |
 | `choose [--multi] ITEMS...` | an interactive picker for scripts: `git branch \| choose` |

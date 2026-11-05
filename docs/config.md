@@ -9,6 +9,7 @@ ash reads its configuration only in interactive shells, so scripts and
 ├── conf.d/*.ash        read before config.ash, in alphabetical order
 ├── functions/NAME.ash  loaded the first time NAME is called
 ├── completions/CMD.ash loaded the first time you complete CMD
+├── plugins/NAME        plugins started with each interactive shell
 ├── themes/NAME.theme   highlighting themes for `theme choose`
 └── variables           universal variables (written by `set -U`)
 ```
@@ -55,8 +56,9 @@ ash picks the prompt like this:
    the prompt. `ash_right_prompt` / `fish_right_prompt` go on the right.
 2. Otherwise, if you ran `integrate starship`, starship draws it.
 3. Otherwise you get the built-in prompt: the directory, the git branch,
-   how long the last command took if it was slow, and a `❯` that turns red
-   when the last command failed.
+   the segments plugins set (see [plugins.md](plugins.md)), how long the
+   last command took if it was slow, and a `❯` that turns red when the last
+   command failed.
 
 Prompts are rendered in the background while you type, and the left and
 right starship prompts are rendered in parallel.

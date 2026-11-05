@@ -60,6 +60,12 @@ current shell; `exit` takes you back.
   files, so `git <tab>`, `brew <tab>` and a thousand others work out of
   the box. Go programs built with cobra (gh, kubectl, helm...) complete
   themselves, with nothing to set up.
+- **Plugins in any language.** A plugin is a program that runs next to the
+  shell and talks to it in JSON lines: it hears about prompts, commands
+  and `cd`, and can set prompt segments and variables, change directory,
+  fill in the command line, and add commands and completions. The shell
+  never waits for it. One of the examples lets file managers and editors
+  drive the shell through a socket. See [docs/plugins.md](docs/plugins.md).
 - **A terminal citizen.** Proper job control (`ctrl-z`, `fg`, `bg`), window
   titles, OSC 7 so new tabs open in the same directory, OSC 133 so your
   terminal can jump between prompts, a `⏎` marker when output didn't end
@@ -120,6 +126,7 @@ useful kind.
 - [docs/editing.md](docs/editing.md): keys, completion, history, vi mode
 - [docs/config.md](docs/config.md): config files, prompt, themes, abbreviations
 - [docs/integrations.md](docs/integrations.md): starship, zoxide, fzf, mise, direnv, atuin, file managers, `$ASH_ACTION_FILE`
+- [docs/plugins.md](docs/plugins.md): plugins in any language, and the protocol they speak
 - [docs/builtins.md](docs/builtins.md): every builtin
 - [docs/from-fish.md](docs/from-fish.md): moving a fish setup over
 
