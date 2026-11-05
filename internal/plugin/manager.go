@@ -483,28 +483,35 @@ func (m *Manager) Completes(cmd string) bool {
 	return ok
 }
 
-// Complete asks the plugin that completes cmd for candidates, waiting at
-// most timeout. It reports false if no plugin completes cmd or the
+// Complete asks the plugin that completes cmd for candidates for line,
+// with the cursor at byte offset cursor and the shell in cwd. It waits at
+// most timeout, and reports false if no plugin completes cmd or the
 // plugin didn't answer in time. Answers are kept for a few seconds, and
 // one that arrives too late is kept for the next identical request.
-func (m *Manager) Complete(cmd, line string, cursor int, timeout time.Duration) ([]Candidate, bool) {
+func (m *Manager) Complete(cmd, line string, cursor int, cwd string, timeout time.Duration) ([]Candidate, bool) {
 	p := m.tables.Load().complete[cmd]
 	if p == nil {
 		return nil, false
 	}
-	key := strconv.FormatUint(p.seq, 10) + "\x00" + cmd + "\x00" + strconv.Itoa(cursor) + "\x00" + line
+	key := completeKey(p, cmd, line, cursor, cwd)
 	if c, ok := m.cache.get(key); ok {
 		return c, true
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	msg, err := p.request(ctx, key, func(id uint64) any {
-		return &completeRequest{ID: id, Request: "complete", Name: cmd, Line: line, Cursor: cursor}
+		return &completeRequest{ID: id, Request: "complete", Name: cmd, Line: line, Cursor: cursor, Cwd: cwd}
 	})
 	if err != nil {
 		return nil, false
 	}
 	return msg.Candidates, true
+}
+
+// completeKey identifies a completion request in the cache. The plugin's
+// load number is in it, so a reloaded plugin starts afresh.
+func completeKey(p *proc, cmd, line string, cursor int, cwd string) string {
+	return strconv.FormatUint(p.seq, 10) + "\x00" + cmd + "\x00" + cwd + "\x00" + strconv.Itoa(cursor) + "\x00" + line
 }
 
 func (m *Manager) get(name string) *proc {

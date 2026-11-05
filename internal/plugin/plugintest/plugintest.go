@@ -93,7 +93,7 @@ func run(mode string) {
 	case "basic":
 		hello("basic", allEvents,
 			[]string{"greet", "cat", "pwd", "where", "getenv", "fail", "slow", "crash", "act", "spawn", "rehello", "later", "noise"},
-			[]string{"fruit", "slowfruit", "greet"})
+			[]string{"fruit", "slowfruit", "greet", "where"})
 		serve(true)
 	case "sink":
 		hello("sink", allEvents, []string{"greet"}, []string{"fruit"})
@@ -298,6 +298,9 @@ func complete(id any, m obj) {
 		words = []string{"apple", "apricot", "banana", "cherry"}
 	case "greet":
 		words = []string{"world", "there"}
+	case "where":
+		cwd, _ := m["cwd"].(string)
+		words = []string{cwd}
 	case "slowfruit":
 		go func() {
 			time.Sleep(500 * time.Millisecond)

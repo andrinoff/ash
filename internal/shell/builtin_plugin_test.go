@@ -124,7 +124,7 @@ func TestPluginBuiltin(t *testing.T) {
 	out = pt.ok("plugin list -v")
 	for _, want := range []string{
 		"    command   greet  (the greet command)\n",
-		"    completes fruit slowfruit greet\n",
+		"    completes fruit slowfruit greet where\n",
 		"    runs      " + pt.cmd + "\n",
 		"    log       " + filepath.Join(pt.home, ".cache", "ash", "plugins", "basic.log") + "\n",
 	} {
@@ -395,6 +395,10 @@ func TestPluginComplete(t *testing.T) {
 	}
 	if _, ok := pt.sh.PluginComplete("ls", "ls ", 3); ok {
 		t.Fatal("nobody completes ls")
+	}
+	// the plugin is told where the shell is
+	if got, ok := pt.sh.PluginComplete("where", "where ", 6); !ok || len(got) != 1 || got[0].Text != pt.sh.Dir() {
+		t.Fatalf("where: %+v %v", got, ok)
 	}
 	start := time.Now()
 	if _, ok := pt.sh.PluginComplete("slowfruit", "slowfruit ", 10); ok {

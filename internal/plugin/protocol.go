@@ -247,6 +247,7 @@ type completeRequest struct {
 	Name    string `json:"name"`
 	Line    string `json:"line"`
 	Cursor  int    `json:"cursor"`
+	Cwd     string `json:"cwd"`
 }
 
 type cancelRequest struct {

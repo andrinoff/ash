@@ -114,8 +114,8 @@ func TestEncode(t *testing.T) {
 			`{"id":1,"request":"run","name":"gst","args":[],"cwd":"/x"}`},
 		{&runRequest{ID: 2, Request: "run", Name: "up", Args: []string{"a b"}, Cwd: "/x", Stdin: ptr("line\n")},
 			`{"id":2,"request":"run","name":"up","args":["a b"],"cwd":"/x","stdin":"line\n"}`},
-		{&completeRequest{ID: 3, Request: "complete", Name: "git", Line: "git ch", Cursor: 6},
-			`{"id":3,"request":"complete","name":"git","line":"git ch","cursor":6}`},
+		{&completeRequest{ID: 3, Request: "complete", Name: "git", Line: "git ch", Cursor: 6, Cwd: "/src"},
+			`{"id":3,"request":"complete","name":"git","line":"git ch","cursor":6,"cwd":"/src"}`},
 		{&cancelRequest{ID: 4, Request: "cancel"}, `{"id":4,"request":"cancel"}`},
 	}
 	for _, c := range cases {

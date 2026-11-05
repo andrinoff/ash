@@ -624,12 +624,13 @@ type PluginCandidate struct {
 // byte offset cursor. It waits 300ms at most, and reports false if no
 // plugin completes cmd or the plugin didn't answer in time. Answers are
 // kept for a few seconds; one that comes too late is used the next time.
+// Without plugins it costs an atomic load.
 func (sh *Shell) PluginComplete(cmd, line string, cursor int) ([]PluginCandidate, bool) {
 	m := sh.shared.plugins.mgr.Load()
 	if m == nil || !m.Completes(cmd) {
 		return nil, false
 	}
-	cands, ok := m.Complete(cmd, line, cursor, pluginCompleteTimeout)
+	cands, ok := m.Complete(cmd, line, cursor, sh.dir, pluginCompleteTimeout)
 	if !ok {
 		return nil, false
 	}

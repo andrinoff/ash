@@ -280,24 +280,24 @@ func TestRunTimeoutAndCancel(t *testing.T) {
 func TestComplete(t *testing.T) {
 	h := newHarness(t, Options{})
 	h.load("basic", "basic")
-	got, ok := h.m.Complete("fruit", "fruit ap", 8, time.Second)
+	got, ok := h.m.Complete("fruit", "fruit ap", 8, "/", time.Second)
 	want := []Candidate{{"apple", "fruit"}, {"apricot", "fruit"}}
 	if !ok || !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v %v", got, ok)
 	}
 	// the cursor counts
-	if got, ok := h.m.Complete("fruit", "fruit ap ban", 8, time.Second); !ok || len(got) != 2 {
+	if got, ok := h.m.Complete("fruit", "fruit ap ban", 8, "/", time.Second); !ok || len(got) != 2 {
 		t.Fatalf("cursor in the middle: %+v %v", got, ok)
 	}
-	if got, ok := h.m.Complete("fruit", "fruit x", 7, time.Second); !ok || len(got) != 0 {
+	if got, ok := h.m.Complete("fruit", "fruit x", 7, "/", time.Second); !ok || len(got) != 0 {
 		t.Fatalf("no match: %+v %v", got, ok)
 	}
-	if _, ok := h.m.Complete("ls", "ls ", 3, time.Second); ok {
+	if _, ok := h.m.Complete("ls", "ls ", 3, "/", time.Second); ok {
 		t.Fatal("nobody completes ls")
 	}
 	// answered from the cache the second time
 	start := time.Now()
-	if got, ok := h.m.Complete("fruit", "fruit ap", 8, time.Second); !ok || len(got) != 2 {
+	if got, ok := h.m.Complete("fruit", "fruit ap", 8, "/", time.Second); !ok || len(got) != 2 {
 		t.Fatalf("cached: %+v %v", got, ok)
 	}
 	if d := time.Since(start); d > 50*time.Millisecond {
@@ -309,7 +309,7 @@ func TestCompleteTimeoutKeepsLateAnswer(t *testing.T) {
 	h := newHarness(t, Options{})
 	h.load("basic", "basic")
 	start := time.Now()
-	if got, ok := h.m.Complete("slowfruit", "slowfruit ", 10, 100*time.Millisecond); ok {
+	if got, ok := h.m.Complete("slowfruit", "slowfruit ", 10, "/", 100*time.Millisecond); ok {
 		t.Fatalf("expected a timeout, got %+v", got)
 	}
 	if d := time.Since(start); d > 400*time.Millisecond {
@@ -317,18 +317,18 @@ func TestCompleteTimeoutKeepsLateAnswer(t *testing.T) {
 	}
 	// the answer comes after 500ms and is kept for the next tab press
 	waitUntil(t, "the late answer", func() bool {
-		_, ok := h.m.cache.get(cacheKeyFor(h, "slowfruit", "slowfruit ", 10))
+		p := h.m.tables.Load().complete["slowfruit"]
+		_, ok := h.m.cache.get(completeKey(p, "slowfruit", "slowfruit ", 10, "/"))
 		return ok
 	})
-	got, ok := h.m.Complete("slowfruit", "slowfruit ", 10, 100*time.Millisecond)
+	got, ok := h.m.Complete("slowfruit", "slowfruit ", 10, "/", 100*time.Millisecond)
 	if !ok || len(got) != 1 || got[0].Text != "late" {
 		t.Fatalf("got %+v %v", got, ok)
 	}
-}
-
-func cacheKeyFor(h *harness, cmd, line string, cursor int) string {
-	p := h.m.tables.Load().complete[cmd]
-	return strconv.FormatUint(p.seq, 10) + "\x00" + cmd + "\x00" + strconv.Itoa(cursor) + "\x00" + line
+	// somewhere else, it's a new question
+	if _, ok := h.m.Complete("slowfruit", "slowfruit ", 10, "/elsewhere", 100*time.Millisecond); ok {
+		t.Fatal("the cache doesn't know the directory")
+	}
 }
 
 func TestCrashReportedOnce(t *testing.T) {
