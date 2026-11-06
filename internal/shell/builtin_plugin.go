@@ -409,7 +409,7 @@ func bPluginCommand(sh *Shell, io *IO, args []string) int {
 			sh.errorMsg(io.Err, "%s: plugin %s didn't answer within %v", args[0], owner, pluginRunTimeout)
 			return 124
 		case errors.Is(err, plugin.ErrUnknown):
-			sh.errorMsg(io.Err, "%s: plugin %s isn't running anymore", args[0], owner)
+			sh.errorMsg(io.Err, "%s: its plugin isn't running anymore", args[0])
 			return 127
 		}
 		sh.errorMsg(io.Err, "%s: %v", args[0], err)
@@ -474,6 +474,16 @@ func (sh *Shell) ApplyPluginActions() PluginUpdate {
 		return u
 	}
 	acts := m.Actions()
+	if len(acts) == 0 {
+		return u
+	}
+	// Handlers of --on-variable and cd hooks may run code; the prompt
+	// still reports the last command's status.
+	sh.KeepStatus(func() { sh.applyPluginActions(m, acts, &u) })
+	return u
+}
+
+func (sh *Shell) applyPluginActions(m *plugin.Manager, acts []plugin.Action, u *PluginUpdate) {
 	for _, a := range acts {
 		switch a.Kind {
 		case plugin.ActSet:
@@ -515,7 +525,6 @@ func (sh *Shell) ApplyPluginActions() PluginUpdate {
 			u.Messages = append(u.Messages, strings.TrimRight(a.Text, "\n"))
 		}
 	}
-	return u
 }
 
 func slicesEqual(a, b []string) bool {

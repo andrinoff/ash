@@ -279,8 +279,13 @@ func TestPluginActions(t *testing.T) {
 	dir := t.TempDir()
 	dir, _ = filepath.EvalSymlinks(dir)
 
+	pt.ok("function on_pwd --on-variable PWD; false; end")
 	pt.ok("act set foo a 'b c'; act export bar 1; act segment git 'main +2'; act cd " + dir + "; act buffer 'git push'; act message 'hello there'")
+	sh.SetStatus(3)
 	u := sh.ApplyPluginActions()
+	if sh.Status() != 3 {
+		t.Errorf("applying actions changed $status to %d", sh.Status())
+	}
 	if !reflect.DeepEqual(sh.GetList("foo"), []string{"a", "b c"}) {
 		t.Errorf("foo = %q", sh.GetList("foo"))
 	}
