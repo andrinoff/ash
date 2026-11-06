@@ -39,9 +39,12 @@ background, so they never delay the first prompt. `ash -N` skips them, as
 it skips the rest of the config.
 
 `plugin load` doesn't wait for the plugin either: it returns after a few
-microseconds and the process starts in the background. The plugin's
-commands exist once it has said hello, usually a few milliseconds later. In
-a script that uses a plugin's command right away, load it with `-w`.
+microseconds and the process starts in the background. In an interactive
+shell, the plugins your config loads start once the first prompt is on the
+screen, the same as the ones in the plugins directory. The plugin's
+commands exist once it has said hello, usually a few milliseconds later.
+To use a plugin's command right away, in a script or in config.ash, load
+it with `-w`.
 
 ## A first plugin
 
