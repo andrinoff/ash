@@ -31,10 +31,11 @@ type proc struct {
 	logPath string
 
 	// Set by start before it closes started; read only after that.
-	cmd     *exec.Cmd
-	stdin   *os.File
-	stdout  *os.File
-	started chan struct{} // the process runs, or couldn't be started
+	cmd       *exec.Cmd
+	stdin     *os.File
+	stdout    *os.File
+	started   chan struct{} // the process runs, or couldn't be (or won't be) started
+	startOnce sync.Once     // launch or abort, whichever comes first
 
 	logMu sync.Mutex
 	log   *os.File
@@ -89,7 +90,26 @@ func (m *Manager) newProc(s Spec, seq uint64) *proc {
 	return p
 }
 
-// start starts the process. Load runs it in the background, because
+// launch starts the process in the background, unless that was done (or
+// aborted) already.
+func (p *proc) launch() { p.startOnce.Do(func() { go p.start() }) }
+
+// abort gives up on a plugin that was never launched (one held at
+// startup, then unloaded or the shell exited), so nothing waits for it.
+func (p *proc) abort() {
+	p.startOnce.Do(func() {
+		p.mu.Lock()
+		p.exit = "not started"
+		p.pending = nil
+		p.mu.Unlock()
+		close(p.wdone)
+		close(p.rdone)
+		close(p.done)
+		close(p.started)
+	})
+}
+
+// start starts the process. launch runs it in the background, because
 // starting a process takes a millisecond or two. If it fails, the plugin
 // is dead from the start, and reported like a crash.
 func (p *proc) start() {

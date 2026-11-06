@@ -108,11 +108,13 @@ type Manager struct {
 	opts  Options
 	queue int
 
-	mu     sync.Mutex
-	procs  map[string]*proc // by name, including dead ones
-	seq    uint64
-	closed bool
-	once   sync.Once
+	mu      sync.Mutex
+	procs   map[string]*proc // by name, including dead ones
+	seq     uint64
+	closed  bool
+	once    sync.Once
+	holding bool    // see Hold
+	held    []*proc // loaded while holding, not started yet
 
 	// tables is rebuilt whenever a plugin says hello or goes away, so
 	// that sending an event or looking up a command takes no lock.
@@ -179,8 +181,33 @@ func (m *Manager) Load(s Spec) error {
 	m.seq++
 	p := m.newProc(s, m.seq)
 	m.procs[s.Name] = p
-	go p.start()
+	if m.holding {
+		m.held = append(m.held, p)
+	} else {
+		p.launch()
+	}
 	return nil
+}
+
+// Hold makes Load register plugins without starting their processes,
+// until Release. The shell holds them while it starts up, so that they
+// don't compete with drawing the first prompt. WaitReady starts a held
+// plugin at once.
+func (m *Manager) Hold() {
+	m.mu.Lock()
+	m.holding = true
+	m.mu.Unlock()
+}
+
+// Release starts the plugins loaded since Hold.
+func (m *Manager) Release() {
+	m.mu.Lock()
+	held := m.held
+	m.holding, m.held = false, nil
+	m.mu.Unlock()
+	for _, p := range held {
+		p.launch()
+	}
 }
 
 // WaitReady waits until the plugin has said hello. It fails if the plugin
@@ -192,6 +219,7 @@ func (m *Manager) WaitReady(name string, timeout time.Duration) error {
 	if p == nil {
 		return ErrUnknown
 	}
+	p.launch()
 	t := time.NewTimer(timeout)
 	defer t.Stop()
 	select {
@@ -237,6 +265,7 @@ func (m *Manager) Unload(name string) error {
 	p.setStopping()
 	m.rebuildLocked()
 	m.mu.Unlock()
+	p.abort() // if it is still held
 	p.stop(stopGrace)
 	return nil
 }
@@ -294,10 +323,12 @@ func (m *Manager) Close(grace time.Duration) {
 			}
 		}
 		m.procs = map[string]*proc{}
+		m.held = nil
 		m.tables.Store(&tables{})
 		m.mu.Unlock()
 		exit := encode(&exitEvent{Event: EventExit})
 		for _, p := range procs {
+			p.abort() // still held: never start it
 			if p.setStopping()&eventBit(EventExit) != 0 {
 				p.post(exit)
 			}

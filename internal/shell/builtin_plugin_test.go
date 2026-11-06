@@ -531,6 +531,27 @@ func TestPluginAutoload(t *testing.T) {
 	}
 }
 
+func TestHoldPlugins(t *testing.T) {
+	pt := newPluginTest(t)
+	pt.sh.HoldPlugins()
+	pt.ok("set -gx " + plugintest.EnvVar + " basic; plugin load held " + pt.cmd)
+	if out := pt.ok("plugin list"); out != "held  -       starting\n" {
+		t.Fatalf("plugin list: %q", out)
+	}
+	pt.ok("plugin load -w now " + pt.cmd)
+	if !pt.sh.HasCommand("greet") {
+		t.Fatal("-w starts a plugin while others are held")
+	}
+	pt.sh.ReleasePlugins()
+	deadline := time.Now().Add(5 * time.Second)
+	for strings.Contains(pt.ok("plugin list"), "starting") {
+		if time.Now().After(deadline) {
+			t.Fatalf("not started: %q", pt.ok("plugin list"))
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func TestPluginEnv(t *testing.T) {
 	env := pluginEnv([]string{"A=1", "ASH_PLUGIN_NAME=old", "B=2"}, "git")
 	want := []string{"A=1", "B=2", "ASH_PLUGIN_NAME=git", "ASH_PID=" + strconv.Itoa(os.Getpid())}

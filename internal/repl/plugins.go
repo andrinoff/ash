@@ -3,6 +3,8 @@ package repl
 import (
 	"fmt"
 	"os"
+
+	"github.com/andrinoff/ash/internal/term"
 )
 
 // Plugins send actions whenever they like. The shell applies them on the
@@ -19,12 +21,24 @@ type pluginState struct {
 	hasBuffer bool
 }
 
-// startPlugins connects plugins to the session and starts the ones in
-// ~/.config/ash/plugins, in the background.
+// startPlugins connects plugins to the session and starts them: the ones
+// the config loaded (held until now, see HoldPlugins) and the ones in
+// ~/.config/ash/plugins. On a terminal that happens once the first
+// prompt is on the screen, since starting processes would compete with
+// drawing it.
 func (r *REPL) startPlugins() {
-	r.sh.SetPluginWake(func() { r.ed.Do(r.applyPluginsIdle) })
-	if !r.sh.NoConfig {
-		r.sh.AutoloadPlugins()
+	sh := r.sh
+	sh.SetPluginWake(func() { r.ed.Do(r.applyPluginsIdle) })
+	start := func() {
+		sh.ReleasePlugins()
+		if !sh.NoConfig {
+			sh.AutoloadPlugins()
+		}
+	}
+	if r.tty && term.IsTerminal(int(os.Stdin.Fd())) {
+		r.ed.Do(start) // the editor runs it after its first render
+	} else {
+		start()
 	}
 }
 

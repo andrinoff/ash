@@ -46,6 +46,33 @@ type pluginHost struct {
 	mu      sync.Mutex
 	lastDir string          // where the last cd event went, for the next one's "from"
 	segs    map[string]bool // prompt segments plugins have set
+	hold    bool            // see HoldPlugins
+}
+
+// HoldPlugins makes plugin load register plugins without starting their
+// processes, until ReleasePlugins. The interactive shell holds them while
+// it reads its config, so that they don't slow down the first prompt.
+// plugin load -w starts its plugin anyway.
+func (sh *Shell) HoldPlugins() {
+	h := &sh.shared.plugins
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.hold = true
+	if m := h.mgr.Load(); m != nil {
+		m.Hold()
+	}
+}
+
+// ReleasePlugins starts the plugins held since HoldPlugins.
+func (sh *Shell) ReleasePlugins() {
+	h := &sh.shared.plugins
+	h.mu.Lock()
+	h.hold = false
+	m := h.mgr.Load()
+	h.mu.Unlock()
+	if m != nil {
+		m.Release()
+	}
 }
 
 // pluginManager returns the plugin manager, creating it on first use.
@@ -90,6 +117,9 @@ func (sh *Shell) pluginManagerAt(logDir string, ps promptState) *plugin.Manager 
 			return ok
 		},
 	})
+	if h.hold {
+		m.Hold()
+	}
 	h.lastDir = ps.dir
 	// Plugins that say hello before the next prompt hear about this one.
 	m.Prompt(ps.dir, ps.status, ps.pipestatus, ps.duration)

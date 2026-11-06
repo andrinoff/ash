@@ -100,6 +100,7 @@ func Run(sh *shell.Shell, initCmds []string) int {
 	r.cleanup = append(r.cleanup, sh.SetupActionFile())
 
 	sh.LoadUniversal()
+	sh.HoldPlugins() // until the first prompt is up
 	for _, c := range initCmds {
 		sh.RunString(c, "", sh.StdIO())
 	}

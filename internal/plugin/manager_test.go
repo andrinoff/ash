@@ -436,6 +436,48 @@ func TestScriptWithoutShebang(t *testing.T) {
 	}
 }
 
+func TestHoldAndRelease(t *testing.T) {
+	h := newHarness(t, Options{})
+	h.m.Hold()
+	if err := h.m.Load(h.spec("one", "basic")); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.m.Load(h.spec("two", "basic")); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.m.Load(h.spec("three", "basic")); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if in := h.info("one"); in.State != Starting || in.Pid != 0 {
+		t.Fatalf("a held plugin runs: %+v", in)
+	}
+	if err := h.m.Load(h.spec("one", "basic")); !errors.Is(err, ErrLoaded) {
+		t.Fatalf("the name is taken while held: %v", err)
+	}
+	// waiting for one starts it
+	if err := h.m.WaitReady("two", 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	// unloading one never starts it
+	if err := h.m.Unload("three"); err != nil {
+		t.Fatal(err)
+	}
+	h.m.Release()
+	if err := h.m.WaitReady("one", 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if len(h.m.List()) != 2 {
+		t.Fatalf("list: %+v", h.m.List())
+	}
+	// held at exit: nothing starts, nothing hangs
+	h.m.Hold()
+	if err := h.m.Load(h.spec("four", "basic")); err != nil {
+		t.Fatal(err)
+	}
+	h.m.Close(100 * time.Millisecond)
+}
+
 func TestSilentPlugin(t *testing.T) {
 	h := newHarness(t, Options{})
 	if err := h.m.Load(h.spec("silent", "silent")); err != nil {
