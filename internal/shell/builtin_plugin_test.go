@@ -351,6 +351,38 @@ func TestPluginActions(t *testing.T) {
 	}
 }
 
+func TestPluginEval(t *testing.T) {
+	pt := newPluginTest(t)
+	pt.load("basic", "basic")
+	sh := pt.sh
+	pt.ok(`act eval 'function hi; echo hi from a plugin; end; abbr -a gco git checkout; echo printed; echo oops >&2'`)
+	sh.SetStatus(4)
+	u := sh.ApplyPluginActions()
+	if !reflect.DeepEqual(u.Messages, []string{"printed\noops"}) || !u.Redraw || sh.Status() != 4 {
+		t.Fatalf("update %+v, status %d", u, sh.Status())
+	}
+	if out := pt.ok("hi"); out != "hi from a plugin\n" {
+		t.Fatalf("function: %q", out)
+	}
+	if exp, ok := sh.ExpandAbbr("gco", true, ""); !ok || exp != "git checkout" {
+		t.Fatalf("abbreviation: %q %v", exp, ok)
+	}
+	// it can't end the shell, and a cd counts
+	dir := t.TempDir()
+	dir, _ = filepath.EvalSymlinks(dir)
+	pt.ok(`act eval 'cd ` + dir + `; exit 3'`)
+	u = sh.ApplyPluginActions()
+	if exit, _ := sh.ShouldExit(); exit {
+		t.Fatal("a plugin's eval exited the shell")
+	}
+	if !u.DirChanged || sh.Dir() != dir {
+		t.Fatalf("cd in eval: %+v %s", u, sh.Dir())
+	}
+	// a syntax error is shown, not fatal
+	pt.ok(`act eval 'if'`)
+	pt.apply("ash: plugin basic:1:3: expected a command")
+}
+
 func TestPluginEvents(t *testing.T) {
 	pt := newPluginTest(t)
 	pt.load("basic", "basic")

@@ -7,7 +7,8 @@ whatever language you like, that keeps running next to the shell. ash tells
 it what happens (a prompt is drawn, a command runs, the directory changes),
 and the plugin answers whenever it's ready: it can set variables and prompt
 segments, change the directory, put text on the command line, print a
-message, and add commands and completions.
+message, run shell code (so it can bring functions, abbreviations and key
+bindings along), and add commands and completions.
 
 The two talk in JSON, one object per line, over the plugin's stdin and
 stdout. The shell never waits for a plugin, except when you run one of its
@@ -168,6 +169,7 @@ A plugin can write these at any time, not only in answer to something.
 | `{"unset": "VIRTUAL_ENV"}` | erases a global variable (or a list of them) |
 | `{"segment": {"name": "git", "text": "↑1 +2"}}` | sets the prompt segment `$ash_plugin_git`; empty text erases it. Names are letters, digits and `_` |
 | `{"cd": "/home/me/src"}` | changes directory. A relative path starts from the shell's directory, `~` works, `$CDPATH` doesn't apply. An error is shown above the prompt |
+| `{"eval": "abbr -a gco git checkout"}` | runs shell code, like a line of config.ash. What it prints is shown above the prompt. It can't exit the shell and doesn't change `$status`. The shell waits for it, so keep it short |
 | `{"buffer": "git push"}` | puts text on the command line: right away if you're at the prompt and the line is empty, otherwise on the next one |
 | `{"message": "tests passed"}` | prints a line above the prompt |
 
@@ -177,9 +179,19 @@ and the prompt is redrawn if a variable, a segment or the directory
 changed. Actions that come in while a command runs wait for it to finish.
 
 One line can hold several actions. They're applied in the order of the
-table: set, unset, segment, cd, buffer, message. Setting a variable or a
-segment to the value it already has does nothing, so it's fine to send the
-same segment after every event.
+table: set, unset, segment, cd, eval, buffer, message. Setting a variable
+or a segment to the value it already has does nothing, so it's fine to
+send the same segment after every event.
+
+`eval` is how a plugin brings the things a fish plugin would: functions,
+abbreviations, `complete` rules, key bindings. With a command of its own,
+that makes a key that asks the plugin something:
+
+```python
+send({"hello": {"name": "branches",
+                "commands": [{"name": "pick-branch", "description": "choose a git branch"}]}})
+send({"eval": "bind ctrl-b 'commandline -i (pick-branch)'"})
+```
 
 ### Requests
 

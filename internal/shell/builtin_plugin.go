@@ -519,12 +519,35 @@ func (sh *Shell) applyPluginActions(m *plugin.Manager, acts []plugin.Action, u *
 			if changed {
 				u.Redraw, u.DirChanged = true, true
 			}
+		case plugin.ActEval:
+			before := sh.dir
+			if out := sh.pluginEval(a.Text, a.Plugin); out != "" {
+				u.Messages = append(u.Messages, out)
+			}
+			// it may have changed anything the prompt shows
+			u.Redraw = true
+			u.DirChanged = u.DirChanged || sh.dir != before
 		case plugin.ActBuffer:
 			u.Buffer, u.HasBuffer = a.Text, true
 		case plugin.ActMessage:
 			u.Messages = append(u.Messages, strings.TrimRight(a.Text, "\n"))
 		}
 	}
+}
+
+// pluginEval runs code a plugin sent, like a line of config.ash: it can
+// define functions, abbreviations, key bindings and completions. What it
+// prints is returned (for a message), its stdin is empty, and it can't
+// exit the shell or return from anything.
+func (sh *Shell) pluginEval(src, name string) string {
+	out := &lockedBuffer{}
+	eio := &IO{In: &Stream{R: strings.NewReader("")}, Out: &Stream{W: out}, Err: &Stream{W: out}}
+	last, line, ctrl := sh.lastArg, sh.lineno, sh.ctrl
+	sh.noErrexit++
+	sh.RunString(src, "plugin "+name, eio)
+	sh.noErrexit--
+	sh.lastArg, sh.lineno, sh.ctrl = last, line, ctrl
+	return strings.TrimRight(out.String(), "\n")
 }
 
 func slicesEqual(a, b []string) bool {

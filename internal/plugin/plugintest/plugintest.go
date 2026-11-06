@@ -273,6 +273,8 @@ func act(args []string) {
 		send(obj{"buffer": arg(0)})
 	case "message":
 		send(obj{"message": arg(0)})
+	case "eval":
+		send(obj{"eval": arg(0)})
 	case "raw":
 		sendRaw(arg(0))
 	}

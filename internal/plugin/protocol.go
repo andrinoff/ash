@@ -84,6 +84,8 @@ const (
 	ActBuffer
 	// ActMessage shows Text above the prompt.
 	ActMessage
+	// ActEval runs Text as shell code, as if it were in config.ash.
+	ActEval
 )
 
 // Action is something a plugin asked the shell to do. Messages that ash
@@ -94,7 +96,7 @@ type Action struct {
 	Name   string   // ActSet, ActUnset, ActSegment
 	Values []string // ActSet
 	Export bool     // ActSet
-	Text   string   // ActSegment, ActCd, ActBuffer, ActMessage
+	Text   string   // ActSegment, ActCd, ActBuffer, ActMessage, ActEval
 
 	crash bool // ash's report that the plugin stopped
 }
@@ -116,6 +118,7 @@ type inbound struct {
 	Unset   *stringList    `json:"unset"`
 	Segment *segmentAction `json:"segment"`
 	Cd      *string        `json:"cd"`
+	Eval    *string        `json:"eval"`
 	Buffer  *string        `json:"buffer"`
 	Message *string        `json:"message"`
 }
@@ -164,11 +167,11 @@ func parseLine(line []byte) (*inbound, error) {
 // empty reports whether the line held nothing ash understands.
 func (m *inbound) empty() bool {
 	return m.Hello == nil && m.ID == nil && m.Set == nil && m.Unset == nil &&
-		m.Segment == nil && m.Cd == nil && m.Buffer == nil && m.Message == nil
+		m.Segment == nil && m.Cd == nil && m.Eval == nil && m.Buffer == nil && m.Message == nil
 }
 
 // actions returns the actions in m in the order they are applied: set,
-// unset, segment, cd, buffer, message.
+// unset, segment, cd, eval, buffer, message.
 func (m *inbound) actions(plugin string) []Action {
 	var out []Action
 	if m.Set != nil {
@@ -188,6 +191,9 @@ func (m *inbound) actions(plugin string) []Action {
 	}
 	if m.Cd != nil {
 		out = append(out, Action{Plugin: plugin, Kind: ActCd, Text: *m.Cd})
+	}
+	if m.Eval != nil {
+		out = append(out, Action{Plugin: plugin, Kind: ActEval, Text: *m.Eval})
 	}
 	if m.Buffer != nil {
 		out = append(out, Action{Plugin: plugin, Kind: ActBuffer, Text: *m.Buffer})

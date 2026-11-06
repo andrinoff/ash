@@ -39,13 +39,15 @@ func TestParseActions(t *testing.T) {
 		{`{"segment":{"name":"git","text":"main +1"}}`, []Action{{Plugin: "p", Kind: ActSegment, Name: "git", Text: "main +1"}}},
 		{`{"buffer":"git push"}`, []Action{{Plugin: "p", Kind: ActBuffer, Text: "git push"}}},
 		{`{"cd":"/tmp"}`, []Action{{Plugin: "p", Kind: ActCd, Text: "/tmp"}}},
+		{`{"eval":"abbr -a gs git status"}`, []Action{{Plugin: "p", Kind: ActEval, Text: "abbr -a gs git status"}}},
 		// several in one line come out in a fixed order
-		{`{"message":"m","cd":"/","set":{"name":"a","value":[]},"buffer":"b","segment":{"name":"s","text":"t"},"unset":"u"}`,
+		{`{"message":"m","eval":"e","cd":"/","set":{"name":"a","value":[]},"buffer":"b","segment":{"name":"s","text":"t"},"unset":"u"}`,
 			[]Action{
 				{Plugin: "p", Kind: ActSet, Name: "a", Values: []string{}},
 				{Plugin: "p", Kind: ActUnset, Name: "u"},
 				{Plugin: "p", Kind: ActSegment, Name: "s", Text: "t"},
 				{Plugin: "p", Kind: ActCd, Text: "/"},
+				{Plugin: "p", Kind: ActEval, Text: "e"},
 				{Plugin: "p", Kind: ActBuffer, Text: "b"},
 				{Plugin: "p", Kind: ActMessage, Text: "m"},
 			}},
