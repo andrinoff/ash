@@ -3,6 +3,7 @@ package repl
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/andrinoff/ash/internal/term"
 )
@@ -19,6 +20,7 @@ type pluginState struct {
 	messages  []string // to print before the next prompt
 	buffer    string   // to put on the next command line, if hasBuffer
 	hasBuffer bool
+	start     func() // starts the plugins; nil once that is done
 }
 
 // startPlugins connects plugins to the session and starts them: the ones
@@ -29,15 +31,26 @@ type pluginState struct {
 func (r *REPL) startPlugins() {
 	sh := r.sh
 	sh.SetPluginWake(func() { r.ed.Do(r.applyPluginsIdle) })
-	start := func() {
+	r.plug.start = func() {
 		sh.ReleasePlugins()
 		if !sh.NoConfig {
 			sh.AutoloadPlugins()
 		}
 	}
 	if r.tty && term.IsTerminal(int(os.Stdin.Fd())) {
-		r.ed.Do(start) // the editor runs it after its first render
+		// The editor runs it after its first render. Its queue is
+		// bounded, though, so the loop makes sure once a line is read.
+		r.ed.Do(r.startPendingPlugins)
 	} else {
+		r.startPendingPlugins()
+	}
+}
+
+// startPendingPlugins starts the plugins if startPlugins left that for
+// later and it hasn't happened yet.
+func (r *REPL) startPendingPlugins() {
+	if start := r.plug.start; start != nil {
+		r.plug.start = nil
 		start()
 	}
 }
@@ -88,8 +101,9 @@ func (r *REPL) applyPluginsIdle() {
 		return
 	}
 	u := r.sh.ApplyPluginActionsIdle(r.ed.Suspend)
-	for _, m := range u.Messages {
-		r.ed.Notify(m)
+	if len(u.Messages) > 0 {
+		// one entry in the editor's bounded queue, however many
+		r.ed.Notify(strings.Join(u.Messages, "\n"))
 	}
 	if u.HasBuffer {
 		if buf, _ := r.ed.Buffer(); buf == "" {

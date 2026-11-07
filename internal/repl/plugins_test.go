@@ -119,3 +119,18 @@ func TestPluginsAtThePrompt(t *testing.T) {
 		t.Fatal("not applied after the binding")
 	}
 }
+
+// On a terminal the plugins start from the editor's queue, after the
+// first prompt is drawn. The queue is bounded and drops what doesn't
+// fit, so the loop starts them after the first line if that didn't
+// happen; either way they start once.
+func TestStartPendingPlugins(t *testing.T) {
+	r := &REPL{}
+	n := 0
+	r.plug.start = func() { n++ }
+	r.startPendingPlugins()
+	r.startPendingPlugins()
+	if n != 1 {
+		t.Fatalf("started %d times", n)
+	}
+}

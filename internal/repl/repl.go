@@ -238,6 +238,7 @@ func (r *REPL) loop() int {
 		default:
 			return r.exit(sh.Status())
 		}
+		r.startPendingPlugins() // if the editor didn't get to it
 		if strings.TrimSpace(line) == "" {
 			if r.tty {
 				// the editor marked the accepted line as a command that
