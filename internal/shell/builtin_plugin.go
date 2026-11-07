@@ -495,9 +495,23 @@ type PluginUpdate struct {
 // ApplyPluginActions applies what plugins asked for since the last call.
 // Variables, prompt segments and directory changes take effect here;
 // messages and command-line text are returned for the frontend. Call it
-// on the main goroutine when no command is running: before a prompt, or
-// while the line editor waits for input.
-func (sh *Shell) ApplyPluginActions() PluginUpdate {
+// on the main goroutine when no command is running and the terminal is
+// in its normal mode, as before a prompt. While the line editor waits for
+// input, use ApplyPluginActionsIdle.
+func (sh *Shell) ApplyPluginActions() PluginUpdate { return sh.applyPlugins(nil) }
+
+// ApplyPluginActionsIdle is ApplyPluginActions for while the line editor
+// waits for input, with the terminal in raw mode. When an action may run
+// shell code (eval, cd, or a variable that has --on-variable handlers),
+// the actions are applied inside suspend, which must give the terminal
+// back its normal mode while they run, as for a key binding's command:
+// a command they start mustn't find the terminal raw, compete with the
+// editor for input, or leave the terminal cooked under the editor.
+func (sh *Shell) ApplyPluginActionsIdle(suspend func(func())) PluginUpdate {
+	return sh.applyPlugins(suspend)
+}
+
+func (sh *Shell) applyPlugins(suspend func(func())) PluginUpdate {
 	var u PluginUpdate
 	m := sh.shared.plugins.mgr.Load()
 	if m == nil {
@@ -509,8 +523,42 @@ func (sh *Shell) ApplyPluginActions() PluginUpdate {
 	}
 	// Handlers of --on-variable and cd hooks may run code; the prompt
 	// still reports the last command's status.
-	sh.KeepStatus(func() { sh.applyPluginActions(m, acts, &u) })
+	apply := func() { sh.KeepStatus(func() { sh.applyPluginActions(m, acts, &u) }) }
+	if suspend != nil && sh.pluginActionsRunCode(acts) {
+		suspend(apply)
+	} else {
+		apply()
+	}
 	return u
+}
+
+// pluginActionsRunCode reports whether applying acts may run shell code,
+// and with it other programs: an eval, a cd (its hooks and handlers), or
+// a variable or segment that has --on-variable handlers.
+func (sh *Shell) pluginActionsRunCode(acts []plugin.Action) bool {
+	for _, a := range acts {
+		switch a.Kind {
+		case plugin.ActEval, plugin.ActCd:
+			return true
+		case plugin.ActSet, plugin.ActUnset:
+			if sh.hasVarHandlers(a.Name) {
+				return true
+			}
+		case plugin.ActSegment:
+			if sh.hasVarHandlers("ash_plugin_" + a.Name) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hasVarHandlers reports whether functions run when variable name changes.
+func (sh *Shell) hasVarHandlers(name string) bool {
+	ev := sh.shared.events
+	ev.mu.Lock()
+	defer ev.mu.Unlock()
+	return len(ev.vars[name]) > 0
 }
 
 func (sh *Shell) applyPluginActions(m *plugin.Manager, acts []plugin.Action, u *PluginUpdate) {

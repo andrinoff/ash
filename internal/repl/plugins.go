@@ -80,12 +80,14 @@ func (r *REPL) nextBuffer() string {
 // applyPluginsIdle applies plugin actions while the editor waits at the
 // prompt: messages go above it, the prompt is redrawn when variables or
 // the directory changed, and text for the command line goes in now if
-// the line is empty (otherwise on the next one).
+// the line is empty (otherwise on the next one). Actions that may run
+// shell code run with the terminal handed back, like a key binding's
+// command, so that the programs they start find it in its normal mode.
 func (r *REPL) applyPluginsIdle() {
 	if !r.plug.atPrompt {
 		return
 	}
-	u := r.sh.ApplyPluginActions()
+	u := r.sh.ApplyPluginActionsIdle(r.ed.Suspend)
 	for _, m := range u.Messages {
 		r.ed.Notify(m)
 	}

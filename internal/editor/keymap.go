@@ -426,16 +426,29 @@ func (e *Editor) call(name string, k Key) {
 }
 
 // runShell runs shell code bound to a key with the terminal in normal
-// mode, then redraws. If the command moved the cursor (it printed
-// something or cleared the screen) the prompt is drawn fresh where the
-// cursor is; otherwise it is repainted in place.
+// mode, then redraws.
 func (e *Editor) runShell(cmd string) {
 	if e.cfg.RunCommand == nil {
 		return
 	}
+	e.Suspend(func() { e.cfg.RunCommand(cmd) })
+}
+
+// Suspend runs f with the terminal in its normal mode and nothing reading
+// it, the way a key binding's shell code runs, then redraws. If f moved
+// the cursor (it printed something or cleared the screen) the prompt is
+// drawn fresh where the cursor is; otherwise it is repainted in place.
+// Call it on the editor's goroutine, from a function given to Do. Outside
+// ReadLine, or inside another Suspend, it just calls f.
+func (e *Editor) Suspend(f func()) {
+	if e.reader == nil {
+		f()
+		e.previewStale()
+		return
+	}
 	before, okBefore := e.queryCursor()
 	e.suspend()
-	e.cfg.RunCommand(cmd)
+	f()
 	e.resume()
 	e.previewStale()
 	after, okAfter := e.queryCursor()

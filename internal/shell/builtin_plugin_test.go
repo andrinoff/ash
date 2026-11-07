@@ -353,6 +353,48 @@ func TestPluginActions(t *testing.T) {
 	}
 }
 
+// At the prompt the terminal is raw. Actions that may run code, and with
+// it other programs, are applied with the terminal handed back; the rest
+// aren't, since that costs a round trip to the terminal.
+func TestPluginActionsIdle(t *testing.T) {
+	pt := newPluginTest(t)
+	pt.load("basic", "basic")
+	sh := pt.sh
+	suspended := 0
+	suspend := func(f func()) { suspended++; f() }
+	idle := func(src string) PluginUpdate {
+		t.Helper()
+		pt.ok(src)
+		suspended = 0
+		return sh.ApplyPluginActionsIdle(suspend)
+	}
+	u := idle("act segment git main; act set foo 1; act unset nothere; act message hi; act buffer ls")
+	if suspended != 0 || sh.Get("foo") != "1" || sh.Get("ash_plugin_git") != "main" || !reflect.DeepEqual(u.Messages, []string{"hi"}) || u.Buffer != "ls" {
+		t.Errorf("suspended %d times for actions that run no code: %+v", suspended, u)
+	}
+	dir := t.TempDir()
+	dir, _ = filepath.EvalSymlinks(dir)
+	for _, src := range []string{"act eval 'set -g evaled 1'", "act cd " + dir} {
+		if idle(src); suspended != 1 {
+			t.Errorf("%s: suspended %d times", src, suspended)
+		}
+	}
+	if sh.Get("evaled") != "1" || sh.Dir() != dir {
+		t.Errorf("not applied: evaled=%q dir=%s", sh.Get("evaled"), sh.Dir())
+	}
+	pt.ok("function on_watched --on-variable watched; end; function on_seg --on-variable ash_plugin_watched; end")
+	for _, src := range []string{"act set watched 1", "act unset watched", "act segment watched x"} {
+		if idle(src); suspended != 1 {
+			t.Errorf("%s, which has a handler: suspended %d times", src, suspended)
+		}
+	}
+	// between commands nothing is suspended
+	pt.ok("act eval 'set -g evaled 2'")
+	if sh.ApplyPluginActions(); sh.Get("evaled") != "2" {
+		t.Error("eval wasn't applied")
+	}
+}
+
 func TestPluginEval(t *testing.T) {
 	pt := newPluginTest(t)
 	pt.load("basic", "basic")
