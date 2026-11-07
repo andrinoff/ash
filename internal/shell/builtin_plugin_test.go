@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -289,7 +290,8 @@ func TestPluginActions(t *testing.T) {
 	if !reflect.DeepEqual(sh.GetList("foo"), []string{"a", "b c"}) {
 		t.Errorf("foo = %q", sh.GetList("foo"))
 	}
-	if !strings.Contains(strings.Join(sh.Environ(), "\n"), "\nbar=1") && !strings.HasPrefix(strings.Join(sh.Environ(), "\n"), "bar=1") {
+	// (Environ's order changes from call to call)
+	if !slices.Contains(sh.Environ(), "bar=1") {
 		t.Error("bar isn't exported")
 	}
 	for _, kv := range sh.Environ() {
