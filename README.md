@@ -1,7 +1,119 @@
-## Ash
+# ash
 
-Ash is a shell written in Go with Bubbletea ecosystem.
+A shell for people who like fish but keep pasting bash.
 
-This project is aimed on a series of guides of how to code with Bubbletea, which makes this a non-AI project.
+ash has the interactive side of fish: highlighting as you type,
+autosuggestions from your history, a completion menu, abbreviations, a
+`ctrl-r` that actually helps. Underneath, it runs both fish syntax and
+POSIX sh with the bash extensions people use, so your fish config works
+and so does the snippet from somebody's README:
 
-The guides will be available as gists (and maybe YouTube videos later)
+```sh
+# fish
+for f in *.jpg; magick $f (path change-extension png $f); end
+
+# bash, same shell, same file
+for f in *.jpg; do magick "$f" "${f%.jpg}.png"; done
+```
+
+## Install
+
+You need Go 1.27 or newer.
+
+```sh
+go install github.com/andrinoff/ash@latest
+```
+
+or from a checkout:
+
+```sh
+go build -o ash .
+```
+
+Then run `ash`. To try it without touching your setup, start it from your
+current shell; `exit` takes you back.
+
+## What's in it
+
+- **Both languages.** fish's `set`, `function ... end`, `and`/`or`,
+  `string`, `math`, `$argv[2..-1]`, alongside `export`, `$(...)`, `&&`,
+  `[[ ]]`, `${var:-default}`, heredocs, `case`, `name() { ... }`. Variables
+  are lists, so `$file` never splits on spaces. The details are in
+  [docs/language.md](docs/language.md).
+- **fish's editor**, plus a few things fish doesn't do: vi mode with text
+  objects, `!!` and `!$`, a fuzzy `ctrl-r`, `alt-.` for the last argument,
+  copy and paste with `ctrl-x` / `ctrl-v`. See [docs/editing.md](docs/editing.md).
+- **Your tools, built in.** `integrate starship zoxide fzf mise direnv
+  atuin` replaces the `init | source` lines. Starship gets a transient
+  prompt and renders its left and right prompts in parallel while you're
+  already typing. There's a native `z` that shares its data file with
+  fish's z plugin. See [docs/integrations.md](docs/integrations.md).
+- **fish's completions.** If fish is installed, ash reads its completion
+  files, so `git <tab>`, `brew <tab>` and a thousand others work out of
+  the box.
+- **A terminal citizen.** Proper job control (`ctrl-z`, `fg`, `bg`), window
+  titles, OSC 7 so new tabs open in the same directory, OSC 133 so your
+  terminal can jump between prompts, a `⏎` marker when output didn't end
+  in a newline.
+- **Pickers where they make sense.** `choose`, the directory history and
+  the history browser are [Bubble Tea](https://github.com/charmbracelet/bubbletea)
+  programs. The line editor itself is hand-written, because it has to
+  start instantly and stay out of the way of job control.
+
+## Configuration
+
+`~/.config/ash/config.ash` is read by interactive shells. A small one:
+
+```sh
+add_path ~/bin ~/go/bin
+export EDITOR=nvim
+
+if status is-interactive
+    integrate starship zoxide fzf
+    alias ll 'eza -l'
+    abbr -a gs git status
+    bind ctrl-g 'lazygit; commandline -f repaint'
+end
+```
+
+There's more in [docs/config.md](docs/config.md), and if you're moving from
+fish, [docs/from-fish.md](docs/from-fish.md) has a table of what to
+change (not much).
+
+## Making it your shell
+
+```sh
+command -v ash | sudo tee -a /etc/shells
+chsh -s "$(command -v ash)"
+```
+
+Or leave your login shell alone and point your terminal at ash: in
+Ghostty, `command = /path/to/ash`.
+
+## How ready is it
+
+It's young. The test suite covers the parser, the interpreter and the
+editor, and it runs real fish and bash configs, but expect rough edges.
+Known gaps:
+
+- No associative arrays (`declare -A`), `select`, `coproc` or extended
+  globs (`!(...)`).
+- No `funced` or fish's web configuration.
+- Universal variables aren't synced live between running shells.
+- Windows isn't supported. Linux and macOS are.
+
+Bug reports with the smallest input that shows the problem are the most
+useful kind.
+
+## Docs
+
+- [docs/language.md](docs/language.md): syntax, variables, quoting, expansion
+- [docs/editing.md](docs/editing.md): keys, completion, history, vi mode
+- [docs/config.md](docs/config.md): config files, prompt, themes, abbreviations
+- [docs/integrations.md](docs/integrations.md): starship, zoxide, fzf, mise, direnv, atuin
+- [docs/builtins.md](docs/builtins.md): every builtin
+- [docs/from-fish.md](docs/from-fish.md): moving a fish setup over
+
+## License
+
+MIT
