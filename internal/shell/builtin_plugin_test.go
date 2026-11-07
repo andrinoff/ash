@@ -648,6 +648,31 @@ func TestClosePlugins(t *testing.T) {
 	}
 }
 
+// Plugins that would start after the shell closed them (the autoload
+// goroutine got there late, or a line typed ahead was exit) don't, even
+// when nothing had started the plugin manager before.
+func TestNoPluginsAfterClose(t *testing.T) {
+	pt := newPluginTest(t)
+	pt.sh.ClosePlugins()
+	dir := filepath.Join(pt.home, ".config", "ash", "plugins")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(pt.home, "started")
+	script := "#!/bin/sh\ntouch " + Quote(marker) + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "late"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pt.sh.AutoloadPlugins()
+	if _, errs, st := pt.run("plugin load -w now " + pt.cmd); st != 1 || !strings.Contains(errs, "exiting") {
+		t.Errorf("load after close: %d %q", st, errs)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if _, err := os.Stat(marker); err == nil {
+		t.Error("an autoloaded plugin started after the shell closed its plugins")
+	}
+}
+
 func TestNoPluginsCostNothing(t *testing.T) {
 	sh := New()
 	if _, ok := sh.builtinFunc("ls"); ok {

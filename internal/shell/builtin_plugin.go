@@ -47,6 +47,7 @@ type pluginHost struct {
 	lastDir string          // where the last cd event went, for the next one's "from"
 	segs    map[string]bool // prompt segments plugins have set
 	hold    bool            // see HoldPlugins
+	closed  bool            // ClosePlugins ran; no plugin may start after it
 }
 
 // HoldPlugins makes plugin load register plugins without starting their
@@ -119,6 +120,11 @@ func (sh *Shell) pluginManagerAt(logDir string, ps promptState) *plugin.Manager 
 	})
 	if h.hold {
 		m.Hold()
+	}
+	if h.closed {
+		// The shell is exiting (AutoloadPlugins got here late, say):
+		// loading fails, so nothing outlives the shell.
+		m.Close(0)
 	}
 	h.lastDir = ps.dir
 	// Plugins that say hello before the next prompt hear about this one.
@@ -796,7 +802,10 @@ func (sh *Shell) AutoloadPlugins() {
 				m = sh.pluginManagerAt(logDir, ps)
 			}
 			spec := plugin.Spec{Name: name, Path: path, Args: []string{path}, Dir: cwd, Env: pluginEnv(env, name), Shell: self}
-			if err := m.Load(spec); err != nil && !errors.Is(err, plugin.ErrLoaded) {
+			switch err := m.Load(spec); {
+			case errors.Is(err, plugin.ErrClosed):
+				return // the shell is exiting
+			case err != nil && !errors.Is(err, plugin.ErrLoaded):
 				m.Notify(name, "ash: plugin "+name+": "+err.Error())
 			}
 		}
@@ -815,9 +824,14 @@ func autoloadName(file string) (string, bool) {
 
 // ClosePlugins sends the exit event to the plugins that listen for it and
 // stops them all, after giving them a moment (200ms at most) to exit on
-// their own. The shell calls it when it exits.
+// their own. The shell calls it when it exits. No plugin starts after it.
 func (sh *Shell) ClosePlugins() {
-	if m := sh.shared.plugins.mgr.Load(); m != nil {
+	h := &sh.shared.plugins
+	h.mu.Lock()
+	h.closed = true
+	m := h.mgr.Load()
+	h.mu.Unlock()
+	if m != nil {
 		m.Close(pluginCloseGrace)
 	}
 }
