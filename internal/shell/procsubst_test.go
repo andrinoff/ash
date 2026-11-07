@@ -24,3 +24,10 @@ func TestBracketIsNotAGlob(t *testing.T) {
 		t.Fatal("real patterns must glob")
 	}
 }
+
+func TestReadKeepsWhitespaceWithEmptyIFS(t *testing.T) {
+	out, _, _ := runScriptIn(t, `IFS= read -r line; echo "[$line]"; read -r b; echo "[$b]"`, "  indented  \n  trimmed  \n")
+	if out != "[  indented  ]\n[trimmed]\n" {
+		t.Fatalf("got %q", out)
+	}
+}

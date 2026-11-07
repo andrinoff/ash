@@ -206,7 +206,8 @@ func bRead(sh *Shell, io *IO, args []string) int {
 	if len(names) == 1 {
 		v := text
 		if !line {
-			v = strings.Trim(v, " \t\n")
+			// only IFS whitespace is trimmed: `IFS= read -r line` keeps it all
+			v = strings.Trim(v, ifsWhitespace(sh))
 		}
 		sh.SetVar(names[0], []string{v}, o)
 	} else {
@@ -223,6 +224,21 @@ func bRead(sh *Shell, io *IO, args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// ifsWhitespace returns the whitespace characters in $IFS.
+func ifsWhitespace(sh *Shell) string {
+	ifs := " \t\n"
+	if v, ok := sh.getVar("IFS"); ok {
+		ifs = strings.Join(v, "")
+	}
+	var b strings.Builder
+	for _, c := range ifs {
+		if c == ' ' || c == '\t' || c == '\n' {
+			b.WriteRune(c)
+		}
+	}
+	return b.String()
 }
 
 func isNumber(s string) bool {
