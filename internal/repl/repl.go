@@ -51,6 +51,8 @@ type REPL struct {
 	// the background; nil when $ash_preview is 0.
 	previewSh atomic.Pointer[shell.Shell]
 
+	jobsQueued atomic.Bool // a look at the jobs is waiting in the editor's queue
+
 	// edMu is held while the editor reads a line, at the prompt or for
 	// the read builtin, which can run on other goroutines (in a
 	// background job or a pipeline).
@@ -433,6 +435,8 @@ func (r *REPL) readLine(prompt, initial string) (string, error) {
 }
 
 func (r *REPL) notifyJobs() {
+	// This covers a look at the jobs that is queued, or was dropped.
+	r.jobsQueued.Store(false)
 	var buf bytes.Buffer
 	if r.sh.NotifyJobs(&buf) {
 		os.Stderr.Write(buf.Bytes())
@@ -457,7 +461,15 @@ func (r *REPL) handleSignals() {
 					r.hangup(false)
 				}()
 			case syscall.SIGCHLD:
+				// One look at the jobs covers every child that ended
+				// before it. Queueing one per signal would fill the
+				// editor's queue when a config runs many commands, and
+				// what came after (starting the plugins) would be lost.
+				if !r.jobsQueued.CompareAndSwap(false, true) {
+					continue
+				}
 				r.ed.Do(func() {
+					r.jobsQueued.Store(false)
 					var buf bytes.Buffer
 					if sh.NotifyJobs(&buf) {
 						r.ed.Notify(buf.String())
