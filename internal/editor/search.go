@@ -325,7 +325,11 @@ func (s *histSearch) render(e *Editor, cols, avail int) []string {
 	out = append(out, head)
 	s.cursorCol = cursor
 
-	maxRows := min(max(avail-2, 1), 10)
+	limit := 10
+	if e.opts.SearchRows > 0 {
+		limit = e.opts.SearchRows
+	}
+	maxRows := min(max(avail-2, 1), limit)
 	if s.selected < s.scroll {
 		s.scroll = s.selected
 	}

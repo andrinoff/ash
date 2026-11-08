@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -60,6 +61,9 @@ func fnViNormal(e *Editor, k Key) {
 
 func (e *Editor) setCursorShape() {
 	if e.keymap != "vi" {
+		if c := cursorCode(e.opts.Cursor); c != "" {
+			e.write(c)
+		}
 		return
 	}
 	switch e.viMode {
@@ -73,9 +77,26 @@ func (e *Editor) setCursorShape() {
 }
 
 func (e *Editor) resetCursorShape() {
-	if e.keymap == "vi" {
+	if e.keymap == "vi" || cursorCode(e.opts.Cursor) != "" {
 		e.write("\x1b[0 q")
 	}
+}
+
+// cursorCode is the DECSCUSR sequence for a shape like "line" or
+// "underscore blink", or "" for one it doesn't know.
+func cursorCode(shape string) string {
+	f := strings.Fields(shape)
+	if len(f) == 0 || len(f) > 2 || len(f) == 2 && f[1] != "blink" {
+		return ""
+	}
+	n := map[string]int{"block": 2, "underscore": 4, "underline": 4, "line": 6, "bar": 6, "beam": 6}[f[0]]
+	if n == 0 {
+		return ""
+	}
+	if len(f) == 2 {
+		n--
+	}
+	return "\x1b[" + strconv.Itoa(n) + " q"
 }
 
 func (e *Editor) visualRange() (int, int) {

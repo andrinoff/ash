@@ -250,6 +250,9 @@ func (e *Editor) render() {
 }
 
 func (e *Editor) draw(f frame) {
+	if e.opts.Bottom && e.reader != nil {
+		e.anchorBottom(len(f.lines))
+	}
 	b := bufPool.Get().(*bytes.Buffer)
 	b.Reset()
 	defer bufPool.Put(b)
@@ -293,6 +296,37 @@ func (e *Editor) draw(f frame) {
 	e.prev = f.lines
 	e.cursorRow = f.row
 	e.drawn = true
+}
+
+// anchorBottom keeps the frame on the last lines of the screen. A fresh
+// frame (a new prompt, or one redrawn after a key binding ran a program
+// like fzf, or after a resize) goes as far down as the screen allows,
+// which takes asking the terminal where the cursor is. A frame that got
+// shorter (a menu closed) moves down by the lines it gave up. One that
+// grows needs nothing: its new lines scroll the screen.
+func (e *Editor) anchorBottom(h int) {
+	var b strings.Builder
+	if e.cursorRow > 0 {
+		b.WriteString("\x1b[" + strconv.Itoa(e.cursorRow) + "A")
+	}
+	if e.prev != nil {
+		shrink := len(e.prev) - h
+		if shrink <= 0 {
+			return
+		}
+		b.WriteString("\r\x1b[J\x1b[" + strconv.Itoa(shrink) + "B")
+		e.out.WriteString(b.String())
+	} else {
+		b.WriteString("\r\x1b[J")
+		e.out.WriteString(b.String())
+		pos, ok := e.queryCursor()
+		if target := e.rows - h + 1; ok && target > pos.row {
+			e.out.WriteString("\x1b[" + strconv.Itoa(target-pos.row) + "B")
+		}
+	}
+	e.cursorRow = 0
+	e.prev = nil
+	e.marked = false // the prompt starts on another line now
 }
 
 // finalRender draws the accepted line (with the transient prompt if one

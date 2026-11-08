@@ -215,8 +215,12 @@ func (p *pager) render(e *Editor, cols, avail int) []string {
 	items := p.comp.Items
 	n := len(items)
 	maxRows := avail - 1
-	if maxRows > 12 {
-		maxRows = 12
+	limit := 12
+	if e.opts.PagerRows > 0 {
+		limit = e.opts.PagerRows
+	}
+	if maxRows > limit {
+		maxRows = limit
 	}
 	if lim := e.rows/2 - 1; lim > 3 && maxRows > lim {
 		maxRows = lim

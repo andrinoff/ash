@@ -105,6 +105,15 @@ type ReadOpts struct {
 	EmptySuggestion string
 	// MarkPrompt emits OSC 133 semantic prompt marks.
 	MarkPrompt bool
+	// Bottom keeps the prompt on the last lines of the screen.
+	Bottom bool
+	// SearchRows and PagerRows cap how many rows the history search and
+	// the completion menu take; 0 means the default.
+	SearchRows, PagerRows int
+	// Cursor is the cursor's shape outside vi mode: block, line or
+	// underscore, steady unless followed by " blink". Empty leaves it
+	// alone.
+	Cursor string
 }
 
 // Editor is an interactive line editor bound to a terminal.
