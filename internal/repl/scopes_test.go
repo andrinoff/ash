@@ -197,7 +197,14 @@ func TestSearchHistoryScopes(t *testing.T) {
 	rows := func(rs []editor.SearchResult) []string {
 		var out []string
 		for _, r := range rs {
-			out = append(out, r.Text+" | "+r.Info)
+			info := r.Age
+			if r.Dir != "" {
+				info += "  " + r.Dir
+			}
+			if r.Failed {
+				info = "✗ " + info
+			}
+			out = append(out, r.Text+" | "+info)
 		}
 		return out
 	}

@@ -46,7 +46,13 @@ type HistorySource interface {
 type SearchResult struct {
 	Text      string
 	Positions []int  // rune indices of matched characters
-	Info      string // right-aligned extra text (age, directory)
+	Info      string // right-aligned extra text, when the fields below are empty
+
+	Dir    string // where it last ran, as shown ("~/src/ash")
+	Age    string // how long ago that was ("5m")
+	Took   string // how long it ran, when that was long enough to say ("3.2s")
+	Failed bool   // its exit status wasn't 0
+	Status int    // that status
 }
 
 // Config holds the hooks that connect the editor to a shell. Every hook
@@ -762,6 +768,8 @@ func (e *Editor) style(role string) string {
 			return "\x1b[7m"
 		case "search_match":
 			return "\x1b[1m"
+		case "error":
+			return "\x1b[31m"
 		case "cancel":
 			return "\x1b[7m"
 		}

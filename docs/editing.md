@@ -110,19 +110,28 @@ order, so `gpu` finds `git push -u origin main`), use the arrows or
 `ctrl-p`/`ctrl-n` to move, `enter` or `tab` to put the command on the line
 for editing, and `escape` to cancel.
 
-ash saves every command with the directory it ran in and its exit status,
-so the search can narrow to what you ran here. Press `ctrl-r` again to go
-to the next scope. The header shows which one you're in:
+ash saves every command with the directory it ran in, its exit status and
+how long it took, so the search can narrow to what you ran here:
 
-| header | lists |
+```
+⌕ git pu                                         all  here  repo  failed
+▌· git push -u origin main                             ~/src/ash    2m
+ ✗ git pull --rebase                                   ~/src/ash    1h
+  ╰ ~/src/ash · 2m ago · took 3.2s                                  1/52
+```
+
+The tabs on the right are the scopes; press `ctrl-r` again to go to the
+next one. `✗` marks commands that failed, and the line under the list
+says where, when and how the selected command ran.
+
+| tab | lists |
 |---|---|
-| `history:` | everything |
-| `history [this directory]:` | commands run in the current directory |
-| `history [this repository]:` | commands run anywhere in the current git repository |
-| `history [failed]:` | commands that failed |
+| `all` | everything |
+| `here` | commands run in the current directory |
+| `repo` | commands run anywhere in the current git repository |
+| `failed` | commands that failed |
 
-On a narrow screen the header shows just the scope's name, like
-`[repository]:`.
+On a narrow screen the tabs go, and the query keeps the room.
 
 After `failed` it starts over. Outside a repository the repository scope is
 skipped. ash finds the repository by looking for `.git` in the directory

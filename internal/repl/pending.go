@@ -1,7 +1,9 @@
 package repl
 
 import (
+	"fmt"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/andrinoff/ash/internal/editor"
@@ -41,16 +43,29 @@ func (h *storeHistory) Fuzzy(q string, limit int, keep func(history.Entry) bool,
 	ms := h.Store.FuzzyFilter(q, limit, keep)
 	out := make([]editor.SearchResult, len(ms))
 	for i, m := range ms {
-		info := relTime(m.When)
+		r := editor.SearchResult{Text: m.Cmd, Positions: m.Positions, Age: relTime(m.When),
+			Took: took(m.Duration), Failed: m.Status != 0, Status: m.Status}
 		if m.Dir != "" && where != nil {
-			info += "  " + where(m.Dir)
+			r.Dir = where(m.Dir)
 		}
-		if m.Status != 0 {
-			info = "✗ " + info
-		}
-		out[i] = editor.SearchResult{Text: m.Cmd, Positions: m.Positions, Info: info}
+		out[i] = r
 	}
 	return out
+}
+
+// took is how long a command ran, when that's a second or more.
+func took(d time.Duration) string {
+	switch {
+	case d < time.Second:
+		return ""
+	case d < 10*time.Second:
+		return strconv.FormatFloat(d.Seconds(), 'f', 1, 64) + "s"
+	case d < time.Minute:
+		return itoa(int(d.Seconds())) + "s"
+	case d < time.Hour:
+		return itoa(int(d.Minutes())) + "m" + fmt.Sprintf("%02ds", int(d.Seconds())%60)
+	}
+	return itoa(int(d.Hours())) + "h" + fmt.Sprintf("%02dm", int(d.Minutes())%60)
 }
 
 // EachRecent gives the history browser when, where and with what status

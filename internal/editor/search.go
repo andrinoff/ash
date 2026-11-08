@@ -15,16 +15,13 @@ const (
 	ScopeFailed     = "failed"     // commands that failed
 )
 
-// scopeLabel is what the search header calls a scope. ScopeAll goes
-// without saying.
-func scopeLabel(scope string) string {
+// scopeTab is what the search's tab for a scope says.
+func scopeTab(scope string) string {
 	switch scope {
-	case ScopeAll:
-		return ""
 	case ScopeDirectory:
-		return "this directory"
+		return "here"
 	case ScopeRepository:
-		return "this repository"
+		return "repo"
 	}
 	return scope
 }
@@ -225,28 +222,54 @@ func (s *histSearch) handle(e *Editor, k Key) {
 	}
 }
 
-// header lays out the query line in cols columns, keeping the last one
-// free for the cursor: the label, which on a narrow screen is just the
-// scope's name, and the query, scrolled to keep the cursor in view. It
-// returns the label, the query as drawn, their width, and the cursor's
-// column.
-func (s *histSearch) header(cols int) (label, query string, width, cursor int) {
-	maxLabel := max(cols-11, cols/2) // leave the query 10 columns, or half
-	label = "history: "
-	if l := scopeLabel(s.current()); l != "" {
-		label = "history [" + l + "]: "
-		if plainWidth(label) > cols-21 {
-			label = ""
-			if name := truncateWidth(s.current(), maxLabel-4); name != "" {
-				label = "[" + name + "]: "
-			}
+// The search draws, from the top:
+//
+//	⌕ git pu                                   all  here  repo  failed
+//	▌· git push -u origin main                         ~/src/ash    2m
+//	 ✗ git pull --rebase                               ~/src/ash    1h
+//	  ╰ ~/src/ash · 2m ago · took 3.2s                              1/52
+//
+// a query line with the scopes as tabs, one row per command with its
+// status, directory and age, and the details of the selected one.
+
+// searchIcon starts the query line.
+const searchIcon = "⌕ "
+
+// tabs draws the scope tabs, the current one highlighted. With room for
+// less than all of them it shows only the current one.
+func (s *histSearch) tabs(e *Editor, room int) (string, int) {
+	if len(s.scopes) < 2 && s.current() == ScopeAll {
+		return "", 0
+	}
+	on, off := e.style("pager_selected_background"), e.style("pager_progress")
+	var b strings.Builder
+	w := 0
+	for i, sc := range s.scopes {
+		name := " " + scopeTab(sc) + " "
+		if i == s.scope {
+			b.WriteString(on + name + reset)
+		} else {
+			b.WriteString(off + name + reset)
 		}
+		w += plainWidth(name)
 	}
-	if plainWidth(label) > maxLabel {
-		label = ""
+	if w <= room {
+		return b.String(), w
 	}
+	name := " " + scopeTab(s.current()) + " "
+	if plainWidth(name) > room {
+		return "", 0
+	}
+	return on + name + reset, plainWidth(name)
+}
+
+// header lays out the query in cols columns, keeping the last one free
+// for the cursor, scrolled to keep the cursor in view. It returns the
+// query line without the tabs, its width, and the cursor's column.
+func (s *histSearch) header(cols int) (label, query string, width, cursor int) {
+	label = searchIcon
 	lw := plainWidth(label)
-	room := cols - 1 - lw
+	room := max(cols-1-lw, 1)
 	before, at := 0, 0 // the widths of the query before the cursor and under it
 	for _, r := range s.query[:s.qpos] {
 		before += runeWidth(r)
@@ -276,102 +299,172 @@ func (s *histSearch) header(cols int) (label, query string, width, cursor int) {
 	return label, b.String(), lw + w, cursor
 }
 
-// render draws the query line and the matching entries. No line is wider
-// than the screen: one that wrapped would throw off the redraw.
+// render draws the search. No line is as wide as the screen: one that
+// wrapped would throw off the redraw.
 func (s *histSearch) render(e *Editor, cols, avail int) []string {
-	prog := e.style("pager_progress")
+	dim := e.style("pager_progress")
 	match := e.style("search_match")
-	selBg := e.style("pager_selected_background")
-	var out []string
-	label, q, headW, cursor := s.header(cols)
-	head := prog + label + reset + q
-	count := ""
-	switch n := len(s.results); {
-	case n == 0:
-		count = "no matches"
-	case n >= 500:
-		count = "500+"
-	default:
-		count = itoa(s.selected+1) + "/" + itoa(n)
+	bar := e.style("search_match")
+	failed := e.style("error")
+	if failed == "" {
+		failed = "\x1b[31m"
 	}
-	if pad := cols - headW - plainWidth(count) - 1; pad > 1 {
-		head += strings.Repeat(" ", pad) + prog + count + reset
+	var out []string
+
+	// the query, and the tabs if there's room for them and 12 columns of query
+	tabs, tw := s.tabs(e, cols-1-plainWidth(searchIcon)-12-2)
+	qcols := cols
+	if tw > 0 {
+		qcols = cols - tw - 2
+	}
+	label, q, headW, cursor := s.header(qcols)
+	head := dim + label + reset + q
+	if tw > 0 {
+		head += strings.Repeat(" ", max(cols-1-headW-tw, 2)) + tabs
 	}
 	out = append(out, head)
 	s.cursorCol = cursor
-	maxRows := avail - 1
-	if maxRows > 10 {
-		maxRows = 10
-	}
-	if maxRows < 1 {
-		maxRows = 1
-	}
+
+	maxRows := min(max(avail-2, 1), 10)
 	if s.selected < s.scroll {
 		s.scroll = s.selected
 	}
 	if s.selected >= s.scroll+maxRows {
 		s.scroll = s.selected - maxRows + 1
 	}
+	// the directory column is as wide as the widest one shown, within reason
+	dirW := 0
 	for i := s.scroll; i < len(s.results) && i < s.scroll+maxRows; i++ {
-		r := s.results[i]
-		sel := i == s.selected
-		var line strings.Builder
-		if sel {
-			line.WriteString(selBg + "› ")
-		} else {
-			line.WriteString("  ")
-		}
-		text := strings.ReplaceAll(r.Text, "\n", "⏎")
-		info := truncateWidth(r.Info, cols-15) // leave the command 10 columns
-		room := cols - 3
-		if info != "" {
-			room -= plainWidth(info) + 2
-		}
-		pos := map[int]bool{}
-		for _, p := range r.Positions {
-			pos[p] = true
-		}
-		w := 0
-		ri := 0
-		rs := []rune(text)
-		ws := widths(rs)
-		for _, ch := range rs {
-			cw := ws[ri]
-			if w+cw > room {
-				line.WriteString("…")
-				w++
-				break
-			}
-			if pos[ri] {
-				line.WriteString(match + displayRune(ch) + reset)
-				if sel {
-					line.WriteString(selBg)
-				}
-			} else {
-				line.WriteString(displayRune(ch))
-			}
-			w += cw
-			ri++
-		}
-		if info != "" {
-			pad := cols - 3 - w - plainWidth(info)
-			if pad < 1 {
-				pad = 1
-			}
-			line.WriteString(strings.Repeat(" ", pad))
-			line.WriteString(reset)
-			if sel {
-				line.WriteString(selBg)
-			}
-			line.WriteString(prog + info)
-		} else if sel {
-			line.WriteString(strings.Repeat(" ", max(0, cols-3-w)))
-		}
-		line.WriteString(reset)
-		out = append(out, line.String())
+		dirW = max(dirW, plainWidth(s.results[i].Dir))
 	}
+	dirW = min(dirW, max(cols/4, 8))
+	ageW := 3
+	for i := s.scroll; i < len(s.results) && i < s.scroll+maxRows; i++ {
+		ageW = max(ageW, plainWidth(s.results[i].Age))
+	}
+	for i := s.scroll; i < len(s.results) && i < s.scroll+maxRows; i++ {
+		out = append(out, s.row(s.results[i], i == s.selected, cols, dirW, ageW, dim, match, bar, failed))
+	}
+	out = append(out, s.footer(cols, dim))
 	s.lastLines = out
 	return out
+}
+
+// row draws one command: a bar if it's selected, ✗ if it failed, the
+// command with the matched letters marked, and where and when it ran.
+func (s *histSearch) row(r SearchResult, sel bool, cols, dirW, ageW int, dim, match, bar, failed string) string {
+	var line strings.Builder
+	base := ""
+	if sel {
+		base = "\x1b[1m"
+		line.WriteString(bar + "▌" + reset)
+	} else {
+		line.WriteString(" ")
+	}
+	if r.Failed {
+		line.WriteString(failed + "✗" + reset + " ")
+	} else {
+		line.WriteString(dim + "·" + reset + " ")
+	}
+	used := 3
+	// the right-hand columns, dropped when the command needs the room
+	right, rightW := "", 0 // rightW is right's width without its escapes
+	if r.Dir != "" || r.Age != "" {
+		if cols-1-used-(dirW+2+ageW)-2 >= 12 {
+			dir := truncateLeft(r.Dir, dirW)
+			right = dim + strings.Repeat(" ", dirW-plainWidth(dir)) + dir + "  " +
+				strings.Repeat(" ", ageW-plainWidth(r.Age)) + r.Age + reset
+			rightW = dirW + 2 + ageW
+		}
+	} else if r.Info != "" {
+		info := truncateWidth(r.Info, max(cols-1-used-14, 0))
+		right, rightW = dim+info+reset, plainWidth(info)
+	}
+	room := cols - 1 - used - rightW
+	if rightW > 0 {
+		room -= 2
+	}
+	pos := map[int]bool{}
+	for _, p := range r.Positions {
+		pos[p] = true
+	}
+	line.WriteString(base)
+	rs := []rune(strings.ReplaceAll(r.Text, "\n", "⏎"))
+	ws := widths(rs)
+	w := 0
+	for ri, ch := range rs {
+		if w+ws[ri] > room-1 && ri < len(rs)-1 || w+ws[ri] > room {
+			line.WriteString("…")
+			w++
+			break
+		}
+		if pos[ri] {
+			line.WriteString(match + displayRune(ch) + reset + base)
+		} else {
+			line.WriteString(displayRune(ch))
+		}
+		w += ws[ri]
+	}
+	line.WriteString(reset)
+	if rightW > 0 {
+		line.WriteString(strings.Repeat(" ", max(cols-1-used-w-rightW, 2)) + right)
+	}
+	return line.String()
+}
+
+// footer shows where, when and how the selected command ran, and which
+// of how many it is.
+func (s *histSearch) footer(cols int, dim string) string {
+	count := "no matches"
+	switch n := len(s.results); {
+	case n >= 500:
+		count = itoa(s.selected+1) + "/500+"
+	case n > 0:
+		count = itoa(s.selected+1) + "/" + itoa(n)
+	}
+	var parts []string
+	if len(s.results) > 0 {
+		r := s.results[s.selected]
+		if r.Dir != "" {
+			parts = append(parts, r.Dir)
+		}
+		if r.Age != "" {
+			if r.Age == "now" {
+				parts = append(parts, "just now")
+			} else {
+				parts = append(parts, r.Age+" ago")
+			}
+		}
+		if r.Took != "" {
+			parts = append(parts, "took "+r.Took)
+		}
+		if r.Failed {
+			parts = append(parts, "exit "+itoa(r.Status))
+		}
+	}
+	detail := strings.Join(parts, " · ")
+	if detail == "" {
+		detail = "enter edit · ctrl-r scope · esc cancel"
+	}
+	room := cols - 1 - plainWidth(count) - 2 - 4
+	detail = truncateWidth(detail, max(room, 0))
+	pad := max(cols-1-4-plainWidth(detail)-plainWidth(count), 1)
+	return dim + "  ╰ " + detail + strings.Repeat(" ", pad) + count + reset
+}
+
+// truncateLeft keeps the end of s, which for a path is the part that
+// says the most: …/src/ash.
+func truncateLeft(s string, w int) string {
+	if plainWidth(s) <= w {
+		return s
+	}
+	rs := []rune(s)
+	for i := range rs {
+		if t := "…" + string(rs[i+1:]); plainWidth(t) <= w {
+			return t
+		}
+	}
+	return ""
 }
 
 func itoa(n int) string {

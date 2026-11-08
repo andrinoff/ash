@@ -59,7 +59,7 @@ func TestHistorySearchLongQuery(t *testing.T) {
 		e.handleKey(Key{Code: KeyLeft})
 	}
 	lines = e.search.render(e, 40, 10)
-	if got := stripANSI(lines[0]); !strings.HasPrefix(got, "history: xxx") || plainWidth(got) >= 40 || e.search.cursorCol != 9 {
+	if got := stripANSI(lines[0]); !strings.HasPrefix(got, "⌕ xxx") || plainWidth(got) >= 40 || e.search.cursorCol != 2 {
 		t.Fatalf("line %q cursor %d", got, e.search.cursorCol)
 	}
 }
@@ -75,7 +75,7 @@ func TestHistorySearchLongQueryIsLinear(t *testing.T) {
 	// the start scrolls off (marked with …) and the cursor stays in view,
 	// right after the last character of the query
 	got := stripANSI(lines[0])
-	if !strings.HasPrefix(got, "history: …xxx") || plainWidth(got) >= 40 || e.search.cursorCol != plainWidth(strings.TrimRight(got, " ")) {
+	if !strings.HasPrefix(got, "⌕ …xxx") || plainWidth(got) >= 40 || e.search.cursorCol != plainWidth(strings.TrimRight(got, " ")) {
 		t.Fatalf("line %q cursor %d", got, e.search.cursorCol)
 	}
 	if n := testing.AllocsPerRun(1, func() { e.search.render(e, 40, 10) }); n > 1000 {
@@ -191,30 +191,32 @@ func TestSearchScopeCycle(t *testing.T) {
 func TestSearchHeader(t *testing.T) {
 	e, _ := searchEditor(ScopeAll, ScopeDirectory, ScopeRepository, ScopeFailed)
 	e.insert([]rune("make"))
-	for _, want := range []string{
-		"history: make",
-		"history [this directory]: make",
-		"history [this repository]: make",
-		"history [failed]: make",
-		"history: make",
-	} {
+	for _, want := range []string{ScopeAll, ScopeDirectory, ScopeRepository, ScopeFailed, ScopeAll} {
 		e.handleKey(keyCtrlR)
 		lines, col := searchView(t, e)
-		if !strings.HasPrefix(lines[0], want+" ") || !strings.HasSuffix(lines[0], "1/3") {
-			t.Errorf("header %q, want %q and the count", lines[0], want)
+		if !strings.HasPrefix(lines[0], "⌕ make ") || !strings.HasSuffix(strings.TrimRight(lines[0], " "), " all  here  repo  failed") {
+			t.Errorf("%s: header %q", want, lines[0])
 		}
-		if col != len(want) {
-			t.Errorf("%q: cursor at column %d, want %d", want, col, len(want))
+		if got := e.search.current(); got != want {
+			t.Errorf("in scope %q, want %q", got, want)
 		}
-		if len(lines) != 4 || !strings.HasPrefix(lines[1], "› ") {
-			t.Errorf("%q: rows %q", want, lines[1:])
+		// the current tab is the highlighted one
+		raw := e.search.render(e, 60, 10)[0]
+		if tab := e.style("pager_selected_background") + " " + scopeTab(want) + " "; !strings.Contains(raw, tab) {
+			t.Errorf("%s: tab not highlighted in %q", want, raw)
+		}
+		if col != len([]rune("⌕ make")) {
+			t.Errorf("%s: cursor at column %d", want, col)
+		}
+		if len(lines) != 5 || !strings.HasPrefix(lines[1], "▌") || !strings.HasSuffix(lines[4], "1/3") {
+			t.Errorf("%s: rows %q", want, lines[1:])
 		}
 	}
 	// The cursor stays in the query as it's edited.
 	e.handleKey(Key{Code: KeyLeft})
 	e.handleKey(Key{Code: KeyLeft})
 	e.handleKey(keyCtrlR)
-	if lines, col := searchView(t, e); !strings.HasPrefix(lines[0], "history [this directory]: make ") || col != len("history [this directory]: ma") {
+	if lines, col := searchView(t, e); !strings.HasPrefix(lines[0], "⌕ make ") || col != len([]rune("⌕ ma")) {
 		t.Errorf("header %q, cursor at column %d", lines[0], col)
 	}
 }
@@ -223,7 +225,7 @@ func TestSearchUnknownScope(t *testing.T) {
 	e, calls := searchEditor(ScopeAll, "session")
 	e.handleKey(keyCtrlR)
 	e.handleKey(keyCtrlR)
-	if lines, _ := searchView(t, e); !strings.HasPrefix(lines[0], "history [session]: ") || last(*calls) != "session:" {
+	if lines, _ := searchView(t, e); !strings.HasSuffix(strings.TrimRight(lines[0], " "), " all  session") || last(*calls) != "session:" {
 		t.Errorf("header %q after searching %q", lines[0], *calls)
 	}
 }
@@ -271,7 +273,7 @@ func TestSearchWithoutScopes(t *testing.T) {
 	if got := string(e.buf); got != "all 2" || e.search.current() != ScopeAll {
 		t.Errorf("ctrl-r: previewing %q in scope %q", got, e.search.current())
 	}
-	if lines, _ := searchView(t, e); !strings.HasPrefix(lines[0], "history: ls ") {
+	if lines, _ := searchView(t, e); lines[0] != "⌕ ls" {
 		t.Errorf("header %q", lines[0])
 	}
 	if len(*calls) != 1 || (*calls)[0] != "all:ls" {
@@ -311,24 +313,21 @@ func runeAt(line string, col int) rune {
 	return 0
 }
 
-// TestSearchNarrowHeader checks the query line where the whole label
-// doesn't fit: it shows just the scope's name, and a long query scrolls.
+// TestSearchNarrowHeader checks the query line on narrow screens: the
+// tabs go when there's no room for them, and a long query scrolls.
 func TestSearchNarrowHeader(t *testing.T) {
 	tests := []struct {
 		cols         int
 		scope, query string
 		want         string
 	}{
-		{80, ScopeRepository, "gst", "history [this repository]: gst"},
-		{48, ScopeRepository, "gst", "history [this repository]: gst"},
-		{47, ScopeRepository, "gst", "[repository]: gst"},
-		{47, ScopeDirectory, "gst", "history [this directory]: gst"},
-		{30, ScopeDirectory, "gst", "[directory]: gst"},
-		{30, ScopeFailed, "gst", "[failed]: gst"},
-		{30, ScopeAll, "gst", "history: gst"},
-		{30, ScopeAll, "git commit -m 'fix the header'", "history: …-m 'fix the header'"},
-		{20, ScopeRepository, "gst", "[repos…]: gst"},
-		{16, ScopeAll, "gst", "gst"},
+		{80, ScopeRepository, "gst", "⌕ gst  …  repo"},
+		{30, ScopeDirectory, "gst", "⌕ gst  …  here"},
+		{30, ScopeFailed, "gst", "⌕ gst  …  failed"},
+		{20, ScopeFailed, "gst", "⌕ gst"},
+		{30, ScopeAll, "gst", "⌕ gst"},
+		{30, ScopeAll, "git commit -m 'fix the header'", "⌕ …commit -m 'fix the header'"},
+		{16, ScopeAll, "gst", "⌕ gst"},
 	}
 	for _, tt := range tests {
 		e := newTestEditor(tt.cols)
@@ -337,7 +336,10 @@ func TestSearchNarrowHeader(t *testing.T) {
 		e.insert([]rune(tt.query))
 		e.handleKey(keyCtrlR)
 		lines, col := searchView(t, e)
-		if head := strings.TrimRight(strings.TrimSuffix(lines[0], "no matches"), " "); head != tt.want || col != len([]rune(tt.want)) {
+		head := strings.Join(strings.Fields(lines[0]), " ")
+		want := strings.Join(strings.Fields(strings.Replace(tt.want, "  …  ", " ", 1)), " ")
+		qw := len([]rune(strings.Split(tt.want, "  …  ")[0]))
+		if head != want || col != qw || plainWidth(lines[0]) >= tt.cols {
 			t.Errorf("%d columns, %s: %q with the cursor at %d, want %q", tt.cols, tt.scope, lines[0], col, tt.want)
 		}
 	}
@@ -350,7 +352,7 @@ func TestSearchMultilineQuery(t *testing.T) {
 	e.insert([]rune("for f in *\n\techo $f\nend"))
 	e.handleKey(keyCtrlR)
 	lines, col := searchView(t, e)
-	if want := "history: for f in *^J    echo $f^Jend"; !strings.HasPrefix(lines[0], want+" ") || col != len(want) {
+	if want := "⌕ for f in *^J    echo $f^Jend"; lines[0] != want || col != len([]rune(want)) {
 		t.Errorf("header %q with the cursor at %d, want %q and %d", lines[0], col, want, len(want))
 	}
 }
@@ -403,5 +405,35 @@ func TestSearchFitsTheScreen(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// TestSearchRowsAndDetails checks a row's status, directory and age, and
+// the details of the selected command under the list.
+func TestSearchRowsAndDetails(t *testing.T) {
+	e := newTestEditor(70)
+	e.cfg.SearchHistory = func(string, string, int) []SearchResult {
+		return []SearchResult{
+			{Text: "go test ./...", Dir: "~/src/ash", Age: "2m", Took: "3.2s", Failed: true, Status: 1},
+			{Text: "git status", Dir: "~/src/ash", Age: "1h"},
+		}
+	}
+	e.handleKey(keyCtrlR)
+	lines, _ := searchView(t, e)
+	if len(lines) != 4 {
+		t.Fatalf("lines %q", lines)
+	}
+	if !strings.HasPrefix(lines[1], "▌✗ go test ./...") || !strings.HasSuffix(lines[1], "~/src/ash   2m") {
+		t.Errorf("failed row %q", lines[1])
+	}
+	if !strings.HasPrefix(lines[2], " · git status") || !strings.HasSuffix(lines[2], "~/src/ash   1h") {
+		t.Errorf("row %q", lines[2])
+	}
+	if want := "  ╰ ~/src/ash · 2m ago · took 3.2s · exit 1"; !strings.HasPrefix(lines[3], want) || !strings.HasSuffix(lines[3], "1/2") {
+		t.Errorf("details %q", lines[3])
+	}
+	e.handleKey(keyDown)
+	if lines, _ := searchView(t, e); !strings.HasPrefix(lines[3], "  ╰ ~/src/ash · 1h ago ") {
+		t.Errorf("details after moving %q", lines[3])
 	}
 }
