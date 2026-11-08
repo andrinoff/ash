@@ -2,6 +2,7 @@ package editor
 
 import (
 	"bytes"
+	"os"
 	"strconv"
 	"strings"
 
@@ -375,8 +376,18 @@ func (e *Editor) EnsureNewline(marker string) {
 // text but leaves those in place. Terminals without the protocol ignore it.
 const clearImages = "\x1b_Ga=d,d=A,q=2\x1b\\"
 
+// ClearImagesSequence is clearImages as it has to be written here: tmux
+// drops the sequence unless it's wrapped to pass through to the terminal,
+// where programs inside tmux draw their images.
+func ClearImagesSequence() string {
+	if os.Getenv("TMUX") != "" {
+		return "\x1bPtmux;" + strings.ReplaceAll(clearImages, "\x1b", "\x1b\x1b") + "\x1b\\"
+	}
+	return clearImages
+}
+
 func (e *Editor) clearScreen() {
-	e.out.WriteString(clearImages + "\x1b[H\x1b[2J")
+	e.out.WriteString(ClearImagesSequence() + "\x1b[H\x1b[2J")
 	e.prev = nil
 	e.cursorRow = 0
 	e.marked = false

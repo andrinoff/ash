@@ -23,3 +23,16 @@ func TestClearScreenDeletesImages(t *testing.T) {
 		t.Fatalf("clear-screen wrote %q", got)
 	}
 }
+
+func TestClearImagesInTmux(t *testing.T) {
+	// tmux drops the kitty graphics sequence unless it's wrapped to pass
+	// through, and inside tmux the images are on the outer terminal.
+	t.Setenv("TMUX", "/tmp/tmux-501/default,1,0")
+	if got := ClearImagesSequence(); got != "\x1bPtmux;\x1b\x1b_Ga=d,d=A,q=2\x1b\x1b\\\x1b\\" {
+		t.Fatalf("got %q", got)
+	}
+	t.Setenv("TMUX", "")
+	if got := ClearImagesSequence(); got != "\x1b_Ga=d,d=A,q=2\x1b\\" {
+		t.Fatalf("outside tmux: got %q", got)
+	}
+}
