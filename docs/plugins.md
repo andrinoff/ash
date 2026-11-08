@@ -179,7 +179,10 @@ A plugin can write these at any time, not only in answer to something.
 Actions only take effect when no command is running: before each prompt,
 and while ash waits at the prompt. In the second case they apply right away
 and the prompt is redrawn if a variable, a segment or the directory
-changed. Actions that come in while a command runs wait for it to finish.
+changed. An `eval` or a `cd` at the prompt runs the way a key binding's
+command does, with the terminal back in its normal mode for that moment,
+so the programs it starts behave. Actions that come in while a command
+runs wait for it to finish.
 
 One line can hold several actions. They're applied in the order of the
 table: set, unset, segment, cd, eval, buffer, message. Setting a variable
