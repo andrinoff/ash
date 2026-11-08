@@ -100,7 +100,7 @@ func (r *REPL) applyPluginsIdle() {
 	if !r.plug.atPrompt {
 		return
 	}
-	u := r.sh.ApplyPluginActionsIdle(r.ed.Suspend)
+	u := r.sh.ApplyPluginActionsIdle(r.runPluginCode)
 	if len(u.Messages) > 0 {
 		// one entry in the editor's bounded queue, however many
 		r.ed.Notify(strings.Join(u.Messages, "\n"))
@@ -113,12 +113,25 @@ func (r *REPL) applyPluginsIdle() {
 		}
 	}
 	if u.DirChanged {
-		r.setTitle("")
 		r.reportCwd()
 	}
 	if u.Redraw {
 		r.ed.Repaint()
 	}
+}
+
+// runPluginCode applies plugin actions that may run code with the
+// terminal handed back. Only those actions change the directory, and the
+// new title is set while the terminal is still handed back, since an
+// ash_title function may run commands too.
+func (r *REPL) runPluginCode(apply func()) {
+	r.ed.Suspend(func() {
+		dir := r.sh.Dir()
+		apply()
+		if r.sh.Dir() != dir {
+			r.setTitle("")
+		}
+	})
 }
 
 // runBinding runs a key binding's command with plugin actions held back,
