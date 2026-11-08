@@ -92,7 +92,7 @@ func run(mode string) {
 	switch mode {
 	case "basic":
 		hello("basic", allEvents,
-			[]string{"greet", "cat", "pwd", "where", "getenv", "fail", "slow", "crash", "act", "spawn", "rehello", "later", "noise"},
+			[]string{"greet", "cat", "pwd", "where", "getenv", "fail", "slow", "crash", "act", "spawn", "rehello", "later", "noise", "badanswer"},
 			[]string{"fruit", "slowfruit", "greet", "where"})
 		serve(true)
 	case "sink":
@@ -242,6 +242,10 @@ func runCommand(id any, m obj) {
 		sendRaw("{}")
 		sendRaw(`{"segment":{"name":"bad name","text":"x"}}`)
 		answer(id, "", "", 0)
+	case "badanswer":
+		// a status that is a string
+		b, _ := json.Marshal(id)
+		sendRaw(`{"id":` + string(b) + `,"stdout":"x","status":"1"}`)
 	default:
 		answer(id, "", "unknown command "+name+"\n", 127)
 	}

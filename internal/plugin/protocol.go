@@ -12,6 +12,7 @@ package plugin
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"strings"
 )
 
@@ -155,13 +156,17 @@ func (l *stringList) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// parseLine decodes one line a plugin wrote.
+// parseLine decodes one line a plugin wrote. A value of the wrong type
+// (a string for a number, say) is an error, but what did decode is
+// returned with it, so that an answer can still find its request.
 func parseLine(line []byte) (*inbound, error) {
 	var m inbound
-	if err := json.Unmarshal(line, &m); err != nil {
+	err := json.Unmarshal(line, &m)
+	var te *json.UnmarshalTypeError
+	if err != nil && !errors.As(err, &te) {
 		return nil, err
 	}
-	return &m, nil
+	return &m, err
 }
 
 // empty reports whether the line held nothing ash understands.

@@ -337,7 +337,17 @@ func (p *proc) handle(line []byte) {
 	}
 	msg, err := parseLine(line)
 	if err != nil {
-		p.logf("skipped a line that isn't a JSON object (%v): %s", err, clip(line))
+		switch {
+		case msg == nil:
+			p.logf("skipped a line that isn't a JSON object (%v): %s", err, clip(line))
+		case msg.ID != nil:
+			// An answer with a value of the wrong type ("status": "1"):
+			// fail the request now instead of leaving it to time out.
+			p.logf("an answer has a value of the wrong type (%v): %s", err, clip(line))
+			p.reply(*msg.ID, &inbound{Stderr: "ash: plugin " + p.spec.Name + " sent a bad answer: " + err.Error() + "\n", Status: 1})
+		default:
+			p.logf("skipped a line with a value of the wrong type (%v): %s", err, clip(line))
+		}
 		return
 	}
 	if msg.empty() {

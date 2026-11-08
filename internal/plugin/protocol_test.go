@@ -85,6 +85,11 @@ func TestParseReplies(t *testing.T) {
 	if m.Status != 0 {
 		t.Fatalf("status = %d", m.Status)
 	}
+	// a value of the wrong type is an error, but the id is still there
+	m, err = parseLine([]byte(`{"id":10,"status":"1"}`))
+	if err == nil || m == nil || m.ID == nil || *m.ID != 10 {
+		t.Fatalf("got %+v, %v", m, err)
+	}
 }
 
 func TestParseBad(t *testing.T) {

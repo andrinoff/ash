@@ -124,7 +124,7 @@ func TestLoadAndList(t *testing.T) {
 		t.Fatalf("greet comes from %q", p)
 	}
 	cmds := h.m.Commands()
-	if len(cmds) != 13 || cmds[0].Name != "act" || cmds[0].Description != "the act command" || cmds[0].Plugin != "basic" {
+	if len(cmds) != 14 || cmds[0].Name != "act" || cmds[0].Description != "the act command" || cmds[0].Plugin != "basic" {
 		t.Fatalf("commands: %+v", cmds)
 	}
 	if err := h.m.Load(h.spec("basic", "basic")); !errors.Is(err, ErrLoaded) {
@@ -581,6 +581,25 @@ func TestFirstPluginWinsACommand(t *testing.T) {
 	}
 	if p := h.m.CommandPlugin("greet"); p != "two" {
 		t.Fatalf("after unloading one, greet from %q", p)
+	}
+}
+
+// An answer with a value of the wrong type fails its request at once,
+// rather than leaving the command to wait for its timeout.
+func TestBadAnswer(t *testing.T) {
+	h := newHarness(t, Options{})
+	h.load("basic", "basic")
+	start := time.Now()
+	r, err := h.run("badanswer")
+	if err != nil || r.Status != 1 || !strings.Contains(r.Stderr, "sent a bad answer") {
+		t.Fatalf("got %+v, %v", r, err)
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("took %v", d)
+	}
+	b, _ := os.ReadFile(h.info("basic").Log)
+	if !strings.Contains(string(b), "an answer has a value of the wrong type") {
+		t.Errorf("not logged:\n%s", b)
 	}
 }
 

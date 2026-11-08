@@ -216,7 +216,9 @@ also has `"stdin": "..."` with all of it. The answer:
 ```
 
 Missing fields are empty, and `status` 0. ash prints `stdout` and `stderr`
-and the command exits with `status` (modulo 256). It waits 30 seconds at
+and the command exits with `status` (modulo 256). An answer with a value
+of the wrong type, like `"status": "1"`, makes the command fail at once
+with status 1 and says why on stderr. It waits 30 seconds at
 most: then the command fails with status 124. `ctrl-c` stops the wait, with
 status 130. Either way ash sends `{"id": 7, "request": "cancel"}`, which the
 plugin may use to stop working, and ignores a later answer.
