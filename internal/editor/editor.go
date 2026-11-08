@@ -317,6 +317,8 @@ func (e *Editor) ReadLine(o ReadOpts) (string, error) {
 			e.resize()
 		case f := <-e.async:
 			f()
+			// keys typed while f had the terminal (see Suspend)
+			e.processInput(false)
 		}
 	}
 	e.finalRender()
