@@ -649,6 +649,11 @@ func splitLines(s string) []string {
 
 // cmdSubst runs statements in a subshell and returns their output.
 func (sh *Shell) cmdSubst(stmts []*syntax.Stmt, io *IO) (string, error) {
+	if c := pureCall(stmts); c != nil {
+		if out, ok, err := sh.substPure(c, io); ok {
+			return out, err
+		}
+	}
 	sh.substCount++
 	sub := sh.clone()
 	sub.inSubst++
