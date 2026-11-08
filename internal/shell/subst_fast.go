@@ -37,23 +37,42 @@ func pureCall(stmts []*syntax.Stmt) *syntax.CallExpr {
 		return nil
 	}
 	c, ok := st.Cmd.(*syntax.CallExpr)
-	if !ok || len(c.Assigns) != 0 || len(c.Redirs) != 0 || len(c.Args) == 0 || c.DeclArgs != nil {
+	if !ok || !pureCallExpr(c) {
 		return nil
+	}
+	return c
+}
+
+// pureCallExpr reports whether c calls a pure builtin, without
+// redirections or assignments, with arguments that expand quietly.
+func pureCallExpr(c *syntax.CallExpr) bool {
+	if len(c.Assigns) != 0 || len(c.Redirs) != 0 || len(c.Args) == 0 || c.DeclArgs != nil {
+		return false
 	}
 	name, ok := c.Args[0].IsUnquotedLit()
 	if !ok || !pureBuiltins[name] {
-		return nil
+		return false
 	}
 	// printf -v NAME sets a variable
 	if name == "printf" && len(c.Args) > 1 && !startsPlain(c.Args[1]) {
-		return nil
+		return false
 	}
 	for _, w := range c.Args {
 		if !quietWord(w) {
-			return nil
+			return false
 		}
 	}
-	return c
+	return true
+}
+
+// hidesBuiltin reports whether a function or alias named like the pure
+// builtin c calls would run instead.
+func (sh *Shell) hidesBuiltin(c *syntax.CallExpr) bool {
+	name, _ := c.Args[0].IsUnquotedLit()
+	if _, alias := sh.aliases[name]; alias || sh.lookupFunc(name) != nil {
+		return true
+	}
+	return builtins[name] == nil
 }
 
 // startsPlain reports whether a word starts with literal text that isn't
@@ -131,11 +150,7 @@ func quietParts(parts []syntax.WordPart) bool {
 // cmdSubst would run it in a subshell. ok is false if c isn't the
 // builtin after all (a function or alias of that name).
 func (sh *Shell) substPure(c *syntax.CallExpr, io *IO) (out string, ok bool, err error) {
-	name, _ := c.Args[0].IsUnquotedLit()
-	if _, alias := sh.aliases[name]; alias || sh.lookupFunc(name) != nil {
-		return "", false, nil
-	}
-	if b, found := sh.builtinFunc(name); !found || b == nil || builtins[name] == nil {
+	if sh.hidesBuiltin(c) {
 		return "", false, nil
 	}
 	sh.substCount++

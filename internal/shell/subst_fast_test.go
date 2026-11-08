@@ -44,6 +44,19 @@ func TestSubstFastPathSameAsSubshell(t *testing.T) {
 		`x=$(echo $(echo in) out); echo "$x"`,
 		// stdin
 		`echo piped | read -l a; echo (string upper -- $a)`,
+		// pipelines of pure builtins
+		`set n (string length -- abc de | string join +); echo $n $pipestatus`,
+		`echo a b | string upper | string split ' '; echo $pipestatus`,
+		`string match -q x y | string join , a b; echo $status $pipestatus`,
+		`printf 'x\ny\n' | count; echo $pipestatus`,
+		`set -o pipefail; false | true; echo $?; string match -q x y | echo hi; echo $?`,
+		`echo one two | string split ' ' | string join -; echo "$_"`,
+		`! echo a | string match -q a; echo $?`,
+		`function upper; string upper; end; echo a | upper`,
+		`echo a | math 1 + 1 | string repeat -n 2`,
+		`string upper | string join -`,
+		`set -u; echo $nope | string upper; echo after $?`,
+		`echo a 2>&1 | string upper`,
 	}
 	for _, src := range scripts {
 		noSubstFastPath = true

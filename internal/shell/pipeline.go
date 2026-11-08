@@ -92,6 +92,9 @@ func (e *pipeElem) release() {
 }
 
 func (sh *Shell) runPipe(p *syntax.Pipeline, io *IO, bg bool) int {
+	if !bg && sh.purePipe(p) {
+		return sh.runPurePipe(p, io)
+	}
 	n := len(p.Cmds)
 	j := &job{cmd: sh.pipeText(p), foreground: !bg, background: bg}
 	if bg {
