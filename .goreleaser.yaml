@@ -131,8 +131,5 @@ changelog:
     - title: "Other stuff"
       order: 9999
 
-git:
-  tag_sort: semver
-
 release:
   prerelease: auto
