@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,7 +20,20 @@ import (
 	"github.com/andrinoff/ash/internal/term"
 )
 
-const Version = "0.1.0"
+// Version is set when a release is built (-ldflags "-X
+// github.com/andrinoff/ash/internal/shell.Version=1.2.3"). Otherwise it is
+// the module version Go recorded, like 0.2.0 for `go install ...@v0.2.0`.
+var Version string
+
+func init() {
+	if Version != "" {
+		return
+	}
+	Version = "dev"
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		Version = strings.TrimPrefix(bi.Main.Version, "v")
+	}
+}
 
 // Editor is the part of the line editor the interpreter talks to, for the
 // commandline and bind builtins.
