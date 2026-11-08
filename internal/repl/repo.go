@@ -3,7 +3,6 @@ package repl
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 )
 
@@ -56,15 +55,4 @@ func findRepo(dir string) string {
 		}
 		d = up
 	}
-}
-
-// repoDir shows dir, which is in the repository at root, as the
-// repository's name followed by the path below it, as in
-// "ash/internal/editor".
-func repoDir(dir, root string) string {
-	d := filepath.Base(root) + strings.TrimPrefix(dir, root)
-	if len(d) > 30 {
-		d = "…/" + filepath.Base(dir)
-	}
-	return d
 }

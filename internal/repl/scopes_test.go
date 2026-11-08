@@ -221,15 +221,15 @@ func TestSearchHistoryScopes(t *testing.T) {
 			"go test ./... | ✗ now  ~/src/ash",
 			"git status | now  ~/src/ash",
 		}},
-		// Every command here ran here, so the directory goes without saying.
-		{"directory", "", []string{"go vet ./internal/editor | now"}},
-		// Directories show from the top of the repository.
+		// Every scope shows the real directory, the repository's top too
+		// (it used to show just "ash" there).
+		{"directory", "", []string{"go vet ./internal/editor | now  ~/src/ash/internal/editor"}},
 		{"repository", "", []string{
-			"go vet ./internal/editor | now  ash/internal/editor",
-			"go test ./... | ✗ now  ash",
-			"git status | now  ash",
+			"go vet ./internal/editor | now  ~/src/ash/internal/editor",
+			"go test ./... | ✗ now  ~/src/ash",
+			"git status | now  ~/src/ash",
 		}},
-		{"repository", "gstat", []string{"git status | now  ash"}},
+		{"repository", "gstat", []string{"git status | now  ~/src/ash"}},
 		{"failed", "", []string{"make | ✗ now  ~/notes", "go test ./... | ✗ now  ~/src/ash"}},
 		{"failed", "mk", []string{"make | ✗ now  ~/notes"}},
 	}
@@ -248,7 +248,7 @@ func TestSearchHistoryScopes(t *testing.T) {
 	if got := r.searchHistory("", "repository", 10); len(got) != 0 {
 		t.Errorf("repository scope outside a repository: %q", rows(got))
 	}
-	if got := rows(r.searchHistory("", "directory", 10)); !reflect.DeepEqual(got, []string{"make | ✗ now", "vim todo.md | now"}) {
+	if got := rows(r.searchHistory("", "directory", 10)); !reflect.DeepEqual(got, []string{"make | ✗ now  ~/notes", "vim todo.md | now  ~/notes"}) {
 		t.Errorf("directory scope in %s: %q", notes, got)
 	}
 }
@@ -355,18 +355,4 @@ func BenchmarkRepoRoot(b *testing.B) {
 			c.root(deep)
 		}
 	})
-}
-
-func TestRepoDir(t *testing.T) {
-	tests := []struct{ dir, root, want string }{
-		{"/src/ash", "/src/ash", "ash"},
-		{"/src/ash/internal/editor", "/src/ash", "ash/internal/editor"},
-		{"/src/ash/a/very/deep/directory/tree/below", "/src/ash", "…/below"},
-		{"/etc", "/", "/etc"},
-	}
-	for _, tt := range tests {
-		if got := repoDir(tt.dir, tt.root); got != tt.want {
-			t.Errorf("repoDir(%q, %q) = %q, want %q", tt.dir, tt.root, got, tt.want)
-		}
-	}
 }

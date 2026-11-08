@@ -103,14 +103,13 @@ func (r *REPL) searchHistory(query, scope string, limit int) []editor.SearchResu
 	where := func(d string) string { return shortDir(d, home) }
 	switch scope {
 	case editor.ScopeDirectory:
-		keep, where = history.InDir(dir), nil // they all ran here
+		keep = history.InDir(dir)
 	case editor.ScopeRepository:
 		root := r.repos.root(dir)
 		if root == "" {
 			return nil
 		}
 		keep = history.Under(root)
-		where = func(d string) string { return repoDir(d, root) }
 	case editor.ScopeFailed:
 		keep = history.Failed
 	}
