@@ -94,6 +94,30 @@ enable_transience
   command's output. In kitty you can also click anywhere in the command
   you're typing to move the cursor there.
 
+## Look and feel
+
+These are variables; set them in `config.ash` with `set -g`. They take
+effect at the next prompt.
+
+| variable | what it does | default |
+|---|---|---|
+| `ash_prompt_position` | `bottom` keeps the prompt on the last line of the window, and puts it back there after a menu, fzf, `ctrl-l` or a resize | `top` |
+| `ash_cursor` | the cursor's shape: `block`, `line` or `underscore`, steady, or blinking with `blink` after it (`line blink`). Vi mode sets its own | the terminal's |
+| `ash_search_rows` | how many commands `ctrl-r` lists at most | 10 |
+| `ash_pager_rows` | how many rows the completion menu takes at most | 12 |
+| `ash_search_scopes` | which `ctrl-r` tabs there are, in order: any of `all here repo failed` | all four |
+| `ash_history_scope` | the tab `ctrl-r` starts on | `all` |
+| `ash_preview` | `0` turns off the line that shows what the command line expands to | on |
+| `ash_notify_after` | send a desktop notification when a command ran at least this many seconds (it works through tmux too) | off |
+| `ash_notify_ignore` | commands that never send one, like editors | editors, pagers, ssh, tmux, file managers, lazygit, fzf |
+
+With the prompt at the bottom, ash asks the terminal where the cursor is
+before it draws a new prompt, which every terminal answers in well under
+a millisecond.
+
+Colors are in the next section, and the prompt itself is
+[starship](integrations.md#starship) or your own `ash_prompt`.
+
 ## Highlighting colors
 
 Colors come from a theme. `theme choose NAME` loads
