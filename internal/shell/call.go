@@ -393,11 +393,11 @@ func (sh *Shell) spawnRaw(j *job, path string, args, env []string, files []child
 		}
 		attr.Sys = sys
 	}
-	pid, err := syscall.ForkExec(path, args, attr)
+	pid, err := startProcess(path, args, attr)
 	if errors.Is(err, syscall.ENOEXEC) {
 		// A script without a shebang: run it with ash, like sh does.
 		nargs := append([]string{sh.Self(), path}, args[1:]...)
-		pid, err = syscall.ForkExec(sh.Self(), nargs, attr)
+		pid, err = startProcess(sh.Self(), nargs, attr)
 	}
 	if err != nil {
 		return 0, err
