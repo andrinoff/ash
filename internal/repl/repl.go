@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -272,6 +273,10 @@ func (r *REPL) readOpts() editor.ReadOpts {
 		Transient:    r.transient,
 		MarkPrompt:   r.tty,
 		Initial:      r.nextBuffer(),
+		Bottom:       r.sh.Get("ash_prompt_position") == "bottom",
+		SearchRows:   r.intSetting("ash_search_rows"),
+		PagerRows:    r.intSetting("ash_pager_rows"),
+		Cursor:       r.sh.Get("ash_cursor"),
 	}
 	if o.Initial == "" {
 		o.EmptySuggestion = r.fixLine
@@ -334,6 +339,21 @@ func (r *REPL) runLine(line string) {
 	}
 }
 
+// intSetting is a variable that holds a positive number, or 0.
+func (r *REPL) intSetting(name string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(r.sh.Get(name)))
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
+// notifyIgnore is what $ash_notify_ignore holds when it isn't set:
+// programs you sit in front of, so their running long says nothing.
+var notifyIgnore = []string{"vi", "vim", "nvim", "hx", "helix", "nano", "emacs", "micro", "joy",
+	"less", "more", "man", "top", "htop", "btop", "ssh", "mosh", "tmux", "screen", "zellij",
+	"lazygit", "lg", "yazi", "y", "lf", "nnn", "ranger", "fzf", "watch", "tail", "claude", "crush"}
+
 // notifyLong sends a desktop notification (OSC 9, understood by Ghostty,
 // iTerm2, kitty, WezTerm and others) when a command ran longer than
 // $ash_notify_after seconds.
@@ -350,6 +370,13 @@ func (r *REPL) notifyLong(line string, status int, dur time.Duration) {
 	if len(cmd) == 0 {
 		return
 	}
+	ignore := notifyIgnore
+	if r.sh.IsSet("ash_notify_ignore") {
+		ignore = r.sh.GetList("ash_notify_ignore")
+	}
+	if slices.Contains(ignore, filepath.Base(cmd[0])) {
+		return
+	}
 	verb := "finished"
 	if status != 0 {
 		verb = "failed (" + strconv.Itoa(status) + ")"
@@ -361,7 +388,12 @@ func (r *REPL) notifyLong(line string, status int, dur time.Duration) {
 		}
 		return r
 	}, msg)
-	r.out.WriteString(ansi.Notify(msg))
+	n := ansi.Notify(msg)
+	if r.sh.Get("TMUX") != "" {
+		// through tmux to the terminal, which shows the notification
+		n = "\x1bPtmux;" + strings.ReplaceAll(n, "\x1b", "\x1b\x1b") + "\x1b\\"
+	}
+	r.out.WriteString(n)
 }
 
 // queueProfile has the --profile report printed once the first prompt is

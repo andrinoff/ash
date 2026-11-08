@@ -125,6 +125,24 @@ func (r *REPL) searchScopes() []string {
 		scopes = append(scopes, editor.ScopeRepository)
 	}
 	scopes = append(scopes, editor.ScopeFailed)
+	if r.sh.IsSet("ash_search_scopes") {
+		// the ones it lists, in its order, where they apply
+		var pick []string
+		for _, s := range r.sh.GetList("ash_search_scopes") {
+			switch s { // the names on the tabs work too
+			case "here":
+				s = editor.ScopeDirectory
+			case "repo":
+				s = editor.ScopeRepository
+			}
+			if slices.Contains(scopes, s) && !slices.Contains(pick, s) {
+				pick = append(pick, s)
+			}
+		}
+		if len(pick) > 0 {
+			scopes = pick
+		}
+	}
 	if i := slices.Index(scopes, r.sh.Get("ash_history_scope")); i > 0 {
 		scopes = slices.Concat(scopes[i:], scopes[:i])
 	}
