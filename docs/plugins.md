@@ -292,10 +292,11 @@ That turns a lot of terminal programs into something that works with the
 shell. Some examples:
 
 ```sh
-# lf: the shell follows lf around. In another tmux pane it follows live;
-# started from the shell itself, the shell ends up where lf was when
-# you quit. (In ~/.config/lf/lfrc.)
-cmd on-cd &{{ printf '{"cd":"%s"}\n' "$PWD" | nc -U "$ASH_REMOTE" }}
+# lf: the shell follows lf around. Started from the shell, the shell
+# ends up where lf was when you quit; in a tmux pane opened from it
+# (tmux split-window -e ASH_REMOTE="$ASH_REMOTE" lf) it follows live.
+# jq quotes the path, which may hold quotes. (In ~/.config/lf/lfrc.)
+cmd on-cd &{{ jq -cn --arg d "$PWD" '{cd: $d}' | nc -U "$ASH_REMOTE" }}
 ```
 
 ```lua
