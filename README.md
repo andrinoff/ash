@@ -18,7 +18,11 @@ for f in *.jpg; do magick "$f" "${f%.jpg}.png"; done
 
 ## Install
 
-You need Go 1.27 or newer.
+[Releases](https://github.com/andrinoff/ash/releases) have binaries for
+macOS and Linux (x86_64 and arm64), and deb, rpm, apk and Arch packages.
+`checksums.txt` is signed with [cosign](https://github.com/sigstore/cosign).
+
+To build it yourself you need Go 1.27 or newer.
 
 ```sh
 go install github.com/andrinoff/ash@latest
