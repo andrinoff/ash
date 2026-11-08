@@ -18,9 +18,13 @@ for f in *.jpg; do magick "$f" "${f%.jpg}.png"; done
 
 ## Install
 
-[Releases](https://github.com/andrinoff/ash/releases) have binaries for
-macOS and Linux (x86_64 and arm64), and deb, rpm, apk and Arch packages.
-`checksums.txt` is signed with [cosign](https://github.com/sigstore/cosign).
+```sh
+brew install andrinoff/tap/ash
+```
+
+or grab a build from [Releases](https://github.com/andrinoff/ash/releases):
+binaries for macOS and Linux (x86_64 and arm64), and deb, rpm, apk and
+Arch packages.
 
 To build it yourself you need Go 1.27 or newer.
 

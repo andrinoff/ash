@@ -65,6 +65,26 @@ nfpms:
       - src: LICENSE
         dst: /usr/share/licenses/ash/LICENSE
 
+homebrew_casks:
+  - name: ash
+    repository:
+      owner: andrinoff
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: https://github.com/andrinoff/ash
+    description: A shell for people who like fish but keep pasting bash.
+    license: MIT
+    commit_author:
+      name: drew
+      email: me@andrinoff.com
+    commit_msg_template: "ash {{ .Tag }}"
+    hooks:
+      post:
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/ash"]
+          end
+
 checksum:
   name_template: checksums.txt
 
@@ -75,17 +95,6 @@ sboms:
   - artifacts: archive
   - id: source
     artifacts: source
-
-signs:
-  - cmd: cosign
-    signature: "${artifact}.sigstore.json"
-    args:
-      - sign-blob
-      - "--bundle=${signature}"
-      - "${artifact}"
-      - "--yes"
-    artifacts: checksum
-    output: true
 
 snapshot:
   version_template: "{{ incpatch .Version }}-snapshot"
