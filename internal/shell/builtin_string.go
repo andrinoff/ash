@@ -9,6 +9,7 @@ import (
 	"regexp/syntax"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 )
@@ -85,9 +86,17 @@ func bString(sh *Shell, io *IO, args []string) int {
 		}
 		return 0
 	}
-	c := &sbCtx{sh: sh, io: io, sub: sub, out: bufio.NewWriter(io.Out)}
+	w := sbWriters.Get().(*bufio.Writer)
+	w.Reset(io.Out)
+	c := &sbCtx{sh: sh, io: io, sub: sub, out: w}
 	status := run(c, rest)
 	c.out.Flush()
+	w.Reset(nil)
+	sbWriters.Put(w)
+	if c.in != nil {
+		c.in.Reset(nil)
+		sbReaders.Put(c.in)
+	}
 	return status
 }
 
@@ -125,12 +134,20 @@ func sbSubcommand(sub string) func(*sbCtx, []string) int {
 	return nil
 }
 
+// A loop over string calls would otherwise allocate 68KB of buffers
+// each time round.
+var (
+	sbWriters = sync.Pool{New: func() any { return bufio.NewWriter(nil) }}
+	sbReaders = sync.Pool{New: func() any { return bufio.NewReaderSize(nil, 64*1024) }}
+)
+
 // sbCtx is the state shared by the subcommands.
 type sbCtx struct {
 	sh  *Shell
 	io  *IO
 	sub string
 	out *bufio.Writer
+	in  *bufio.Reader // from sbReaders, once stdin was read
 }
 
 // fail prints "string SUB: message" to stderr and returns status 2.
@@ -328,7 +345,11 @@ func (c *sbCtx) stdin() *bufio.Reader {
 	} else if in.R == nil {
 		return nil
 	}
-	return bufio.NewReaderSize(in, 64*1024)
+	if c.in == nil {
+		c.in = sbReaders.Get().(*bufio.Reader)
+	}
+	c.in.Reset(in)
+	return c.in
 }
 
 func (it *sbIter) next() (string, bool, bool) {
