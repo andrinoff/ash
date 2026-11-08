@@ -320,7 +320,7 @@ func bRandom(sh *Shell, io *IO, args []string) int {
 			fmt.Fprintln(io.Err, "random: nothing to choose from")
 			return 2
 		}
-		fmt.Fprintln(io.Out, a[1+sh.rand.Intn(len(a)-1)])
+		fmt.Fprintln(io.Out, a[1+sh.rng().Intn(len(a)-1)])
 		return 0
 	}
 	nums := make([]int64, len(a))
@@ -336,7 +336,7 @@ func bRandom(sh *Shell, io *IO, args []string) int {
 	switch len(nums) {
 	case 0:
 	case 1:
-		sh.rand.Seed(nums[0])
+		sh.rng().Seed(nums[0])
 		return 0
 	case 2:
 		lo, hi = nums[0], nums[1]
@@ -355,9 +355,9 @@ func bRandom(sh *Shell, io *IO, args []string) int {
 	steps := (uint64(hi) - uint64(lo)) / uint64(step)
 	var k uint64
 	if steps == math.MaxUint64 {
-		k = sh.rand.Uint64()
+		k = sh.rng().Uint64()
 	} else {
-		k = randUint64n(sh.rand, steps+1)
+		k = randUint64n(sh.rng(), steps+1)
 	}
 	fmt.Fprintln(io.Out, int64(uint64(lo)+k*uint64(step)))
 	return 0

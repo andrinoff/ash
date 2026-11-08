@@ -120,6 +120,7 @@ type Shell struct {
 
 	startTime time.Time
 	rand      *rand.Rand
+	randSeed  int64 // seeds rand when a clone first needs it
 
 	Stdin  *os.File
 	Stdout *os.File
@@ -222,7 +223,7 @@ func New() *Shell {
 	if exe, err := os.Executable(); err == nil {
 		sh.shared.self = exe
 	}
-	sh.shared.session = randomKey(sh.rand, 16)
+	sh.shared.session = randomKey(sh.rng(), 16)
 	sh.importEnv(os.Environ())
 	wd, err := os.Getwd()
 	if err != nil {
@@ -358,7 +359,10 @@ func (sh *Shell) clone() *Shell {
 	c.noFifo = false
 	c.exitTrap = nil // traps aren't inherited by subshells
 	c.ctrl = ctrlNone
-	c.rand = rand.New(rand.NewSource(sh.rand.Int63()))
+	// Seeding a generator costs more than the rest of a clone, and most
+	// subshells never ask for a random number: rng makes it on first use.
+	c.rand = nil
+	c.randSeed = sh.rng().Int63()
 	return &c
 }
 
@@ -775,4 +779,12 @@ func (sh *Shell) KeepStatus(f func()) {
 	st, ps := sh.status, sh.pipestatus
 	f()
 	sh.status, sh.pipestatus = st, ps
+}
+
+// rng is the shell's random number generator ($RANDOM, random).
+func (sh *Shell) rng() *rand.Rand {
+	if sh.rand == nil {
+		sh.rand = rand.New(rand.NewSource(sh.randSeed))
+	}
+	return sh.rand
 }

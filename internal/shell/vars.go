@@ -174,7 +174,7 @@ func (sh *Shell) specialVar(name string) ([]string, bool) {
 	case "_":
 		return []string{sh.lastArg}, true
 	case "RANDOM":
-		return []string{strconv.Itoa(sh.rand.Intn(32768))}, true
+		return []string{strconv.Itoa(sh.rng().Intn(32768))}, true
 	case "SECONDS":
 		return []string{strconv.Itoa(int(time.Since(sh.startTime).Seconds()))}, true
 	case "EPOCHSECONDS":
