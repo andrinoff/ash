@@ -41,10 +41,12 @@ current shell; `exit` takes you back.
   are lists, so `$file` never splits on spaces. The details are in
   [docs/language.md](docs/language.md).
 - **fish's editor**, plus a few things fish doesn't do: vi mode with text
-  objects, `!!` and `!$`, a fuzzy `ctrl-r`, `alt-.` for the last argument,
-  copy and paste with `ctrl-x` / `ctrl-v`, and `alt-w`, which explains
-  the line you're typing flag by flag before you run it. See
-  [docs/editing.md](docs/editing.md).
+  objects, `!!` and `!$`, a fuzzy `ctrl-r` that can narrow to this
+  directory, this repository or the commands that failed, `alt-.` for the
+  last argument, copy and paste with `ctrl-x` / `ctrl-v`, a dim line under
+  the command that shows what `*.go` or `$PATH` will expand to, and
+  `alt-w`, which explains the line you're typing flag by flag before you
+  run it. See [docs/editing.md](docs/editing.md).
 - **Your tools, built in.** `integrate starship zoxide fzf mise direnv
   atuin` replaces the `init | source` lines. Starship gets a transient
   prompt and renders its left and right prompts in parallel while you're
@@ -66,6 +68,11 @@ current shell; `exit` takes you back.
   fill in the command line, and add commands and completions. The shell
   never waits for it. One of the examples lets file managers and editors
   drive the shell through a socket. See [docs/plugins.md](docs/plugins.md).
+- **Quick to start.** About 3 ms on its own, and with a real config a
+  third of fish's time. `ash --profile` shows which lines of your config
+  are slow, and `cached` keeps the output of the slow ones, like
+  `eval "$(cached brew shellenv)"`. See
+  [docs/config.md](docs/config.md#keeping-startup-fast).
 - **A terminal citizen.** Proper job control (`ctrl-z`, `fg`, `bg`), window
   titles, OSC 7 so new tabs open in the same directory, OSC 133 so your
   terminal can jump between prompts, a `⏎` marker when output didn't end
