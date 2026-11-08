@@ -169,7 +169,9 @@ func (sh *Shell) runBinary(b *syntax.BinaryCmd, io *IO) (int, bool) {
 func (sh *Shell) runCommand(cmd syntax.Command, io *IO) int {
 	switch c := cmd.(type) {
 	case *syntax.CallExpr:
-		return sh.execCall(c, io)
+		status := sh.execCall(c, io)
+		sh.pipestatus = nil // one command: $pipestatus is just $status
+		return status
 	case *syntax.Pipeline:
 		return sh.runPipeline(c, io, false)
 	case *syntax.BinaryCmd:
