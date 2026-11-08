@@ -88,7 +88,13 @@ integrate fzf
 
 `FZF_DEFAULT_OPTS`, `FZF_CTRL_R_OPTS`, `FZF_CTRL_T_COMMAND`,
 `FZF_CTRL_T_OPTS`, `FZF_ALT_C_COMMAND` and `FZF_ALT_C_OPTS` work as with
-fzf's own shell integration.
+fzf's own shell integration. To keep ash's own `ctrl-r`, with its scopes,
+set `FZF_CTRL_R_COMMAND` to nothing first:
+
+```sh
+set -g FZF_CTRL_R_COMMAND ''
+integrate fzf
+```
 
 ## mise
 
