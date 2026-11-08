@@ -370,8 +370,13 @@ func (e *Editor) EnsureNewline(marker string) {
 }
 
 // ClearScreen clears the terminal and redraws the prompt at the top.
+// clearImages deletes every image shown with the kitty graphics protocol
+// (fastfetch's logo, icat, yazi's previews): clearing the screen erases
+// text but leaves those in place. Terminals without the protocol ignore it.
+const clearImages = "\x1b_Ga=d,d=A,q=2\x1b\\"
+
 func (e *Editor) clearScreen() {
-	e.out.WriteString("\x1b[H\x1b[2J")
+	e.out.WriteString(clearImages + "\x1b[H\x1b[2J")
 	e.prev = nil
 	e.cursorRow = 0
 	e.marked = false

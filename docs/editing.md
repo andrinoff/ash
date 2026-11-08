@@ -206,7 +206,7 @@ doesn't exist when a close one does.
 | `alt-l` | list the directory under the cursor |
 | `alt-p` | append `\| less` (or `$PAGER`) |
 | `alt-#` | comment the line out and keep it in history |
-| `ctrl-l` | clear the screen |
+| `ctrl-l` | clear the screen, images included (fastfetch logos, `kitten icat`) |
 | `ctrl-c` | cancel the line |
 | `ctrl-d` | delete a character, or exit on an empty line |
 | `ctrl-q` | insert the next key literally |
