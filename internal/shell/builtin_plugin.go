@@ -518,15 +518,19 @@ func (sh *Shell) ApplyPluginActionsIdle(suspend func(func())) PluginUpdate {
 }
 
 func (sh *Shell) applyPlugins(suspend func(func())) PluginUpdate {
-	var u PluginUpdate
 	m := sh.shared.plugins.mgr.Load()
 	if m == nil {
-		return u
+		return PluginUpdate{}
 	}
 	acts := m.Actions()
 	if len(acts) == 0 {
-		return u
+		return PluginUpdate{} // every prompt: no allocation
 	}
+	return sh.applyPluginBatch(m, acts, suspend)
+}
+
+func (sh *Shell) applyPluginBatch(m *plugin.Manager, acts []plugin.Action, suspend func(func())) PluginUpdate {
+	var u PluginUpdate
 	// Handlers of --on-variable and cd hooks may run code; the prompt
 	// still reports the last command's status.
 	apply := func() { sh.KeepStatus(func() { sh.applyPluginActions(m, acts, &u) }) }
