@@ -48,7 +48,7 @@ nfpms:
   - vendor: andrinoff
     homepage: https://github.com/andrinoff/ash
     maintainer: drew <me@andrinoff.com>
-    description: A shell for people who like fish but keep pasting bash.
+    description: A SHell for people who like fish but keep pasting bash.
     license: MIT
     file_name_template: "{{ .ConventionalFileName }}"
     formats:
