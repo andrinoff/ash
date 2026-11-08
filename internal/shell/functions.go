@@ -530,7 +530,7 @@ func (sh *Shell) Emit(event string, args ...string) {
 	savedPipe := sh.pipestatus
 	for _, h := range handlers {
 		if fn := sh.lookupFunc(h); fn != nil {
-			sh.callFunc(fn, append([]string{h, event}, args...), sh.StdIO())
+			sh.callFunc(fn, append([]string{h}, args...), sh.StdIO()) // like fish: no event name
 		}
 	}
 	sh.status = saved

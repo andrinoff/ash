@@ -19,3 +19,11 @@ func TestPipestatusAfterSimpleCommand(t *testing.T) {
 		}
 	}
 }
+
+func TestEventHandlerArguments(t *testing.T) {
+	// Like fish, a handler gets the event's arguments, not its name.
+	out, errs, _ := runScript(t, `function f --on-event x; set -g got $argv; end; emit x 1 2; echo "[$got]"`)
+	if out != "[1 2]\n" {
+		t.Fatalf("got %q (%q)", out, errs)
+	}
+}
