@@ -215,6 +215,7 @@ func (r *REPL) loop() int {
 		}
 		r.refreshPreview()
 		r.showPluginMessages()
+		sh.WarmGitCompletions()
 		r.plug.atPrompt = true
 		line, err := r.ed.ReadLine(r.readOpts())
 		r.plug.atPrompt = false

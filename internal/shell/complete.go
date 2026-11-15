@@ -28,6 +28,7 @@ type completions struct {
 	runs   atomic.Uint64           // numbers completions run in subshells
 
 	dirs       dirCache
+	git        gitCache // output of git commands, see complete_git.go
 	fish       fishLib
 	autoloaded sync.Map // function name -> struct{}: autoloaded for completion code
 	users      struct {
@@ -66,8 +67,9 @@ type compRun struct {
 	depth int
 	id    uint64 // for loadState: 0 in the shell itself, else unique to a completion in a subshell
 
-	closeQuote bool       // the closing quote after the cursor is replaced too
-	restore    savedState // shell state to put back when done
+	gitFP      map[string]string // repository fingerprints by directory, see gitFingerprint
+	closeQuote bool              // the closing quote after the cursor is replaced too
+	restore    savedState        // shell state to put back when done
 }
 
 const maxCompleteDepth = 8

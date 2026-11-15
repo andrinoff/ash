@@ -147,6 +147,16 @@ func (sh *Shell) runExternal(args []string, io *IO, tmp []tmpVar, extraFds []*os
 	if err != nil {
 		return sh.commandNotFound(args, io, err)
 	}
+	if len(tmp) == 0 && len(extraFds) == 0 && sh.shared.complete.active.Load() != nil {
+		if st, ok := sh.gitCompleteCached(path, args, io); ok {
+			return st
+		}
+	}
+	return sh.runExternalAt(path, args, io, tmp, extraFds)
+}
+
+// runExternalAt runs the program at path.
+func (sh *Shell) runExternalAt(path string, args []string, io *IO, tmp []tmpVar, extraFds []*os.File) int {
 	env := sh.Environ()
 	if len(tmp) > 0 {
 		env = overrideEnv(env, tmp)
